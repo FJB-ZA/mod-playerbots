@@ -787,11 +787,12 @@ bool BGStatusAction::LeaveBG(PlayerbotAI* botAI)
 // The core drops a refused port without a reply: log what it checks and clear the combat it refuses
 static void PreparePort(Player* bot, BattlegroundQueueTypeId queueTypeId)
 {
-    if (bot->IsInCombat())
+    constexpr uint32 SPELL_GM_FREEZE = 9454;
+    if (sPlayerbotAIConfig.LivingWorldEnabled && bot->IsInCombat())
         bot->CombatStop(true);
-    LOG_INFO("playerbots", "Bot {} port check: queued {} invited {} combat {} charm {} freeze {}", bot->GetName(),
-             bot->InBattlegroundQueue(), bot->IsInvitedForBattlegroundQueueType(queueTypeId), bot->IsInCombat(),
-             bot->GetCharm() != nullptr, bot->HasAura(9454));
+    LOG_DEBUG("playerbots", "Bot {} port check: queued {} invited {} combat {} charm {} freeze {}", bot->GetName(),
+              bot->InBattlegroundQueue(), bot->IsInvitedForBattlegroundQueueType(queueTypeId), bot->IsInCombat(),
+              bot->GetCharm() != nullptr, bot->HasAura(SPELL_GM_FREEZE));
 }
 
 bool BGStatusAction::isUseful() { return bot->InBattlegroundQueue(); }
@@ -996,7 +997,8 @@ bool BGStatusAction::Execute(Event event)
         else
             timer = TIME_TO_AUTOREMOVE + IN_MILLISECONDS * (bg->GetMaxPlayersPerTeam() * 8);
 
-        if (Time2 > timer)
+        // upstream only times out arena queues; the living world also frees bots from a battleground that can't fill
+        if (Time2 > timer && (isArena || sPlayerbotAIConfig.LivingWorldEnabled))
             leaveQ = true;
 
         if (leaveQ && ((bot->GetGroup() && bot->GetGroup()->IsLeader(bot->GetGUID())) ||

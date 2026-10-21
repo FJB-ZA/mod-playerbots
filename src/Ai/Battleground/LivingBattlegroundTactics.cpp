@@ -9,6 +9,8 @@
 
 void BGTactics::RollTiers(Battleground* bg, BGStrategyData& data)
 {
+    if (!sPlayerbotAIConfig.LivingWorldEnabled)
+        return;
     bool human[2] = {false, false};
     bool leads[2] = {false, false};
     for (auto const& [guid, player] : bg->GetPlayers())
@@ -51,11 +53,12 @@ uint8 BGTactics::teamTier()
 bool BGTactics::coordinated()
 {
     auto const tier = static_cast<LivingBattleground::TeamTier>(teamTier());
-    return urand(1, 100) <= LivingBattleground::CoordinationChance(tier, LivingArenaMgr::instance().GetSkill(bot));
+    return urand(1, 100) <= LivingBattleground::TeamPlayChance(sPlayerbotAIConfig.LivingWorldEnabled, tier,
+                                                               LivingArenaMgr::instance().GetSkill(bot));
 }
 
 bool BGTactics::slips(uint32 basePercent)
 {
     auto const tier = static_cast<LivingBattleground::TeamTier>(teamTier());
-    return urand(0, 99) < LivingBattleground::SlipChance(tier, basePercent);
+    return urand(0, 99) < LivingBattleground::WanderChance(sPlayerbotAIConfig.LivingWorldEnabled, tier, basePercent);
 }

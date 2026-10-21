@@ -3,6 +3,7 @@
 #include "BattleGroundTactics.h"
 
 #include "BattlegroundWS.h"
+#include "LivingBattlegroundPolicy.h"
 #include "Playerbots.h"
 #include "PositionValue.h"
 #include "ServerFacade.h"
@@ -400,7 +401,8 @@ bool BGTactics::selectObjectiveWS(Battleground* bg, PositionMap& posMap, Positio
     if (!hasFlag && bothFlagsTaken)
     {
         // If both flags taken: coordinated teams send some bots to escort their carrier, the rest hunt the enemy FC
-        if (teamFC && coordinated() && urand(0, 99) < 40)
+        if (teamFC && coordinated() &&
+            urand(0, 99) < LivingBattleground::EscortChance(sPlayerbotAIConfig.LivingWorldEnabled))
         {
             target.Relocate(teamFC->GetPositionX(), teamFC->GetPositionY(), teamFC->GetPositionZ());
             if (ServerFacade::instance().GetDistance2d(bot, teamFC) < 33.0f)

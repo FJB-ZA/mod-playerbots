@@ -56,6 +56,21 @@ constexpr uint32_t SlipChance(TeamTier tier, uint32_t base)
     return tier == TeamTier::Perfect ? 0 : tier == TeamTier::Coordinated ? base / 2 : base;
 }
 
+// Without living battlegrounds there are no tiers: every bot makes the team plays, as upstream did.
+constexpr uint32_t TeamPlayChance(bool tiered, TeamTier tier, uint32_t skill)
+{
+    return tiered ? CoordinationChance(tier, skill) : 100;
+}
+
+// Without living battlegrounds a bot wanders off at the upstream odds.
+constexpr uint32_t WanderChance(bool tiered, TeamTier tier, uint32_t base)
+{
+    return tiered ? SlipChance(tier, base) : base;
+}
+
+// Odds that a bot escorts its own carrier while both flags are out; upstream sent one in five.
+constexpr uint32_t EscortChance(bool tiered) { return tiered ? 40 : 20; }
+
 // One queue window in four sends a team that is nearly all below the players' gear.
 constexpr bool GreenTeam(uint32_t queue, uint64_t gameTimeSeconds)
 {

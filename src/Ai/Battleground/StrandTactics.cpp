@@ -121,9 +121,10 @@ bool BGTactics::selectObjectiveSA(Battleground* bg, PositionMap& posMap, Positio
     uint8 const role = context->GetValue<uint32>("bg role")->Get();
     auto const strategy = static_cast<SABotStrategy>(GetBotStrategyForTeam(bg, team));
     auto const tier = static_cast<LivingBattleground::TeamTier>(teamTier());
-    bool const steady =
-        StableRoll(bot, bg, 1) < LivingBattleground::CoordinationChance(tier, LivingArenaMgr::instance().GetSkill(bot));
-    bool const strays = StableRoll(bot, bg, 2) < LivingBattleground::SlipChance(tier, attacking ? 20 : 15);
+    bool const tiered = sPlayerbotAIConfig.LivingWorldEnabled;
+    bool const steady = StableRoll(bot, bg, 1) <
+                        LivingBattleground::TeamPlayChance(tiered, tier, LivingArenaMgr::instance().GetSkill(bot));
+    bool const strays = StableRoll(bot, bg, 2) < LivingBattleground::WanderChance(tiered, tier, attacking ? 20 : 15);
 
     auto setPos = [&](Position const& p, float spread)
     {

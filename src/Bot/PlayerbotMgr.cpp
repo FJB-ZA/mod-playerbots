@@ -328,9 +328,9 @@ void PlayerbotHolder::HandleBotPackets(WorldSession* session)
         if (opcode == CMSG_BATTLEFIELD_PORT && session->GetPlayer())
         {
             Player* bot = session->GetPlayer();
-            LOG_INFO("playerbots", "Bot {} port result: bg {} far teleport {} queued {} map {} expansion {}",
-                     bot->GetName(), bot->GetBattlegroundId(), bot->IsBeingTeleportedFar(),
-                     bot->InBattlegroundQueue(), bot->GetMapId(), session->Expansion());
+            LOG_DEBUG("playerbots", "Bot {} port result: bg {} far teleport {} queued {} map {} expansion {}",
+                      bot->GetName(), bot->GetBattlegroundId(), bot->IsBeingTeleportedFar(),
+                      bot->InBattlegroundQueue(), bot->GetMapId(), session->Expansion());
         }
     }
 }
