@@ -110,6 +110,30 @@ Unit* EnemyPlayerValue::Calculate()
                 bot->IsWithinLOSInMap(rival) && fabs(bot->GetPositionZ() - rival->GetPositionZ()) < 30.0f)
                 return rival;
         }
+    // Living-world divers go for the backline in battlegrounds: an enemy healer in reach comes before nearer
+    // targets, unless the enemy flag carrier is about.
+    if (grudges && bot->InBattleground() && !controllingVehicle && !controllingCannon && !passenger &&
+        LivingWorldMgr::instance().GetProfile(bot).temperament == LivingWorld::Temperament::Diver)
+    {
+        uint32 const enemyFlag = bot->GetTeamId() == TEAM_HORDE ? 23333 : 23335;
+        Player* healer = nullptr;
+        for (auto const& gTarget : players)
+        {
+            Player* enemy = dynamic_cast<Player*>(botAI->GetUnit(gTarget));
+            if (!enemy || enemy == pVictim)
+                continue;
+            if (enemy->HasAura(enemyFlag))
+            {
+                healer = nullptr;
+                break;
+            }
+            if (!healer && PlayerbotAI::IsHeal(enemy) && bot->IsWithinDist(enemy, maxAggroDistance) &&
+                bot->IsWithinLOSInMap(enemy) && fabs(bot->GetPositionZ() - enemy->GetPositionZ()) < 30.0f)
+                healer = enemy;
+        }
+        if (healer)
+            return healer;
+    }
     for (auto const& gTarget : players)
     {
         Unit* pUnit = botAI->GetUnit(gTarget);
