@@ -108,6 +108,8 @@ public:
     bool LivingWorldEnabled = false;
     bool LivingArenaEnabled = false;
     uint32 LivingArenaSeason = 0;
+    uint32 IndividualProgressionTbcArenaSeason = 1;
+    uint32 IndividualProgressionWotlkArenaSeason = 5;
     uint32 LivingArenaMaxRatingAbove = 150;
     uint32 LivingArenaMaxGearScoreAbove = 5;
     uint32 LivingArenaPartnerSkill = 85;

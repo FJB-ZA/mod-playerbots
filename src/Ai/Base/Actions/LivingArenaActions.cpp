@@ -28,6 +28,7 @@ uint32 constexpr PVP_TRINKET_SPELL = 42292;
 uint32 constexpr EVERY_MAN_FOR_HIMSELF = 59752;
 uint8 constexpr ICON_MOON = 4;
 uint8 constexpr ICON_SKULL = 7;
+uint32 constexpr MAX_LOS_PATHS = 5;
 
 std::array<uint32, 6> constexpr HardImmunities = {642, 45438, 19263, 1022, 5599, 10278};
 std::array<uint32, 11> constexpr Defensives = {31224, 33206, 47585, 48707, 26669, 22812, 48792, 871, 498, 46924, 47788};
@@ -526,6 +527,8 @@ bool LivingArenaLosAction::Execute(Event /*event*/)
 
     bool const healer = PlayerbotAI::IsHeal(bot, true);
     std::vector<Player*> const allies = Allies();
+    // Points are tried nearest first; path searches are the expensive part, so only a few hidden spots get one.
+    uint32 pathsLeft = MAX_LOS_PATHS;
     for (float radius : {5.0f, 8.0f, 12.0f, 16.0f, 20.0f})
     {
         for (int step = 0; step < 16; ++step)
@@ -547,6 +550,8 @@ bool LivingArenaLosAction::Execute(Event /*event*/)
                                                   ally->IsWithinLOS(x, y, z + 2.0f);
                                        }))
                 continue;
+            if (pathsLeft-- == 0)
+                return false;
             PathGenerator path(bot);
             path.CalculatePath(x, y, z, false);
             if (path.GetPathType() & (PATHFIND_NOPATH | PATHFIND_INCOMPLETE))
@@ -644,11 +649,12 @@ void LivingArenaStrategy::InitMultipliers(std::vector<Multiplier*>& multipliers)
 
 void LivingArenaStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
-    triggers.push_back(new TriggerNode("living arena", {NextAction("living arena call", ACTION_RAID + 5.0f),
+    // The call never takes the turn, so like "wake on combat start" it runs first and lets the rest follow.
+    triggers.push_back(new TriggerNode("living arena", {NextAction("living arena call", ACTION_PASSTHROUGH),
                                                         NextAction("living arena trinket", ACTION_EMERGENCY + 6.0f),
                                                         NextAction("living arena interrupt", ACTION_INTERRUPT + 5.0f),
                                                         NextAction("living arena peel", ACTION_INTERRUPT + 3.0f),
-                                                        NextAction("living arena los", ACTION_INTERRUPT + 2.0f),
+                                                        NextAction("living arena los", ACTION_MOVE + 9.5f),
                                                         NextAction("living arena kite", ACTION_MOVE + 8.0f),
                                                         NextAction("living arena cc", ACTION_HIGH + 15.0f),
                                                         NextAction("living arena stealth", ACTION_HIGH + 5.0f)}));

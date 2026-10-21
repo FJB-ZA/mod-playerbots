@@ -14,7 +14,6 @@
 #include "BattlegroundQueue.h"
 #include "CharacterCache.h"
 #include "Chat.h"
-#include "Config.h"
 #include "DBCStores.h"
 #include "DatabaseEnv.h"
 #include "GameTime.h"
@@ -45,6 +44,13 @@
 namespace
 {
 uint32 constexpr PVP_TRINKET_SPELL = 42292;
+// Rank 1 ids: Kick and Pummel ranks share category 88, so a top-rank cast puts these on cooldown too.
+uint32 constexpr SPELL_KICK = 1766;
+uint32 constexpr SPELL_PUMMEL = 6552;
+uint32 constexpr SPELL_MIND_FREEZE = 47528;
+uint32 constexpr SPELL_COUNTERSPELL = 2139;
+uint32 constexpr SPELL_WIND_SHEAR = 57994;
+uint32 constexpr SPELL_SILENCING_SHOT = 34490;
 // A scheduled bot team that hasn't started its match by then is dropped, and benched for a while if a human waited.
 time_t constexpr SHOW_UP_SECONDS = 240;
 time_t constexpr NO_SHOW_BENCH_SECONDS = 600;
@@ -271,9 +277,9 @@ uint32 LivingArenaMgr::ResolveSeason() const
     switch (GetArenaLevel())
     {
         case 80:
-            return sConfigMgr->GetOption<uint32>("IndividualProgression.WotLK.ArenaSeason", 5, false);
+            return sPlayerbotAIConfig.IndividualProgressionWotlkArenaSeason;
         case 70:
-            return sConfigMgr->GetOption<uint32>("IndividualProgression.TBC.ArenaSeason", 1, false);
+            return sPlayerbotAIConfig.IndividualProgressionTbcArenaSeason;
         default:
             return 0;
     }
@@ -587,9 +593,10 @@ bool LivingArenaMgr::FormTeam(uint8 type, std::vector<Player*>& pool)
         for (Player* bot : candidates)
         {
             char const* healer = DefaultHealerSpec(bot->getClass());
-            if (healer && PlayerbotAI::IsHeal(bot, true))
+            int const specNo = healer ? FindSpecNo(bot->getClass(), healer) : -1;
+            if (specNo >= 0 && PlayerbotAI::IsHeal(bot, true))
             {
-                roster.emplace_back(bot, FindSpecNo(bot->getClass(), healer));
+                roster.emplace_back(bot, specNo);
                 break;
             }
         }
@@ -600,9 +607,10 @@ bool LivingArenaMgr::FormTeam(uint8 type, std::vector<Player*>& pool)
             if (roster.size() >= type)
                 break;
             char const* dps = DefaultDpsSpec(bot->getClass());
-            if (bot != roster.front().first && dps && !PlayerbotAI::IsHeal(bot, true) &&
+            int const specNo = dps ? FindSpecNo(bot->getClass(), dps) : -1;
+            if (bot != roster.front().first && specNo >= 0 && !PlayerbotAI::IsHeal(bot, true) &&
                 Chemistry(bot, roster) != NO_CHEMISTRY)
-                roster.emplace_back(bot, FindSpecNo(bot->getClass(), dps));
+                roster.emplace_back(bot, specNo);
         }
         if (roster.size() < type)
             continue;
@@ -1257,24 +1265,24 @@ void LivingArenaMgr::CheckJuke(Player* bot, PlayerbotAI* ai)
         switch (enemy->getClass())
         {
             case CLASS_ROGUE:
-                interrupt = 1766;
+                interrupt = SPELL_KICK;
                 break;
             case CLASS_WARRIOR:
-                interrupt = 6552;
+                interrupt = SPELL_PUMMEL;
                 break;
             case CLASS_DEATH_KNIGHT:
-                interrupt = 47528;
+                interrupt = SPELL_MIND_FREEZE;
                 break;
             case CLASS_MAGE:
-                interrupt = 2139;
+                interrupt = SPELL_COUNTERSPELL;
                 range = 30.0f;
                 break;
             case CLASS_SHAMAN:
-                interrupt = 57994;
+                interrupt = SPELL_WIND_SHEAR;
                 range = 25.0f;
                 break;
             case CLASS_HUNTER:
-                interrupt = 34490;
+                interrupt = SPELL_SILENCING_SHOT;
                 range = 35.0f;
                 break;
             default:
@@ -1540,6 +1548,11 @@ bool LivingArenaMgr::TryPurchase(Player* bot)
     if (bot->CanEquipNewItem(choice.slot, dest, choice.entry->item, true) != EQUIP_ERR_OK)
         return false;
 
+    // Create first: EquipItem merges into an occupied slot, so the old piece must go before the new one goes on.
+    Item* item = Item::CreateItem(choice.entry->item, 1, bot);
+    if (!item)
+        return false;
+
     std::string replaced = "nothing";
     if (Item* old = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, choice.slot))
     {
@@ -1547,11 +1560,13 @@ bool LivingArenaMgr::TryPurchase(Player* bot)
         bot->ModifyMoney(old->GetTemplate()->SellPrice);
         bot->DestroyItem(INVENTORY_SLOT_BAG_0, choice.slot, true);
     }
+    if (item->GetTemplate()->Quality >= ITEM_QUALITY_RARE)
+        bot->AdditionalSavingAddMask(ADDITIONAL_SAVING_INVENTORY_AND_GOLD);
+    bot->ItemAddedQuestCheck(choice.entry->item, 1);
+    bot->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_RECEIVE_EPIC_ITEM, choice.entry->item, 1);
+    item = bot->EquipItem(dest, item, true);
     bot->ModifyHonorPoints(-int32(choice.entry->honor));
     bot->ModifyArenaPoints(-int32(choice.entry->arena));
-    Item* item = bot->EquipNewItem(dest, choice.entry->item, true);
-    if (!item)
-        return false;
     bot->AutoUnequipOffhandIfNeed();
     LOG_INFO("playerbots", "Living arena: {} bought {} for {} honor / {} arena points (rating {}), replacing {}",
              bot->GetName(), item->GetTemplate()->Name1, choice.entry->honor, choice.entry->arena,
