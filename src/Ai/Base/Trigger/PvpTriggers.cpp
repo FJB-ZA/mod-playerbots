@@ -141,6 +141,8 @@ bool PlayerHasFlag::IsCapturingFlag(Player* bot)
         if (RealBgType(bot) == BATTLEGROUND_WS)
         {
             BattlegroundWS* bg = (BattlegroundWS*)bot->GetBattleground();
+            if (!bg)  // the type id outlives the battleground during teardown
+                return false;
             // bot is horde and has ally flag
             if (bot->GetGUID() == bg->GetFlagPickerGUID(TEAM_ALLIANCE))
             {
@@ -175,6 +177,8 @@ bool PlayerHasFlag::IsCapturingFlag(Player* bot)
         if (RealBgType(bot) == BATTLEGROUND_EY)
         {
             BattlegroundEY* bg = (BattlegroundEY*)bot->GetBattleground();
+            if (!bg)
+                return false;
 
             // Check if bot has the flag
             if (bot->GetGUID() == bg->GetFlagPickerGUID())

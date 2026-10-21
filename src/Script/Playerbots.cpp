@@ -608,14 +608,28 @@ public:
                 data.allianceStrategy = urand(0, EY_STRATEGY_MAX - 1);
                 data.hordeStrategy = urand(0, EY_STRATEGY_MAX - 1);
                 break;
+            case BATTLEGROUND_SA:
+                data.allianceStrategy = urand(0, SA_STRATEGY_MAX - 1);
+                data.hordeStrategy = urand(0, SA_STRATEGY_MAX - 1);
+                break;
             default:
                 break;
         }
 
+        BGTactics::RollTiers(bg, data);
+        LOG_INFO("playerbots", "BG {} instance {}: alliance strategy {} tier {}, horde strategy {} tier {}",
+                 uint32(bgType), bg->GetInstanceID(), data.allianceStrategy, data.allianceTier, data.hordeStrategy,
+                 data.hordeTier);
+
+        std::lock_guard<std::mutex> guard(bgStrategiesLock);
         bgStrategies[bg->GetInstanceID()] = data;
     }
 
-    void OnBattlegroundEnd(Battleground* bg, TeamId /*winnerTeam*/) override { bgStrategies.erase(bg->GetInstanceID()); }
+    void OnBattlegroundEnd(Battleground* bg, TeamId /*winnerTeam*/) override
+    {
+        std::lock_guard<std::mutex> guard(bgStrategiesLock);
+        bgStrategies.erase(bg->GetInstanceID());
+    }
 };
 
 // Workaround for missing InitEnabledHooksIfNeeded for new BattlefieldScript in ScriptMgr

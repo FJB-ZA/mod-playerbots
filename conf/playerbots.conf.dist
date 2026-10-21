@@ -1687,6 +1687,7 @@ Playerbots.RandomBotAutoJoinBG = 0
 #   - Alterac Valley   (AV): 0=51-60, 1=61-70, 2=71-79, 3=80                                        (Default: 3)
 #   - Eye of the Storm (EY): 0=61-69, 1=70-79, 2=80                                                 (Default: 2)
 #   - Isle of Conquest (IC): 0=71-79, 1=80                                                          (Default: 1)
+#   - Strand of the Ancients (SA): 0=71-79, 1=80                                                    (Default: 1)
 # - Multiple BG brackets can be specified as a comma-separated list (e.g., "0,2,5"). Not applicable for Rated Arena.
 #   - Rated Arena:           0=10-14, 1=15-19, 2=20-24, ..., 13=75-79, 14=80-84                     (Default: 14)
 #
@@ -1704,11 +1705,13 @@ Playerbots.RandomBotAutoJoinBG = 0
 # Playerbots.RandomBotAutoJoinAVBrackets = 0,1,2,3
 # Playerbots.RandomBotAutoJoinEYBrackets = 0,1,2
 # Playerbots.RandomBotAutoJoinICBrackets = 0,1
+# Playerbots.RandomBotAutoJoinSABrackets = 0,1
 Playerbots.RandomBotAutoJoinWSBrackets = 7
 Playerbots.RandomBotAutoJoinABBrackets = 6
 Playerbots.RandomBotAutoJoinAVBrackets = 3
 Playerbots.RandomBotAutoJoinEYBrackets = 2
 Playerbots.RandomBotAutoJoinICBrackets = 1
+Playerbots.RandomBotAutoJoinSABrackets = 1
 
 # Battlegrounds battles count (per bracket):
 Playerbots.RandomBotAutoJoinBGWSCount = 1
@@ -1716,6 +1719,7 @@ Playerbots.RandomBotAutoJoinBGABCount = 1
 Playerbots.RandomBotAutoJoinBGAVCount = 0
 Playerbots.RandomBotAutoJoinBGEYCount = 1
 Playerbots.RandomBotAutoJoinBGICCount = 0
+Playerbots.RandomBotAutoJoinBGSACount = 0
 
 # Arena bracket (single bracket only):
 # Custom code changes are required for lower-level arena brackets to function properly.

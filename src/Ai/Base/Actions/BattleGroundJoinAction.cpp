@@ -13,6 +13,7 @@
 #include "GameTime.h"
 #include "GroupMgr.h"
 #include "LivingArenaMgr.h"
+#include "LivingBattlegroundPolicy.h"
 #include "LivingWorldMgr.h"
 #include "LivingWorldPolicy.h"
 #include "RandomPlayerbotMgr.h"
@@ -23,7 +24,8 @@
 namespace
 {
 // Living-world bots fill a match with real players in it according to a gear-score spread
-// around those players (see LivingWorld::GearMatchChance).
+// around those players: teammates close to them (LivingWorld::GearMatchChance), opponents
+// mostly greener (LivingBattleground::EnemyGearChance).
 bool GearFitsQueue(Player* bot, BattlegroundQueueTypeId queueTypeId, BattlegroundBracketId bracketId)
 {
     if (!LivingWorldMgr::instance().IsEnabled(bot))
@@ -31,12 +33,26 @@ bool GearFitsQueue(Player* bot, BattlegroundQueueTypeId queueTypeId, Battlegroun
     BattlegroundInfo const& data = sRandomPlayerbotMgr.BattlegroundData[queueTypeId][bracketId];
     if (!data.playerGearScoreCount)
         return true;  // bots-only match: nothing to match against
-    uint32 const playerGearScore = static_cast<uint32>(data.playerGearScoreSum / data.playerGearScoreCount);
-    uint32 const chance = LivingWorld::GearMatchChance(PlayerbotAI::GetMixedGearScore(bot, false, false),
-                                                       playerGearScore,
-                                                       LivingWorldMgr::instance().GetProfile(bot).temperament);
-    return LivingWorld::GearMatchRoll(bot->GetGUID().GetCounter(), queueTypeId,
-                                      GameTime::GetGameTime().count(), chance);
+    TeamId const team = bot->GetTeamId();
+    TeamId const enemy = team == TEAM_ALLIANCE ? TEAM_HORDE : TEAM_ALLIANCE;
+    uint32 const botGearScore = PlayerbotAI::GetMixedGearScore(bot, false, false);
+    auto const temperament = LivingWorldMgr::instance().GetProfile(bot).temperament;
+    uint64 const now = GameTime::GetGameTime().count();
+    uint32 chance;
+    if (!data.teamGearScoreCount[team] && data.teamGearScoreCount[enemy])
+    {
+        uint32 const enemyGearScore =
+            static_cast<uint32>(data.teamGearScoreSum[enemy] / data.teamGearScoreCount[enemy]);
+        chance = LivingBattleground::EnemyGearChance(botGearScore, enemyGearScore,
+                                                     LivingBattleground::GreenTeam(queueTypeId, now), temperament);
+    }
+    else
+    {
+        uint32 const count = data.teamGearScoreCount[team] ? data.teamGearScoreCount[team] : data.playerGearScoreCount;
+        uint64 const sum = data.teamGearScoreCount[team] ? data.teamGearScoreSum[team] : data.playerGearScoreSum;
+        chance = LivingWorld::GearMatchChance(botGearScore, static_cast<uint32>(sum / count), temperament);
+    }
+    return LivingWorld::GearMatchRoll(bot->GetGUID().GetCounter(), queueTypeId, now, chance);
 }
 }  // namespace
 
@@ -736,6 +752,10 @@ bool BGStatusAction::LeaveBG(PlayerbotAI* botAI)
     botAI->ChangeStrategy("-eye", BOT_STATE_NON_COMBAT);
     botAI->ChangeStrategy("-isle", BOT_STATE_COMBAT);
     botAI->ChangeStrategy("-isle", BOT_STATE_NON_COMBAT);
+    botAI->ChangeStrategy("-alterac", BOT_STATE_COMBAT);
+    botAI->ChangeStrategy("-alterac", BOT_STATE_NON_COMBAT);
+    botAI->ChangeStrategy("-strand", BOT_STATE_COMBAT);
+    botAI->ChangeStrategy("-strand", BOT_STATE_NON_COMBAT);
     botAI->ChangeStrategy("-Battleground", BOT_STATE_COMBAT);
     botAI->ChangeStrategy("-Battleground", BOT_STATE_NON_COMBAT);
     botAI->ChangeStrategy("-arena", BOT_STATE_COMBAT);
@@ -976,7 +996,7 @@ bool BGStatusAction::Execute(Event event)
         else
             timer = TIME_TO_AUTOREMOVE + IN_MILLISECONDS * (bg->GetMaxPlayersPerTeam() * 8);
 
-        if (Time2 > timer && isArena)  // disabled for BG
+        if (Time2 > timer)
             leaveQ = true;
 
         if (leaveQ && ((bot->GetGroup() && bot->GetGroup()->IsLeader(bot->GetGUID())) ||
@@ -984,11 +1004,13 @@ bool BGStatusAction::Execute(Event event)
         {
             //TeamId teamId = bot->GetTeamId(); //not used, line marked for removal.
             bool realPlayers = false;
-            if (isRated)
-                realPlayers = sRandomPlayerbotMgr.BattlegroundData[queueTypeId][bracketId].ratedArenaPlayerCount > 0;
+            auto const& queueInfo = sRandomPlayerbotMgr.BattlegroundData[queueTypeId][bracketId];
+            if (!isArena)  // a battleground that can't fill holds its bots forever unless a player waits in it
+                realPlayers = queueInfo.bgAlliancePlayerCount + queueInfo.bgHordePlayerCount > 0;
+            else if (isRated)
+                realPlayers = queueInfo.ratedArenaPlayerCount > 0;
             else
-                realPlayers =
-                    sRandomPlayerbotMgr.BattlegroundData[queueTypeId][bracketId].skirmishArenaPlayerCount > 0;
+                realPlayers = queueInfo.skirmishArenaPlayerCount > 0;
 
             if (realPlayers)
                 return false;
