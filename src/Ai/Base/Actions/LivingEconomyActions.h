@@ -34,7 +34,9 @@ enum class LivingSupplyKind
 {
     Reagent,
     Tool,
-    FishingPole
+    FishingPole,
+    Recipe,
+    Vellum
 };
 
 struct LivingEconomyPlan

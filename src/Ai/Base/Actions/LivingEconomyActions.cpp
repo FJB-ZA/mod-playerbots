@@ -269,8 +269,93 @@ LivingEconomyPlan ToolPlan(Player* player, Offers const& offers)
     return best;
 }
 
+// The spell a recipe item teaches, or 0 for any other item.
+uint32 TaughtSpell(ItemTemplate const* item)
+{
+    if (item->Class != ITEM_CLASS_RECIPE)
+        return 0;
+    for (auto const& spell : item->Spells)
+        if (spell.SpellTrigger == ITEM_SPELLTRIGGER_LEARN_SPELL_ID && spell.SpellId > 0)
+            return uint32(spell.SpellId);
+    return 0;
+}
+
+// The cheapest nearby recipe for one of the bot's own professions that the era allows, that it can learn
+// now and that still gives skill-ups, so new recipes keep levelling the profession.
+LivingEconomyPlan RecipePlan(Player* player, Offers const& offers)
+{
+    LivingEconomyPlan best;
+    uint32 cheapest = UINT32_MAX;
+    for (auto const& [entry, offer] : offers)
+    {
+        auto const* item = sObjectMgr->GetItemTemplate(entry);
+        uint32 const taught = item ? TaughtSpell(item) : 0;
+        if (!taught || offer.price >= cheapest || player->HasSpell(taught) || player->HasItemCount(entry, 1, true) ||
+            !LivingWorld::RecipeWithinEra(item->RequiredSkillRank, sPlayerbotAIConfig.RandomBotMaxLevel) ||
+            player->CanUseItem(item) != EQUIP_ERR_OK || !ItemUsageValue::SpellGivesSkillUp(taught, player) ||
+            !LivingWorld::CanAffordTraining(player->GetMoney(), offer.price, player->GetLevel()))
+            continue;
+        best = {offer.vendor, {}, entry, offer.slot, 1, taught, LivingSupplyKind::Recipe};
+        cheapest = offer.price;
+    }
+    return best;
+}
+
+// Uses one recipe from the bags that the bot can learn, as a player would. A bought recipe is learned at
+// once; one whose learning cast failed is retried after the next purchase.
+void LearnOwnedRecipe(Player* player)
+{
+    for (Item* item : BagItems(player))
+    {
+        ItemTemplate const* proto = item->GetTemplate();
+        uint32 const taught = TaughtSpell(proto);
+        if (!taught || player->HasSpell(taught) || player->CanUseItem(proto) != EQUIP_ERR_OK ||
+            !LivingWorld::RecipeWithinEra(proto->RequiredSkillRank, sPlayerbotAIConfig.RandomBotMaxLevel))
+            continue;
+        SpellCastTargets targets;
+        targets.SetUnitTarget(player);
+        player->CastItemUseSpell(item, targets, 1, 0);
+        return;
+    }
+}
+
+// A trader that could make a scroll right now but has no vellum for it buys the cheapest fitting one nearby.
+LivingEconomyPlan VellumPlan(Player* player, Offers const& offers)
+{
+    LivingEconomyPlan best;
+    uint32 cheapest = UINT32_MAX;
+    for (auto const& [id, learned] : player->GetSpellMap())
+    {
+        if (!learned || learned->State == PLAYERSPELL_REMOVED || !learned->Active)
+            continue;
+        auto const* spell = sSpellMgr->GetSpellInfo(id);
+        if (!spell || !LivingProfessions::WantsScroll(player, spell) ||
+            !LivingProfessions::IsProfessionRecipe(player, spell) || !LivingProfessions::HasReagents(player, spell) ||
+            LivingProfessions::ScrollVellum(player, spell))
+            continue;
+        for (auto const& [entry, offer] : offers)
+        {
+            auto const* item = sObjectMgr->GetItemTemplate(entry);
+            if (!item || offer.price >= cheapest || !LivingProfessions::VellumFits(item, spell) ||
+                !LivingWorld::CanAffordTraining(player->GetMoney(), offer.price, player->GetLevel()))
+                continue;
+            best = {offer.vendor, {}, entry, offer.slot, 1, id, LivingSupplyKind::Vellum};
+            cheapest = offer.price;
+        }
+    }
+    return best;
+}
+
 bool StillNeedsSupply(Player* player, LivingEconomyPlan const& plan, ItemTemplate const* item)
 {
+    if (plan.supplyKind == LivingSupplyKind::Vellum)
+    {
+        auto const* spell = sSpellMgr->GetSpellInfo(plan.recipe);
+        return spell && player->HasSpell(plan.recipe) && LivingProfessions::WantsScroll(player, spell) &&
+               !LivingProfessions::ScrollVellum(player, spell) && LivingProfessions::VellumFits(item, spell);
+    }
+    if (plan.supplyKind == LivingSupplyKind::Recipe)
+        return !player->HasSpell(plan.recipe) && !player->HasItemCount(plan.entry, 1, true);
     if (plan.supplyKind == LivingSupplyKind::FishingPole)
         return player->HasSkill(SKILL_FISHING) && !HasFishingPole(player);
     auto const* recipe = sSpellMgr->GetSpellInfo(plan.recipe);
@@ -293,6 +378,12 @@ LivingEconomyPlan SupplyPlan(PlayerbotAI* ai)
     auto const tool = ToolPlan(player, offers);
     if (!tool.target.IsEmpty())
         return tool;
+    auto const recipe = RecipePlan(player, offers);
+    if (!recipe.target.IsEmpty())
+        return recipe;
+    auto const vellum = VellumPlan(player, offers);
+    if (!vellum.target.IsEmpty())
+        return vellum;
     LivingEconomyPlan best;
     uint32 bestScore = 0;
     for (auto const& [id, learned] : player->GetSpellMap())
@@ -760,5 +851,8 @@ bool LivingEconomyAction::Execute(Event /*event*/)
     // This plan uses the NPC's ordinary inventory, not a previous custom gossip vendor.
     bot->GetSession()->SetCurrentVendor(0);
     bot->BuyItemFromVendorSlot(plan.target, plan.slot, plan.entry, static_cast<uint8>(bundles), NULL_BAG, NULL_SLOT);
-    return bot->GetItemCount(plan.entry, false) > owned;
+    if (bot->GetItemCount(plan.entry, false) <= owned)
+        return false;
+    LearnOwnedRecipe(bot);
+    return true;
 }

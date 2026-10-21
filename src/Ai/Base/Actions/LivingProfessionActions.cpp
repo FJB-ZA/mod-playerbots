@@ -7,6 +7,7 @@
 #include "LivingProfessionActions.h"
 
 #include "ItemUsageValue.h"
+#include "LivingEconomyActions.h"
 #include "LivingProfessionPolicy.h"
 #include "LivingWorldMgr.h"
 #include "PlayerbotFactory.h"
@@ -99,6 +100,42 @@ bool NeedsProduct(Player* player, SpellInfo const* spell)
     return creates;
 }
 
+// Scrolls give no skill-ups, so only traders make them, as stock to sell (the same cap as crafted goods).
+bool WantsScroll(Player* player, SpellInfo const* spell)
+{
+    if (LivingWorld::Expansion(sPlayerbotAIConfig.RandomBotMaxLevel) < 2 ||
+        LivingWorldMgr::instance().GetProfile(player).motivation != LivingWorld::Motivation::Trader)
+        return false;
+    for (auto const& effect : spell->GetEffects())
+        if (effect.IsEffect(SPELL_EFFECT_ENCHANT_ITEM) && effect.ItemType)
+            if (auto const* scroll = sObjectMgr->GetItemTemplate(effect.ItemType))
+                return player->GetItemCount(scroll->ItemId, true) < uint64(scroll->GetMaxStackSize()) * 4;
+    return false;
+}
+
+// The core's own rules for an enchant on vellum: armour or weapon vellum by the enchant's item class, and a
+// vellum whose level holds the enchant's.
+bool VellumFits(ItemTemplate const* vellum, SpellInfo const* spell)
+{
+    bool const kind = (spell->EquippedItemClass == ITEM_CLASS_ARMOR && vellum->IsArmorVellum()) ||
+                      (spell->EquippedItemClass == ITEM_CLASS_WEAPON && vellum->IsWeaponVellum());
+    uint32 const level = vellum->RequiredLevel ? vellum->RequiredLevel : vellum->ItemLevel;
+    return kind && (spell->HasAttribute(SPELL_ATTR2_ALLOW_LOW_LEVEL_BUFF) || level >= spell->BaseLevel);
+}
+
+// The lowest owned vellum that holds the enchant, when the trader wants that scroll.
+Item* ScrollVellum(Player* player, SpellInfo const* spell)
+{
+    if (!WantsScroll(player, spell))
+        return nullptr;
+    Item* best = nullptr;
+    for (Item* item : BagItems(player))
+        if (VellumFits(item->GetTemplate(), spell) &&
+            (!best || item->GetTemplate()->ItemLevel < best->GetTemplate()->ItemLevel))
+            best = item;
+    return best;
+}
+
 Item* EnchantTarget(Player* player, SpellInfo const* spell)
 {
     for (auto const& effect : spell->GetEffects())
@@ -160,15 +197,21 @@ LivingCraftPlan LivingCraftValue::Calculate()
         if (!spell || !IsProfessionRecipe(bot, spell) || !HasReagents(bot, spell))
             continue;
         Item* target = nullptr;
+        bool scroll = false;
         if (!NeedsProduct(bot, spell))
         {
             target = EnchantTarget(bot, spell);
+            if (!target)
+            {
+                target = ScrollVellum(bot, spell);
+                scroll = target != nullptr;
+            }
             if (!target)
                 continue;
         }
         if (!botAI->CanCastSpell(id, bot, true, target))
             continue;
-        uint32 const score = (ItemUsageValue::SpellGivesSkillUp(id, bot) ? 100000U : 0U) +
+        uint32 const score = (!scroll && ItemUsageValue::SpellGivesSkillUp(id, bot) ? 100000U : 0U) +
                              LivingWorld::Mix(bot->GetGUID().GetCounter() ^ id) % 10000U + 1;
         if (score > best)
         {
@@ -222,7 +265,8 @@ bool LivingCraftAction::Execute(Event /*event*/)
     auto const* spell = sSpellMgr->GetSpellInfo(plan.spell);
     Item* target = plan.item.IsEmpty() ? nullptr : bot->GetItemByGuid(plan.item);
     if (!spell || !HasReagents(bot, spell) || (!plan.item.IsEmpty() && !target) ||
-        (target ? EnchantTarget(bot, spell) != target : !NeedsProduct(bot, spell)))
+        (target ? EnchantTarget(bot, spell) != target && ScrollVellum(bot, spell) != target
+                : !NeedsProduct(bot, spell)))
         return false;
     return botAI->CastSpell(plan.spell, bot, target);
 }

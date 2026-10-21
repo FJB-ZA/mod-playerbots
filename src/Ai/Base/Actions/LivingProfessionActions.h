@@ -20,6 +20,11 @@ bool CanWork(PlayerbotAI* ai);
 bool WithinEra(Trainer::Spell const& lesson);
 bool IsProfessionRecipe(Player* player, SpellInfo const* spell);
 bool NeedsProduct(Player* player, SpellInfo const* spell);
+bool HasReagents(Player* player, SpellInfo const* spell);
+// Wrath enchanting scrolls: a trader casts an enchant on vellum to make a scroll it can sell.
+bool WantsScroll(Player* player, SpellInfo const* spell);
+bool VellumFits(ItemTemplate const* vellum, SpellInfo const* spell);
+Item* ScrollVellum(Player* player, SpellInfo const* spell);
 }  // namespace LivingProfessions
 
 struct LivingTrainingPlan
