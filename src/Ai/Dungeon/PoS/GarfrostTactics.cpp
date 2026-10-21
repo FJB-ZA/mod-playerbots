@@ -153,10 +153,10 @@ bool GarfrostTakeCoverAction::Execute(Event /*event*/)
                 (tank->GetExactDist2d(x, y) > PitOfSaron::HealerTankRange || !tank->IsWithinLOS(x, y, z + 1.0f)))
                 continue;
 
-            float score = PitOfSaron::CoverScore(bot->GetExactDist2d(x, y), GARFROST_ROOM_MIDDLE.GetExactDist2d(x, y),
-                                                 groupHealer != nullptr,
-                                                 groupHealer ? groupHealer->GetExactDist2d(x, y) : 0.0f,
-                                                 groupHealer && groupHealer->IsWithinLOS(x, y, z + 1.0f));
+            float score =
+                PitOfSaron::CoverScore(bot->GetExactDist2d(x, y), GARFROST_ROOM_MIDDLE.GetExactDist2d(x, y),
+                                       groupHealer != nullptr, groupHealer ? groupHealer->GetExactDist2d(x, y) : 0.0f,
+                                       groupHealer && groupHealer->IsWithinLOS(x, y, z + 1.0f));
             if (score < bestScore)
             {
                 bestScore = score;
@@ -214,7 +214,7 @@ bool GarfrostDodgeSaroniteAction::Execute(Event /*event*/)
     float bestX = 0.0f, bestY = 0.0f, bestZ = 0.0f;
     for (int i = 0; i < PitOfSaron::SaroniteDirections; ++i)
     {
-        float angle = float(i) * 2.0f * float(M_PI) / float(PitOfSaron::SaroniteDirections);
+        float angle = float(i) * 2.0f * DungeonTactics::Pi / float(PitOfSaron::SaroniteDirections);
         float x = centerX + radius * std::cos(angle);
         float y = centerY + radius * std::sin(angle);
         float z = bot->GetPositionZ();

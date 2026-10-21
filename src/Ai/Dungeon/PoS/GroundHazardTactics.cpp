@@ -19,7 +19,7 @@ std::vector<PitOfSaron::Hazard> FindPoSGroundHazards(WorldObject* searcher)
     std::list<WorldObject*> objects;
     Acore::AllWorldObjectsInRange check(searcher, PitOfSaron::HazardScanRange);
     Acore::WorldObjectListSearcher<Acore::AllWorldObjectsInRange> list(searcher, objects, check,
-                                                                        GRID_MAP_TYPE_MASK_DYNAMICOBJECT);
+                                                                       GRID_MAP_TYPE_MASK_DYNAMICOBJECT);
     Cell::VisitObjects(searcher, list, PitOfSaron::HazardScanRange);
 
     std::vector<PitOfSaron::Hazard> hazards;
@@ -90,7 +90,7 @@ bool PoSAvoidGroundHazardAction::Execute(Event /*event*/)
     {
         for (int i = 0; i < PitOfSaron::HazardDirections; ++i)
         {
-            float angle = float(i) * 2.0f * float(M_PI) / float(PitOfSaron::HazardDirections);
+            float angle = float(i) * 2.0f * DungeonTactics::Pi / float(PitOfSaron::HazardDirections);
             float x = bot->GetPositionX() + step * std::cos(angle);
             float y = bot->GetPositionY() + step * std::sin(angle);
             float z = bot->GetPositionZ();

@@ -58,8 +58,7 @@ constexpr float WellAvoidRadius = 6.0f;
 constexpr float WailingSafeArc = 70.0f * Pi / 180.0f;
 constexpr std::array<float, 5> BehindOffsets = {0.0f, 0.25f, -0.25f, 0.45f, -0.45f};
 // Wider rings only when wells cluster: the multiplier blocks every other action while the bot stands in one
-constexpr std::array<float, 3> WellExitRadii = {WellAvoidRadius + 1.5f, WellAvoidRadius + 4.0f,
-                                                WellAvoidRadius + 7.0f};
+constexpr std::array<float, 3> WellExitRadii = {WellAvoidRadius + 1.5f, WellAvoidRadius + 4.0f, WellAvoidRadius + 7.0f};
 constexpr int WellExitPoints = 16;
 // Inside the ring the well action steps to, so a bot that stepped out can still chase
 constexpr float WellGuardRadius = WellAvoidRadius + 1.0f;

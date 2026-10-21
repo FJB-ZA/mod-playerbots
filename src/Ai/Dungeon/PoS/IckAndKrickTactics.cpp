@@ -171,7 +171,7 @@ bool IckAndKrickAction::ExplosiveBarrage(Unit* boss)
     float bestX = 0.0f, bestY = 0.0f;
     for (int i = 0; i < PitOfSaron::BarrageDirections; ++i)
     {
-        float angle = float(i) * 2.0f * float(M_PI) / float(PitOfSaron::BarrageDirections);
+        float angle = float(i) * 2.0f * DungeonTactics::Pi / float(PitOfSaron::BarrageDirections);
         float x = bot->GetPositionX() + PitOfSaron::BarrageStepDistance * std::cos(angle);
         float y = bot->GetPositionY() + PitOfSaron::BarrageStepDistance * std::sin(angle);
         if (!bot->IsWithinLOS(x, y, bot->GetPositionZ()))

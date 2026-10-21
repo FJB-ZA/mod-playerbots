@@ -13,5 +13,5 @@ float MarwynSharedSufferingMultiplier::GetValue(Action* action)
 
     Unit* target = partyCure ? action->GetTarget() : bot;
     bool suffering = target && (target->HasAura(SPELL_SHARED_SUFFERING) || target->HasAura(SPELL_SHARED_SUFFERING_HC));
-    return HallsOfReflection::SharedSufferingAllows(true, suffering) ? 1.0f : 0.0f;
+    return HallsOfReflection::SharedSufferingAllowsCure(suffering) ? 1.0f : 0.0f;
 }

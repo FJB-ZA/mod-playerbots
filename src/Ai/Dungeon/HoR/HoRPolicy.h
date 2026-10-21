@@ -6,10 +6,7 @@
 namespace HallsOfReflection
 {
 // Dispelling Shared Suffering splits its remaining damage over the whole party; groups heal through it instead.
-constexpr bool SharedSufferingAllows(bool cure, bool targetHasSharedSuffering)
-{
-    return !cure || !targetHasSharedSuffering;
-}
+constexpr bool SharedSufferingAllowsCure(bool targetHasSharedSuffering) { return !targetHasSharedSuffering; }
 }  // namespace HallsOfReflection
 
 #endif

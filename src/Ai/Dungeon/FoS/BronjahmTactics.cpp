@@ -31,10 +31,7 @@ bool MoveFromBronjahmTrigger::IsActive()
     return boss && boss->FindCurrentSpellBySpellId(SPELL_CORRUPT_SOUL) && bot->HasAura(SPELL_CORRUPT_SOUL);
 }
 
-bool SwitchToSoulFragment::IsActive()
-{
-    return AI_VALUE2(Unit*, "find target", "bronjahm") && SoulFragmentAlive(bot);
-}
+bool SwitchToSoulFragment::IsActive() { return AI_VALUE2(Unit*, "find target", "bronjahm") && SoulFragmentAlive(bot); }
 
 bool BronjahmPositionTrigger::IsActive()
 {
@@ -106,7 +103,7 @@ bool BronjahmGroupPositionAction::Execute(Event /*event*/)
         if (ForgeOfSouls::SoulBetweenTankAndBoss(bot->GetExactDist2d(boss), soulToBoss, soul->GetExactDist2d(bot)))
         {
             // Step behind the boss as seen from the soul, so it has to pass him to reach the tank
-            float angle = Position::NormalizeOrientation(boss->GetAngle(soul) + float(M_PI));
+            float angle = Position::NormalizeOrientation(boss->GetAngle(soul) + DungeonTactics::Pi);
             float x = boss->GetPositionX() + ForgeOfSouls::BehindBossStep * std::cos(angle);
             float y = boss->GetPositionY() + ForgeOfSouls::BehindBossStep * std::sin(angle);
             return MoveTo(bot->GetMapId(), x, y, boss->GetPositionZ(), false, false, false, true,

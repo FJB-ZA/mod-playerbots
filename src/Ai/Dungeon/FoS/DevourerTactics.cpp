@@ -153,7 +153,7 @@ bool DevourerWailingSoulsAction::Execute(Event /*event*/)
     }
 
     // A Wailing tick (~4.9k every 0.5 s) hurts more than a well tick (~3k per second): take a well spot if nothing else
-    float behind = facing + float(M_PI);
+    float behind = facing + DungeonTactics::Pi;
     for (float offset : ForgeOfSouls::BehindOffsets)
     {
         float x = boss->GetPositionX() + distance * std::cos(behind + offset);
@@ -188,7 +188,8 @@ bool DevourerWellOfSoulsAction::DragBossClear(Unit* boss)
     if (!bossWell)
         return false;
 
-    float angle = bossWell->GetExactDist2d(bot) > 0.5f ? bossWell->GetAngle(bot) : bot->GetOrientation() + float(M_PI);
+    float angle =
+        bossWell->GetExactDist2d(bot) > 0.5f ? bossWell->GetAngle(bot) : bot->GetOrientation() + DungeonTactics::Pi;
     float distance = ForgeOfSouls::WellDragDistance(boss->GetCombatReach());
     float x = bossWell->GetPositionX() + distance * std::cos(angle);
     float y = bossWell->GetPositionY() + distance * std::sin(angle);
@@ -214,7 +215,7 @@ bool DevourerWellOfSoulsAction::StepOut(Unit* boss, Unit* well)
 
         for (int i = 0; i < ForgeOfSouls::WellExitPoints; ++i)
         {
-            float angle = float(i) * 2.0f * float(M_PI) / float(ForgeOfSouls::WellExitPoints);
+            float angle = float(i) * 2.0f * DungeonTactics::Pi / float(ForgeOfSouls::WellExitPoints);
             float x = well->GetPositionX() + radius * std::cos(angle);
             float y = well->GetPositionY() + radius * std::sin(angle);
             if (FindWellOfSouls(bot, x, y))
