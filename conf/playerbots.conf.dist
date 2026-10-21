@@ -11,6 +11,11 @@
 # Requires the living_profiles DB update.
 Playerbots.LivingWorld.Enabled = 0
 
+# Random bots well above a real player's level accept that player's group invite instead of refusing it
+# for the level or gear-score gap, and fight at the player's level through the core's mentor mode.
+# Needs the solo-wow core fork with MentorMode.Enable = 1 (its default) in worldserver.conf.
+Playerbots.MentorInvites = 0
+
 # Overview
 # "Randombot": randomly generated bots that log in separately from players and populate the world. Randombots may automatically grind, quest, level up, and upgrade equipment and can be invited to groups and given commands.
 # "AddClass bot": bots from the AddClassAccountPoolSize accounts. They are used for quickly adding a leveled and geared bot of any class to your party. They are recommended for a quick formation of a party.

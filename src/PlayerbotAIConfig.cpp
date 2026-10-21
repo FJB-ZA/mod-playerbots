@@ -759,6 +759,7 @@ bool PlayerbotAIConfig::Initialize()
     SelfBotLevel = sConfigMgr->GetOption<int32>("Playerbots.SelfBotLevel", 1);
 
     LivingWorldEnabled = sConfigMgr->GetOption<bool>("Playerbots.LivingWorld.Enabled", false);
+    MentorInvites = sConfigMgr->GetOption<bool>("Playerbots.MentorInvites", false);
     RandomPlayerbotFactory::CreateRandomBots();
     if (World::IsStopped())
     {

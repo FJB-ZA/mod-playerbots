@@ -106,6 +106,7 @@ public:
 
     bool Enabled;
     bool LivingWorldEnabled = false;
+    bool MentorInvites = false;
     bool DisabledWithoutRealPlayer;
     bool EnableICCBuffs;
     bool AllowAccountBots, AllowGuildBots, AllowTrustedAccountBots;
