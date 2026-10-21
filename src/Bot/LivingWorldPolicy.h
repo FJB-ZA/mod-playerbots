@@ -127,6 +127,24 @@ constexpr uint32_t XpPacePercent(Motivation motivation)
         default: return 100;
     }
 }
+
+constexpr uint32_t BattlegroundRole(Temperament temperament, uint32_t roll)
+{
+    roll %= 10;
+    switch (temperament)
+    {
+        case Temperament::Defender:
+            return roll < 7 ? roll % 3 : roll;
+        case Temperament::Turtle:
+            return roll % 3;
+        case Temperament::Diver:
+            return roll < 7 ? 8 + roll % 2 : roll;
+        case Temperament::Skirmisher:
+            return roll < 7 ? 4 + roll % 4 : roll;
+        default:
+            return roll;
+    }
+}
 }  // namespace LivingWorld
 
 #endif

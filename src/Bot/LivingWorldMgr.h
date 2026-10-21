@@ -25,6 +25,7 @@ public:
     LivingWorld::Profile GetProfile(Player* player);
     void MarkInitialized(Player* player);
     uint32 GetActivityWeight(Player* player, NewRpgStatus status, uint32 baseline);
+    uint32 GetBattlegroundRole(Player* player, uint32 roll);
     uint32 GetLevelCap(Player* player);
     void LimitExperience(Player* player, uint32& amount);
 

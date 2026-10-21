@@ -5,11 +5,13 @@
  */
 
 #include "BattleGroundJoinAction.h"
+
 #include "ArenaTeam.h"
 #include "ArenaTeamMgr.h"
 #include "BattlegroundMgr.h"
 #include "Event.h"
 #include "GroupMgr.h"
+#include "LivingWorldMgr.h"
 #include "PlayerbotAI.h"
 #include "Playerbots.h"
 #include "PositionValue.h"
@@ -914,7 +916,8 @@ bool BGStatusAction::Execute(Event event)
                         // properly, set bg for "bg strategy check" to fix that
                         botAI->ChangeStrategy("+bg", BOT_STATE_NON_COMBAT);
                     }
-                    context->GetValue<uint32>("bg role")->Set(urand(0, 9));
+                    context->GetValue<uint32>("bg role")->Set(
+                        LivingWorldMgr::instance().GetBattlegroundRole(bot, urand(0, 9)));
                     PositionMap& posMap = context->GetValue<PositionMap&>("position")->Get();
                     PositionInfo pos = context->GetValue<PositionMap&>("position")->Get()["bg objective"];
                     pos.Reset();
@@ -1036,7 +1039,7 @@ bool BGStatusAction::Execute(Event event)
             // set bg for "bg strategy check" to fix that
             botAI->ChangeStrategy("+bg", BOT_STATE_NON_COMBAT);
         }
-        context->GetValue<uint32>("bg role")->Set(urand(0, 9));
+        context->GetValue<uint32>("bg role")->Set(LivingWorldMgr::instance().GetBattlegroundRole(bot, urand(0, 9)));
         PositionMap& posMap = context->GetValue<PositionMap&>("position")->Get();
         PositionInfo pos = context->GetValue<PositionMap&>("position")->Get()["bg objective"];
         PositionInfo pos2 = context->GetValue<PositionMap&>("position")->Get()["bg siege"];

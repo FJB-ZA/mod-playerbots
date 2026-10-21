@@ -148,6 +148,13 @@ uint32 LivingWorldMgr::GetActivityWeight(Player* player, NewRpgStatus status, ui
     return LivingWorld::Weight(GetProfile(player).motivation, activity, baseline);
 }
 
+uint32 LivingWorldMgr::GetBattlegroundRole(Player* player, uint32 roll)
+{
+    if (!IsEnabled(player))
+        return roll;
+    return LivingWorld::BattlegroundRole(GetProfile(player).temperament, roll);
+}
+
 uint32 LivingWorldMgr::GetLevelCap(Player* player)
 {
     uint32 const eraCap = sPlayerbotAIConfig.RandomBotMaxLevel;
