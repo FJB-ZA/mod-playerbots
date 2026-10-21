@@ -728,6 +728,21 @@ bool LivingArenaMgr::IsTeamInvited(ArenaTeam* team, uint8 type) const
     return queue.GetPlayerGroupInfoData(team->GetCaptain(), &info) && info.IsInvitedToBGInstanceGUID;
 }
 
+bool LivingArenaMgr::IsRosterLocked(ArenaTeam* team, ObjectGuid member) const
+{
+    if (team->IsFighting())
+        return true;
+    BattlegroundQueue& queue =
+        sBattlegroundMgr->GetBattlegroundQueue(BattlegroundMgr::BGQueueTypeId(BATTLEGROUND_AA, team->GetType()));
+    for (ObjectGuid guid : {team->GetCaptain(), member})
+    {
+        GroupQueueInfo info;
+        if (queue.GetPlayerGroupInfoData(guid, &info) && info.IsInvitedToBGInstanceGUID)
+            return true;
+    }
+    return false;
+}
+
 bool LivingArenaMgr::IsReserved(uint32 teamId, time_t now) const
 {
     if (auto found = _noShow.find(teamId); found != _noShow.end() && now < found->second)
@@ -800,10 +815,10 @@ ArenaTeam* LivingArenaMgr::ChooseOpponent(uint8 type, uint32 mmr, uint32 maxAbov
                               ? sWorld->getIntConfig(CONFIG_ARENA_MAX_RATING_DIFFERENCE)
                               : 5000;
     std::vector<std::pair<uint32, ArenaTeam*>> fits;
+    ArenaTeam* rematch = nullptr;
     for (auto const& [id, team] : sArenaTeamMgr->GetArenaTeams())
     {
-        if (id == exclude || id == previousOpponent || team->GetType() != type || !IsBotTeam(team) ||
-            IsReserved(id, now))
+        if (id == exclude || team->GetType() != type || !IsBotTeam(team) || IsReserved(id, now))
             continue;
         uint32 const teamMmr = GetTeamMmr(team);
         if (!LivingArena::WithinRatingCap(mmr, teamMmr, std::min(maxAbove, window), window))
@@ -818,10 +833,14 @@ ArenaTeam* LivingArenaMgr::ChooseOpponent(uint8 type, uint32 mmr, uint32 maxAbov
             if (score && !LivingArena::WithinGearCap(gearCap, score, sPlayerbotAIConfig.LivingArenaMaxGearScoreAbove))
                 continue;
         }
-        fits.emplace_back(teamMmr > mmr ? teamMmr - mmr : mmr - teamMmr, team);
+        if (id == previousOpponent)
+            rematch = team;
+        else
+            fits.emplace_back(teamMmr > mmr ? teamMmr - mmr : mmr - teamMmr, team);
     }
+    // The core still holds a rematch back until Arena.PreviousOpponentsDiscardTimer has passed in the queue.
     if (fits.empty())
-        return nullptr;
+        return rematch;
     std::sort(fits.begin(), fits.end(), [](auto const& a, auto const& b) { return a.first < b.first; });
     // Pick among near-equal opponents so the same pairings don't repeat every evening.
     size_t closest = 1;
@@ -1216,11 +1235,13 @@ void LivingArenaMgr::CheckJuke(Player* bot, PlayerbotAI* ai)
         LivingArena::TierFor(GetSkill(bot)) != LivingArena::Tier::Expert)
         return;
     {
+        // One look per cast: the same spell inside the rest of the cast it was first seen in.
+        uint32 const now = getMSTime();
         std::lock_guard<std::mutex> lock(_mutex);
-        uintptr_t& seen = _jukes[bot->GetGUID().GetCounter()];
-        if (seen == reinterpret_cast<uintptr_t>(spell))
+        Juke& seen = _jukes[bot->GetGUID().GetCounter()];
+        if (seen.spellId == spell->m_spellInfo->Id && getMSTimeDiff(seen.seen, now) < seen.window)
             return;
-        seen = reinterpret_cast<uintptr_t>(spell);
+        seen = {spell->m_spellInfo->Id, now, uint32(spell->GetCastTimeRemaining())};
     }
 
     Battleground* bg = bot->GetBattleground();
@@ -1342,7 +1363,8 @@ void LivingArenaMgr::ReviewPartners()
                                                                                                 person.GetCounter()) ==
                                                           LivingWorld::Attitude::Rival;
                                                });
-            if (fallenOut)
+            // A team in a match or holding an invite keeps its roster; the next review picks the bot up.
+            if (fallenOut && !IsRosterLocked(team, bot))
                 leaving.emplace_back(team, bot);
         }
     }

@@ -13,6 +13,7 @@
 #include "LivingBondMgr.h"
 #include "ObjectAccessor.h"
 #include "PathGenerator.h"
+#include "Pet.h"
 #include "Player.h"
 #include "PlayerbotAI.h"
 #include "Playerbots.h"
@@ -30,6 +31,7 @@ uint8 constexpr ICON_SKULL = 7;
 
 std::array<uint32, 6> constexpr HardImmunities = {642, 45438, 19263, 1022, 5599, 10278};
 std::array<uint32, 11> constexpr Defensives = {31224, 33206, 47585, 48707, 26669, 22812, 48792, 871, 498, 46924, 47788};
+std::array<uint32, 2> constexpr SpellLockRanks = {19647, 19244};
 
 std::vector<char const*> Interrupts(uint8 cls)
 {
@@ -360,6 +362,28 @@ bool LivingArenaTrinketAction::Execute(Event /*event*/)
     return false;
 }
 
+bool LivingArenaInterruptAction::Interrupt(Player* enemy)
+{
+    if (bot->getClass() != CLASS_WARLOCK)
+        return TryCast(Interrupts(bot->getClass()), enemy);
+    // Spell Lock belongs to the felhunter, so it is cast by the pet against the pet's own cooldown and range.
+    Pet* pet = bot->GetPet();
+    if (!pet || !pet->IsAlive() || pet->HasUnitState(UNIT_STATE_CASTING) || IsControlled(pet) ||
+        pet->HasAuraType(SPELL_AURA_MOD_SILENCE))
+        return false;
+    for (uint32 spellId : SpellLockRanks)
+    {
+        if (!pet->HasSpell(spellId))
+            continue;
+        SpellInfo const* info = sSpellMgr->GetSpellInfo(spellId);
+        if (!info || pet->HasSpellCooldown(spellId) || !pet->IsWithinDistInMap(enemy, info->GetMaxRange(false, pet)) ||
+            !pet->IsWithinLOSInMap(enemy))
+            return false;
+        return pet->CastSpell(enemy, spellId, false) == SPELL_CAST_OK;
+    }
+    return false;
+}
+
 bool LivingArenaInterruptAction::isUseful()
 {
     return InFight() && !IsControlled(bot) && Tier() >= LivingArena::Tier::Regular &&
@@ -368,8 +392,10 @@ bool LivingArenaInterruptAction::isUseful()
 
 bool LivingArenaInterruptAction::Execute(Event /*event*/)
 {
-    if (_rolled.size() > 64)
-        _rolled.clear();
+    uint32 const now = getMSTime();
+    if (_rolled.size() > 16)
+        std::erase_if(_rolled, [now](auto const& entry)
+                      { return getMSTimeDiff(entry.second.seen, now) >= entry.second.window; });
     uint32 const skill = Skill();
     for (Player* enemy : Enemies())
     {
@@ -386,10 +412,11 @@ bool LivingArenaInterruptAction::Execute(Event /*event*/)
                               (1 << MECHANIC_SLEEP) | (1 << MECHANIC_HORROR) | (1 << MECHANIC_BANISH));
         if (!heal && !control && spell->GetCastTime() < 2000)
             continue;
-        auto [found, inserted] = _rolled.try_emplace(reinterpret_cast<uintptr_t>(spell), false);
-        if (inserted)
-            found->second = Roll(skill);
-        if (found->second && TryCast(Interrupts(bot->getClass()), enemy))
+        // One roll per cast: a new spell, or the same spell once the cast it was rolled for has run out.
+        Look& look = _rolled[enemy->GetGUID().GetRawValue()];
+        if (look.spellId != spell->m_spellInfo->Id || getMSTimeDiff(look.seen, now) >= look.window)
+            look = {spell->m_spellInfo->Id, now, uint32(std::max(spell->GetCastTimeRemaining(), 0)) + 100, Roll(skill)};
+        if (look.go && Interrupt(enemy))
             return true;
     }
     return false;
@@ -593,6 +620,26 @@ bool LivingArenaSkillAction::Execute(Event event)
     botAI->TellMaster("Arena skill " + std::to_string(skill) + " (" +
                       names[static_cast<uint8>(LivingArena::TierFor(skill))] + ")");
     return true;
+}
+
+float LivingArenaMultiplier::GetValue(Action* action)
+{
+    if (!action || !bot->InArena() || !LivingArenaMgr::IsBot(bot))
+        return 1.0f;
+    std::string const name = action->getName();
+    if (name == "every man for himself" || name.ends_with(" on enemy healer"))
+        return 0.0f;
+    for (char const* spell : Interrupts(bot->getClass()))
+    {
+        if (name == spell)
+            return 0.0f;
+    }
+    return 1.0f;
+}
+
+void LivingArenaStrategy::InitMultipliers(std::vector<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new LivingArenaMultiplier(botAI));
 }
 
 void LivingArenaStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)

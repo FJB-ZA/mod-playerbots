@@ -60,6 +60,8 @@ public:
     std::vector<Player*> FindPartnerCandidates(Player* player, uint8 arenaType, uint8 cls, uint32 limit);
     // Bot members of the arena teams this player captains
     std::vector<ObjectGuid> GetPartners(Player* player) const;
+    // Same rule as the core's leave and remove handlers: no roster change mid-match or with an invite out.
+    bool IsRosterLocked(ArenaTeam* team, ObjectGuid member) const;
 
 private:
     struct CatalogItem
@@ -91,6 +93,13 @@ private:
     {
         uint32 team = 0;
         time_t assigned = 0;
+    };
+
+    struct Juke
+    {
+        uint32 spellId = 0;
+        uint32 seen = 0;
+        uint32 window = 0;
     };
 
     void Load();
@@ -141,7 +150,7 @@ private:
     mutable std::mutex _mutex;
     std::set<std::pair<ObjectGuid::LowType, uint8>> _allowed;
     std::unordered_map<uint64, uint32> _calls;
-    std::unordered_map<uint32, uintptr_t> _jukes;
+    std::unordered_map<uint32, Juke> _jukes;
     std::unordered_map<uint32, uint32> _skillOverrides;
 };
 

@@ -1,7 +1,9 @@
 // Dalaran arena partner broker: register a team, recruit bots by role and PvP spec, gather, respec and release them.
 
+#include <algorithm>
 #include <mutex>
 #include <unordered_map>
+#include <vector>
 
 #include "ArenaTeam.h"
 #include "ArenaTeamMgr.h"
@@ -481,6 +483,13 @@ private:
     bool Respec(Player* player, Creature* /*creature*/, BrokerState& state, int specNo)
     {
         CloseGossipMenuFor(player);
+        // The bot may have left the team since the menu opened, so check it is still a partner.
+        std::vector<ObjectGuid> const partners = LivingArenaMgr::instance().GetPartners(player);
+        if (std::find(partners.begin(), partners.end(), state.respec) == partners.end())
+        {
+            Tell(player, "They aren't on a team you captain any more.");
+            return true;
+        }
         Player* bot = ObjectAccessor::FindConnectedPlayer(state.respec);
         if (!bot || !LivingArenaMgr::IsPvpSpec(bot->getClass(), specNo) || bot->InBattleground())
             return true;
@@ -496,16 +505,24 @@ private:
         if (index >= state.partners.size())
             return true;
         ObjectGuid const guid = state.partners[index];
-        bool released = false;
+        std::vector<ArenaTeam*> teams;
         for (uint8 slot = 0; slot < MAX_ARENA_SLOT; ++slot)
         {
             ArenaTeam* team = sArenaTeamMgr->GetArenaTeamById(player->GetArenaTeamId(slot));
             if (team && team->GetCaptain() == player->GetGUID() && team->IsMember(guid) && team->GetCaptain() != guid)
+                teams.push_back(team);
+        }
+        for (ArenaTeam* team : teams)
+        {
+            if (LivingArenaMgr::instance().IsRosterLocked(team, guid))
             {
-                team->DelMember(guid, true);
-                released = true;
+                Tell(player, "<" + team->GetName() + "> is in a match or has one waiting. Ask me again after it.");
+                return true;
             }
         }
+        bool const released = !teams.empty();
+        for (ArenaTeam* team : teams)
+            team->DelMember(guid, true);
         if (!released)
         {
             Tell(player, NameOf(guid) + " isn't on a team you captain.");

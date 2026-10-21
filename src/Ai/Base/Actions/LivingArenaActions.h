@@ -63,7 +63,18 @@ public:
     bool Execute(Event event) override;
 
 private:
-    std::unordered_map<uintptr_t, bool> _rolled;
+    bool Interrupt(Player* enemy);
+
+    struct Look
+    {
+        uint32 spellId = 0;
+        uint32 seen = 0;
+        uint32 window = 0;
+        bool go = false;
+    };
+
+    // Keyed by the caster's raw GUID; a Spell object's address is reused once it is freed.
+    std::unordered_map<uint64, Look> _rolled;
 };
 
 class LivingArenaPeelAction : public LivingArenaAction
@@ -126,12 +137,21 @@ public:
     bool Execute(Event event) override;
 };
 
+// Drops the rotations' own interrupts, healer lockdowns and Every Man for Himself; the playbook rolls them.
+class LivingArenaMultiplier : public Multiplier
+{
+public:
+    LivingArenaMultiplier(PlayerbotAI* ai) : Multiplier(ai, "living arena") {}
+    float GetValue(Action* action) override;
+};
+
 class LivingArenaStrategy : public Strategy
 {
 public:
     LivingArenaStrategy(PlayerbotAI* ai) : Strategy(ai) {}
     std::string const getName() override { return "living arena"; }
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
+    void InitMultipliers(std::vector<Multiplier*>& multipliers) override;
 };
 
 #endif
