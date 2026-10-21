@@ -12,6 +12,7 @@
 #include "Group.h"
 #include "HunterAiObjectContext.h"
 #include "Item.h"
+#include "LivingArenaMgr.h"
 #include "MageAiObjectContext.h"
 #include "PaladinAiObjectContext.h"
 #include "PlayerbotAI.h"
@@ -490,6 +491,8 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
         {
             engine->addStrategy("arena", false);
             engine->addStrategiesNoInit("boost", "racials", "chat", "default", "aoe", "cast time", "dps assist", nullptr);
+            if (LivingArenaMgr::instance().IsEnabled())
+                engine->addStrategy("living arena", false);
         }
         else
             engine->addStrategiesNoInit("boost", "racials", "chat", "default", "aoe", "potions", "cast time", "dps assist", nullptr);
@@ -718,6 +721,8 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
         {
             nonCombatEngine->addStrategy("arena", false);
             nonCombatEngine->removeStrategy("mount", false);
+            if (LivingArenaMgr::instance().IsEnabled())
+                nonCombatEngine->addStrategy("living arena", false);
         }
     }
 }

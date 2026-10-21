@@ -12,6 +12,7 @@
 #include "Event.h"
 #include "GameTime.h"
 #include "GroupMgr.h"
+#include "LivingArenaMgr.h"
 #include "LivingWorldMgr.h"
 #include "LivingWorldPolicy.h"
 #include "RandomPlayerbotMgr.h"
@@ -281,7 +282,9 @@ bool BGJoinAction::shouldJoinBg(BattlegroundQueueTypeId queueTypeId, Battlegroun
 
         if (isRated)
         {
-            if (sArenaTeamMgr->GetArenaTeamByCaptain(bot->GetGUID(), type))
+            // Living arena picks which bot teams play, so a captain queues only when scheduled.
+            if (sArenaTeamMgr->GetArenaTeamByCaptain(bot->GetGUID(), type) &&
+                LivingArenaMgr::instance().MayQueueRated(bot, type))
             {
                 sRandomPlayerbotMgr.BattlegroundData[queueTypeId][bracketId].ratedArenaBotCount += TeamSize;
                 ratedList.push_back(queueTypeId);
@@ -761,6 +764,16 @@ bool BGStatusAction::LeaveBG(PlayerbotAI* botAI)
     return true;
 }
 
+// The core drops a refused port without a reply: log what it checks and clear the combat it refuses
+static void PreparePort(Player* bot, BattlegroundQueueTypeId queueTypeId)
+{
+    if (bot->IsInCombat())
+        bot->CombatStop(true);
+    LOG_INFO("playerbots", "Bot {} port check: queued {} invited {} combat {} charm {} freeze {}", bot->GetName(),
+             bot->InBattlegroundQueue(), bot->IsInvitedForBattlegroundQueueType(queueTypeId), bot->IsInCombat(),
+             bot->GetCharm() != nullptr, bot->HasAura(9454));
+}
+
 bool BGStatusAction::isUseful() { return bot->InBattlegroundQueue(); }
 
 bool BGStatusAction::Execute(Event event)
@@ -927,6 +940,7 @@ bool BGStatusAction::Execute(Event event)
                     WorldPacket emptyPacket;
                     bot->GetSession()->HandleCancelMountAuraOpcode(emptyPacket);
                     action = 0x1;
+                    PreparePort(bot, queueTypeId);
 
                     WorldPacket packet(CMSG_BATTLEFIELD_PORT, 20);
                     packet << type << unk2 << (uint32)_bgTypeId << unk << action;
@@ -1050,6 +1064,7 @@ bool BGStatusAction::Execute(Event event)
         bot->GetSession()->HandleCancelMountAuraOpcode(emptyPacket);
 
         action = 0x1;
+        PreparePort(bot, queueTypeId);
 
         WorldPacket packet(CMSG_BATTLEFIELD_PORT, 20);
         packet << type << unk2 << (uint32)_bgTypeId << unk << action;

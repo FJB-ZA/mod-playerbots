@@ -324,6 +324,14 @@ void PlayerbotHolder::HandleBotPackets(WorldSession* session)
             continue;
         }
         opHandle->Call(session, *packet);
+        // the core refuses a port without a reply: record where the accept left the bot
+        if (opcode == CMSG_BATTLEFIELD_PORT && session->GetPlayer())
+        {
+            Player* bot = session->GetPlayer();
+            LOG_INFO("playerbots", "Bot {} port result: bg {} far teleport {} queued {} map {} expansion {}",
+                     bot->GetName(), bot->GetBattlegroundId(), bot->IsBeingTeleportedFar(),
+                     bot->InBattlegroundQueue(), bot->GetMapId(), session->Expansion());
+        }
     }
 }
 

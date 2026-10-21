@@ -106,6 +106,11 @@ public:
 
     bool Enabled;
     bool LivingWorldEnabled = false;
+    bool LivingArenaEnabled = false;
+    uint32 LivingArenaSeason = 0;
+    uint32 LivingArenaMaxRatingAbove = 150;
+    uint32 LivingArenaMaxGearScoreAbove = 5;
+    uint32 LivingArenaPartnerSkill = 85;
     bool DisabledWithoutRealPlayer;
     bool EnableICCBuffs;
     bool AllowAccountBots, AllowGuildBots, AllowTrustedAccountBots;

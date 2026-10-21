@@ -20,6 +20,7 @@
 #include "GatherNodeMgr.h"
 #include "GlobalScript.h"
 #include "GuildTaskMgr.h"
+#include "LivingArenaMgr.h"
 #include "LivingBondMgr.h"
 #include "LivingWorldMgr.h"
 #include "PlayerScript.h"
@@ -250,6 +251,7 @@ public:
 
         if (botAI != nullptr)
         {
+            LivingArenaMgr::instance().CheckJuke(player, botAI);
             botAI->UpdateAI(diff);
         }
 
@@ -563,6 +565,7 @@ public:
         sRandomPlayerbotMgr.UpdateSessions();  // Per-bot packet queues, world thread only
         PlayerbotWorldThreadProcessor::instance().Update(diff);
         sRandomPlayerbotMgr.UpdateAI(diff);  // World thread only
+        LivingArenaMgr::instance().Update(diff);
     }
 
     // Runs before the sessions are kicked on server shutdown
@@ -645,6 +648,7 @@ void AddPlayerbotsScripts()
     new PlayerbotsGlobalScript();
     new PlayerbotsWorldScript();
     new PlayerBotsBGScript();
+    AddLivingArenaScripts();
     AddPlayerbotsSecureLoginScripts();
     AddPlayerbotsSelfBotAfkScripts();
     AddPlayerbotsCommandscripts();

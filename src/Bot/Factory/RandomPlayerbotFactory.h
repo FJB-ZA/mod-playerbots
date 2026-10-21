@@ -66,6 +66,7 @@ public:
 
 private:
     friend class ArenaTeamAssignOperation;
+    friend class LivingArenaMgr;
 
     static bool IsValidRaceClassCombination(uint8 race, uint8 class_, uint32 expansion);
     std::string const CreateRandomBotName(NameRaceAndGender raceAndGender);

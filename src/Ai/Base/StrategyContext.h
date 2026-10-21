@@ -29,6 +29,7 @@
 #include "GuildStrategy.h"
 #include "KiteStrategy.h"
 #include "LfgStrategy.h"
+#include "LivingArenaActions.h"
 #include "LivingFieldActions.h"
 #include "LivingProfessionActions.h"
 #include "LootNonCombatStrategy.h"
@@ -122,6 +123,7 @@ public:
         creators["debug spell"] = &StrategyContext::debug_spell;
         creators["debug quest"] = &StrategyContext::debug_quest;
         creators["maintenance"] = &StrategyContext::maintenance;
+        creators["living arena"] = &StrategyContext::living_arena;
         creators["living professions"] = &StrategyContext::living_professions;
         creators["living fieldwork"] = &StrategyContext::living_fieldwork;
         creators["group"] = &StrategyContext::group;
@@ -140,6 +142,7 @@ public:
     }
 
 private:
+    static Strategy* living_arena(PlayerbotAI* botAI) { return new LivingArenaStrategy(botAI); }
     static Strategy* living_professions(PlayerbotAI* botAI) { return new LivingProfessionStrategy(botAI); }
     static Strategy* living_fieldwork(PlayerbotAI* botAI) { return new LivingFieldStrategy(botAI); }
     static Strategy* behind(PlayerbotAI* botAI) { return new SetBehindCombatStrategy(botAI); }

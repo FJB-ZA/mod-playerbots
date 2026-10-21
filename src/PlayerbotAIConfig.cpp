@@ -759,6 +759,12 @@ bool PlayerbotAIConfig::Initialize()
     SelfBotLevel = sConfigMgr->GetOption<int32>("Playerbots.SelfBotLevel", 1);
 
     LivingWorldEnabled = sConfigMgr->GetOption<bool>("Playerbots.LivingWorld.Enabled", false);
+    LivingArenaEnabled = sConfigMgr->GetOption<bool>("Playerbots.LivingArena.Enabled", false);
+    LivingArenaSeason = sConfigMgr->GetOption<uint32>("Playerbots.LivingArena.Season", 0);
+    LivingArenaMaxRatingAbove = sConfigMgr->GetOption<uint32>("Playerbots.LivingArena.MaxRatingAbove", 150);
+    LivingArenaMaxGearScoreAbove = sConfigMgr->GetOption<uint32>("Playerbots.LivingArena.MaxGearScoreAbovePct", 5);
+    LivingArenaPartnerSkill =
+        std::min<uint32>(sConfigMgr->GetOption<uint32>("Playerbots.LivingArena.PartnerSkill", 85), 100);
     RandomPlayerbotFactory::CreateRandomBots();
     if (World::IsStopped())
     {

@@ -11,6 +11,22 @@
 # Requires the living_profiles DB update.
 Playerbots.LivingWorld.Enabled = 0
 
+# Arena seasons for living-world bots at the era's arena level (70 in TBC, 80 in Wrath). Needs LivingWorld.Enabled.
+# Teams form from PvP-minded bots in real compositions with PvP talent specs and start at the season's base rating.
+# Bot teams play each other in real rated games (RandomBotAutoJoinBGRatedArena*Count at a time) and buy season
+# gear from mod-individual-progression's season vendors with the honor, arena points and personal rating they earn.
+# Each bot has a hidden skill that decides how closely it follows the team playbook.
+# A human's rated opponent is a bot team at most MaxRatingAbove MMR higher with gear at most
+# MaxGearScoreAbovePct percent better; skirmish bots obey the same gear cap.
+# Season 0 follows IndividualProgression.TBC/WotLK.ArenaSeason. A new season resets bot team ratings, not gear.
+# PartnerSkill is the playbook skill of non-random bots on a human's team (random-bot partners keep their own).
+# Requires the living_arena DB update. The Dalaran arena partner broker needs the living_arena_broker world update.
+Playerbots.LivingArena.Enabled = 0
+Playerbots.LivingArena.Season = 0
+Playerbots.LivingArena.MaxRatingAbove = 150
+Playerbots.LivingArena.MaxGearScoreAbovePct = 5
+Playerbots.LivingArena.PartnerSkill = 85
+
 # Overview
 # "Randombot": randomly generated bots that log in separately from players and populate the world. Randombots may automatically grind, quest, level up, and upgrade equipment and can be invited to groups and given commands.
 # "AddClass bot": bots from the AddClassAccountPoolSize accounts. They are used for quickly adding a leveled and geared bot of any class to your party. They are recommended for a quick formation of a party.
