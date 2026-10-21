@@ -145,6 +145,27 @@ constexpr uint32_t BattlegroundRole(Temperament temperament, uint32_t roll)
             return roll;
     }
 }
+
+// Battleground gear spread around the real players queued (their average gear score):
+// most bots that fill the match are close to it, some clearly weaker or stronger, a few far
+// off. Twinks are overgeared for their bracket by design and always qualify.
+constexpr uint32_t GearMatchChance(uint32_t botGearScore, uint32_t playerGearScore, Temperament temperament)
+{
+    if (!playerGearScore || temperament == Temperament::Twink)
+        return 100;
+    uint64_t const diff = botGearScore > playerGearScore ? botGearScore - playerGearScore
+                                                          : playerGearScore - botGearScore;
+    uint64_t const percent = diff * 100 / playerGearScore;
+    return percent <= 15 ? 100 : percent <= 30 ? 50 : 15;
+}
+
+// One stable decision per bot, queue and 5-minute window, so a poorly matched bot cannot
+// simply retry every tick until it gets in.
+constexpr bool GearMatchRoll(uint32_t guid, uint32_t queue, uint64_t gameTimeSeconds, uint32_t chance)
+{
+    uint32_t const window = static_cast<uint32_t>(gameTimeSeconds / 300);
+    return Mix(guid ^ Mix(queue * 0x9e3779b9U ^ window)) % 100 < chance;
+}
 }  // namespace LivingWorld
 
 #endif

@@ -999,6 +999,9 @@ void RandomPlayerbotMgr::CheckBgQueue()
             BattlegroundBracketId bracketId = pvpDiff->GetBracketId();
             BattlegroundData[queueTypeId][bracketId].minLevel = pvpDiff->minLevel;
             BattlegroundData[queueTypeId][bracketId].maxLevel = pvpDiff->maxLevel;
+            BattlegroundData[queueTypeId][bracketId].playerGearScoreSum +=
+                PlayerbotAI::GetMixedGearScore(player, false, false);
+            BattlegroundData[queueTypeId][bracketId].playerGearScoreCount++;
 
             // Arena logic
             bool isRated = false;
