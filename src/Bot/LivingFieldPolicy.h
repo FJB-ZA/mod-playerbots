@@ -24,6 +24,9 @@ inline bool FieldWorkWindow(uint32_t guid, uint64_t seconds, Motivation motivati
 
 inline uint32_t MaterialDeficit(uint32_t owned, uint32_t target) { return owned < target ? target - owned : 0; }
 
+// Reagent routes: how far a gatherer short of a recipe input travels to another zone's nodes.
+inline constexpr float MaxReagentRoute = 3000.0f;
+
 // Skinning hunts: the skill a creature of a level asks for (the core's own formula). Skinning it still teaches
 // until 100 points above that; a hunt goes where it teaches best, up to 50 above.
 constexpr uint32_t SkinningRequirement(uint32_t creatureLevel)

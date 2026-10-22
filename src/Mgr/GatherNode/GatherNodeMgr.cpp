@@ -139,6 +139,34 @@ std::vector<GatherNodeSpawn> const* GatherNodeMgr::GetZoneNodes(uint32 mapId, ui
     return zoneItr != mapItr->second.end() ? &zoneItr->second : nullptr;
 }
 
+GatherNodeSpawn const* GatherNodeMgr::GetRouteNode(Player* bot, std::unordered_set<ObjectGuid::LowType> const& visited,
+                                                   float maxDistance,
+                                                   std::function<bool(GatherNodeSpawn const&)> const& wanted)
+{
+    PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
+    auto const mapItr = _nodes.find(bot->GetMapId());
+    if (!botAI || mapItr == _nodes.end())
+        return nullptr;
+
+    GatherNodeSpawn const* best = nullptr;
+    float bestDistance = maxDistance;
+    for (auto const& [zoneId, nodes] : mapItr->second)
+    {
+        if (zoneId == bot->GetZoneId())
+            continue;
+        for (GatherNodeSpawn const& node : nodes)
+        {
+            float const distance = bot->GetExactDist(node.pos);
+            if (distance < bestDistance && !visited.count(node.spawnId) && IsUsable(botAI, bot, node) && wanted(node))
+            {
+                best = &node;
+                bestDistance = distance;
+            }
+        }
+    }
+    return best;
+}
+
 bool GatherNodeMgr::HasUsableNodes(Player* bot)
 {
     std::vector<GatherNodeSpawn> const* nodes = GetZoneNodes(bot->GetMapId(), bot->GetZoneId());

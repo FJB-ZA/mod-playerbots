@@ -15,6 +15,7 @@
 #include "GossipDef.h"
 #include "GridTerrainData.h"
 #include "IVMapMgr.h"
+#include "LivingFieldActions.h"
 #include "LivingGearActions.h"
 #include "LivingGearPolicy.h"
 #include "LivingWorldMgr.h"
@@ -1296,7 +1297,8 @@ bool NewRpgBaseAction::CheckRpgStatusAvailable(NewRpgStatus status)
             if (AI_VALUE(uint8, "bag space") > 80)
                 return false;
 
-            return sGatherNodeMgr.HasUsableNodes(bot);
+            // A living-world gatherer short of a recipe input may head for another zone's nodes.
+            return sGatherNodeMgr.HasUsableNodes(bot) || LivingProfessions::ReagentRouteNode(bot, {});
         }
         case RPG_TRAVEL_FLIGHT:
         {
