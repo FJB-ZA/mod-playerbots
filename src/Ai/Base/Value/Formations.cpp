@@ -6,6 +6,7 @@
 
 #include "Formations.h"
 #include "Arrow.h"
+#include "DungeonLead.h"
 #include "Event.h"
 #include "Map.h"
 #include "Playerbots.h"
@@ -20,6 +21,14 @@ bool IsSameLocation(WorldLocation const& a, WorldLocation const& b)
 }
 
 bool Formation::IsNullLocation(WorldLocation const& loc) { return IsSameLocation(loc, Formation::NullLocation); }
+
+Player* Formation::GetLeader()
+{
+    if (Player* leader = DungeonLead::Leader(botAI))
+        return leader;
+
+    return GetMaster();
+}
 
 bool ValidateTargetContext(Unit* a, Unit* b, Map*& outMap)
 {
@@ -49,7 +58,7 @@ bool ValidateTargetContext(Unit* a, Unit* b)
 
 WorldLocation MoveAheadFormation::GetLocation()
 {
-    Player* master = GetMaster();
+    Player* master = GetLeader();
     if (!ValidateTargetContext(master, bot))
         return Formation::NullLocation;
 
@@ -106,7 +115,7 @@ public:
 
     WorldLocation GetLocationInternal() override
     {
-        Player* master = GetMaster();
+        Player* master = GetLeader();
         Map* map = nullptr;
         if (!ValidateTargetContext(master, bot, map))
             return Formation::NullLocation;
@@ -137,7 +146,7 @@ public:
 
     WorldLocation GetLocationInternal() override
     {
-        Player* master = GetMaster();
+        Player* master = GetLeader();
         Map* map = nullptr;
         if (!ValidateTargetContext(master, bot, map))
             return Formation::NullLocation;
@@ -190,7 +199,7 @@ public:
     WorldLocation GetLocation() override
     {
         Unit* target = AI_VALUE(Unit*, "current target");
-        Player* master = GetMaster();
+        Player* master = GetLeader();
 
         // Fix: if no target OR target is the bot, fall back to master
         if (!target || target == bot)
@@ -250,7 +259,7 @@ public:
 
         float range = 2.0f;
 
-        Player* master = GetMaster();
+        Player* master = GetLeader();
         if (!master)
             return Formation::NullLocation;
 
@@ -289,7 +298,7 @@ public:
 
         float range = sPlayerbotAIConfig.FollowDistance;
 
-        Player* master = GetMaster();
+        Player* master = GetLeader();
         if (!master)
             return Formation::NullLocation;
 
@@ -349,7 +358,7 @@ public:
 
     WorldLocation GetLocation() override
     {
-        Player* master = GetMaster();
+        Player* master = GetLeader();
         Map* map = nullptr;
         if (!ValidateTargetContext(master, bot, map))
             return Formation::NullLocation;
@@ -418,7 +427,7 @@ public:
 
 float Formation::GetFollowAngle()
 {
-    Player* master = GetMaster();
+    Player* master = GetLeader();
     Group* group = bot->GetGroup();
 
     // If there's no master and no group
@@ -677,7 +686,7 @@ WorldLocation MoveFormation::MoveSingleLine(std::vector<Player*> line, float dif
             float ly = y0 + std::sin(angleRight) * radius;
             float lz = cz;
 
-            Player* master = botAI->GetMaster();
+            Player* master = GetLeader();
             Map* map = master ? master->GetMap() : nullptr;
 
             // if not fully in world ignore collision corrections.

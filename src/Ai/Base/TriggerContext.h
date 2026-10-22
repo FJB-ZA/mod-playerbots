@@ -9,6 +9,7 @@
 
 #include "BotStateTriggers.h"
 #include "CureTriggers.h"
+#include "DungeonLeadActions.h"
 #include "FishingTriggers.h"
 #include "GenericTriggers.h"
 #include "GuildTriggers.h"
@@ -45,6 +46,9 @@ public:
         creators["random"] = &TriggerContext::Random;
         creators["seldom"] = &TriggerContext::seldom;
         creators["living arena"] = &TriggerContext::living_arena;
+        creators["dungeon lead"] = &TriggerContext::dungeon_lead;
+        creators["lead healer"] = &TriggerContext::lead_healer;
+        creators["lead needs mana"] = &TriggerContext::lead_needs_mana;
         creators["often"] = &TriggerContext::often;
         creators["very often"] = &TriggerContext::very_often;
 
@@ -347,6 +351,9 @@ private:
     static Trigger* Random(PlayerbotAI* botAI) { return new RandomTrigger(botAI, "random", 20); }
     static Trigger* seldom(PlayerbotAI* botAI) { return new RandomTrigger(botAI, "seldom", 300); }
     static Trigger* living_arena(PlayerbotAI* botAI) { return new LivingArenaTrigger(botAI); }
+    static Trigger* dungeon_lead(PlayerbotAI* botAI) { return new DungeonLeadTrigger(botAI); }
+    static Trigger* lead_healer(PlayerbotAI* botAI) { return new LeadHealerTrigger(botAI); }
+    static Trigger* lead_needs_mana(PlayerbotAI* botAI) { return new LeadNeedsManaTrigger(botAI); }
     static Trigger* often(PlayerbotAI* botAI) { return new RandomTrigger(botAI, "often", 5); }
     static Trigger* very_often(PlayerbotAI* botAI) { return new RandomTrigger(botAI, "often", 3); }
     static Trigger* EnemyOutOfMelee(PlayerbotAI* botAI) { return new EnemyOutOfMeleeTrigger(botAI); }
