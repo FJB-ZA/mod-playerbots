@@ -25,10 +25,24 @@ public:
     bool IsActive() override;
 };
 
+class SalrammGhoulTrigger : public Trigger
+{
+public:
+    SalrammGhoulTrigger(PlayerbotAI* botAI) : Trigger(botAI, "salramm ghoul") {}
+    bool IsActive() override;
+};
+
 class EpochRangedTrigger : public Trigger
 {
 public:
     EpochRangedTrigger(PlayerbotAI* botAI) : Trigger(botAI, "chrono-lord epoch ranged") {}
+    bool IsActive() override;
+};
+
+class InfiniteCorruptorTrigger : public Trigger
+{
+public:
+    InfiniteCorruptorTrigger(PlayerbotAI* botAI) : Trigger(botAI, "infinite corruptor") {}
     bool IsActive() override;
 };
 

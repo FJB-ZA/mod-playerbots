@@ -649,6 +649,7 @@ void AddSC_IcecrownBotScripts();
 void AddSC_RubySanctumBotScripts();
 void AddSC_randombot_level_mgr();
 void AddLivingBondScripts();
+void AddPlayerbotsMovementScripts();
 
 void AddPlayerbotsScripts()
 {
@@ -675,4 +676,5 @@ void AddPlayerbotsScripts()
     AddSC_RubySanctumBotScripts();
     AddSC_randombot_level_mgr();
     AddLivingBondScripts();
+    AddPlayerbotsMovementScripts();
 }

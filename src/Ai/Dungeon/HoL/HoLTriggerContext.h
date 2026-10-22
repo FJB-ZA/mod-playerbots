@@ -16,7 +16,7 @@ class WotlkDungeonHoLTriggerContext : public NamedObjectContext<Trigger>
         WotlkDungeonHoLTriggerContext()
         {
             creators["stormforged lieutenant"] = &WotlkDungeonHoLTriggerContext::stormforged_lieutenant;
-            creators["whirlwind"] = &WotlkDungeonHoLTriggerContext::bjarngrim_whirlwind;
+            creators["bjarngrim whirlwind"] = &WotlkDungeonHoLTriggerContext::bjarngrim_whirlwind;
             creators["volkhan"] = &WotlkDungeonHoLTriggerContext::volkhan;
             creators["static overload"] = &WotlkDungeonHoLTriggerContext::static_overload;
             creators["ball lightning"] = &WotlkDungeonHoLTriggerContext::ball_lightning;

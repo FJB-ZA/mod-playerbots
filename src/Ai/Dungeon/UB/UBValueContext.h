@@ -19,7 +19,7 @@ class UnderbogMushroomsValue : public CalculatedValue<GuidVector>
 {
 public:
     UnderbogMushroomsValue(PlayerbotAI* botAI)
-        : CalculatedValue<GuidVector>(botAI, "ub mushrooms", UnderbogHungarfen::MUSHROOM_SCAN_INTERVAL)
+        : CalculatedValue<GuidVector>(botAI, "ub mushrooms", Underbog::MushroomScanInterval)
     {
     }
 
@@ -47,7 +47,7 @@ protected:
             _deadSince = 0;
         }
 
-        if (!boss && !_sawMushrooms && _skipped++ < UnderbogHungarfen::MUSHROOM_IDLE_SCAN_SKIPS)
+        if (!boss && !_sawMushrooms && _skipped++ < Underbog::MushroomIdleScanSkips)
             return {};
 
         _skipped = 0;
@@ -74,7 +74,7 @@ private:
 
         if (!_deadSince)
             _deadSince = getMSTime();
-        else if (GetMSTimeDiffToNow(_deadSince) >= UnderbogHungarfen::MUSHROOM_LINGER_TIME)
+        else if (GetMSTimeDiffToNow(_deadSince) >= Underbog::MushroomLingerTime)
             _scanning = false;
     }
 

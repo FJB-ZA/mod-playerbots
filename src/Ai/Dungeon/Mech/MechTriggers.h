@@ -15,7 +15,9 @@ enum class MechanarIDs : uint32
 {
     NPC_NETHERMANCER_SEPETHREA = 19221,
     NPC_RAGING_FLAMES          = 20481,
-    NPC_RAGING_FLAMES_HEROIC   = 21538,
+    SPELL_RAGING_FLAMES_TRAIL  = 35278,
+    SPELL_POSITIVE_POLARITY    = 39088,
+    SPELL_NEGATIVE_POLARITY    = 39091,
 };
 
 class SepethreaKiteFlameTrigger : public Trigger
@@ -43,6 +45,13 @@ class SepethreaFocusBossTrigger : public Trigger
 {
 public:
     SepethreaFocusBossTrigger(PlayerbotAI* botAI) : Trigger(botAI, "sepethrea focus boss") {}
+    bool IsActive() override;
+};
+
+class CapacitusPolarityShiftTrigger : public Trigger
+{
+public:
+    CapacitusPolarityShiftTrigger(PlayerbotAI* botAI) : Trigger(botAI, "capacitus polarity shift") {}
     bool IsActive() override;
 };
 

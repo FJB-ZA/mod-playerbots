@@ -393,6 +393,28 @@ Playerbots.DisableMoveSplinePath = 0
 # Default: 3
 Playerbots.MaxMovementSearchTime = 3
 
+# Movement planner: bots jump gaps and drop off ledges the navmesh cannot cross, and take the jumps
+# their group leader made instead of walking a long way round. Bots jump the way a player's client does
+# (other players see the real jump animation) and take fall damage on landing.
+# Cost: at most one extra path search per bot per second while moving; moves under 5 yards cost nothing.
+# Default: 0 - off
+#          1 - in dungeons and raids
+#          2 - everywhere
+Playerbots.MovementPlanner = 0
+
+# Most fall damage (percent of max health) a bot accepts to take a drop, and it always keeps 25% health in hand.
+# A leader who died from a fall is only followed off it while the group is in combat with the leader dead (a wipe).
+# Default: 50 (about a 41 yard drop)
+Playerbots.MovementPlanner.MaxFallDamage = 50
+
+# Last resort when a follower cannot walk or jump to its leader: in a dungeon or raid, a bot that has made
+# no progress for StuckTime ms while more than Distance yards away teleports to the leader.
+# Needs Playerbots.MovementPlanner (stuck time is measured by the planner).
+# Default: 0 - off
+Playerbots.CatchUpTeleport = 0
+Playerbots.CatchUpTeleport.StuckTime = 8000
+Playerbots.CatchUpTeleport.Distance = 30
+
 # Action expiration time
 Playerbots.ExpireActionTime = 5000
 

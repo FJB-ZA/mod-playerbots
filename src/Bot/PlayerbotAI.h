@@ -14,6 +14,7 @@
 #include "Event.h"
 #include "ForceRebuff.h"
 #include "Item.h"
+#include "MovementPlanner.h"
 #include "NewRpgInfo.h"
 #include "NewRpgStrategy.h"
 #include "ObjectGuid.h"
@@ -624,6 +625,8 @@ public:
     std::unordered_set<uint32> lowPriorityQuest;
     time_t bgReleaseAttemptTime = 0;
     ForceRebuffState forceRebuff;
+    MovePlanState movePlan;
+    BotMove::JumpTrail jumpTrail;
 
     // Schedules a callback to run once after <delayMs> milliseconds.
     void AddTimedEvent(std::function<void()> callback, uint32 delayMs);

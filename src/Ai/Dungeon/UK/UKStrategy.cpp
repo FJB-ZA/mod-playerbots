@@ -28,12 +28,9 @@ void WotlkDungeonUKStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
             { NextAction("ingvar dodge smash", ACTION_MOVE + 5) }));
     triggers.push_back(new TriggerNode("ingvar smash tank return",
             { NextAction("ingvar smash return", ACTION_MOVE + 5) }));
-    // Buggy... if not behind target, ai can get stuck running towards and away from target.
-    // I think for ranged chars, a custom action should be added that doesn't attempt to run into melee.
-    // This is a bandaid for now, needs to be improved.
+    // Melee only: ranged stand outside the 10-yard Smash cone already
     triggers.push_back(new TriggerNode("not behind ingvar",
             { NextAction("set behind", ACTION_MOVE + 1) }));
-
 }
 
 void WotlkDungeonUKStrategy::InitMultipliers(std::vector<Multiplier*>& multipliers)

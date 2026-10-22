@@ -30,10 +30,13 @@ void WotlkDungeonGDStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
         { NextAction("avoid whirling slash", ACTION_RAID + 5) }));
 
     // Eck the Ferocious (Heroic only)
+    triggers.push_back(new TriggerNode("eck spit",
+        { NextAction("dodge eck spit", ACTION_RAID + 5) }));
 }
 
 void WotlkDungeonGDStrategy::InitMultipliers(std::vector<Multiplier*>& multipliers)
 {
     multipliers.push_back(new SladranMultiplier(botAI));
     multipliers.push_back(new GaldarahMultiplier(botAI));
+    multipliers.push_back(new EckMultiplier(botAI));
 }

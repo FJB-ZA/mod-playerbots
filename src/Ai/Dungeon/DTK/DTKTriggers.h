@@ -27,6 +27,11 @@ enum DrakTharonIDs
 
     // The Prophet Tharon'ja
     SPELL_GIFT_OF_THARONJA             = 52509,
+    // The skeleton form's action bar (SpellShapeshiftForm 10)
+    SPELL_SKELETON_SLAYING_STRIKE      = 50799,
+    SPELL_SKELETON_TAUNT               = 49613,
+    SPELL_SKELETON_BONE_ARMOR          = 49609,
+    SPELL_SKELETON_TOUCH_OF_LIFE       = 49617,
 };
 
 class CorpseExplodeTrigger : public Trigger
@@ -42,13 +47,6 @@ public:
     ArcaneFieldTrigger(PlayerbotAI* botAI) : Trigger(botAI, "arcane field") {}
     bool IsActive() override;
 };
-
-// class CrystalHandlerTrigger : public Trigger
-// {
-// public:
-//     CrystalHandlerTrigger(PlayerbotAI* botAI) : Trigger(botAI, "crystal handler") {}
-//     bool IsActive() override;
-// };
 
 class GiftOfTharonjaTrigger : public Trigger
 {

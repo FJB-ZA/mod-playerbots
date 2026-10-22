@@ -84,8 +84,7 @@ bool IckAndKrickAction::TankPosition(Unit* boss)
 
 bool IckAndKrickAction::Pursuit(Unit* boss)
 {
-    // Keep running a circle around the room for the whole 12 s fixate, always on the side away from Ick;
-    // the room centre is the script's evade anchor, so the circle never pulls him out of it
+    // Circle the room, away from Ick, for the 12 s fixate; the centre is his evade anchor so he never leashes
     if (bot->GetExactDist2d(boss) > PitOfSaron::PursuitKeepRunningRange && bot->isMoving())
         return true;
 

@@ -13,13 +13,6 @@
 #include "PlayerbotAI.h"
 #include "UseItemAction.h"
 
-const Position uromSafePositions[3] =
-{
-    Position(1138.88f, 1052.22f, 508.36f),
-    Position(1084.62f, 1079.71f, 508.36f),
-    Position(1087.42f, 1020.132f, 508.36f)
-};
-
 class AvoidUnstableSphereAction : public MovementAction
 {
 public:

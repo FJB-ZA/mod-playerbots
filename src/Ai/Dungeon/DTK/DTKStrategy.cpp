@@ -27,16 +27,10 @@ void WotlkDungeonDTKStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 
     //The Prophet Tharon'ja
     triggers.push_back(new TriggerNode("gift of tharon'ja",
-        { NextAction("touch of life", ACTION_NORMAL + 5) }));
-    triggers.push_back(new TriggerNode("gift of tharon'ja",
-        { NextAction("bone armor", ACTION_NORMAL + 4) }));
+        { NextAction("tharonja skeleton", ACTION_NORMAL + 5) }));
     // Run ranged chars (who would normally stand at range) into melee, to dps in skeleton form
     triggers.push_back(new TriggerNode("tharon'ja out of melee",
         { NextAction("reach melee", ACTION_NORMAL + 3) }));
-    triggers.push_back(new TriggerNode("gift of tharon'ja",
-        { NextAction("taunt", ACTION_NORMAL + 2) }));
-    triggers.push_back(new TriggerNode("gift of tharon'ja",
-        { NextAction("slaying strike", ACTION_NORMAL + 2) }));
 }
 
 void WotlkDungeonDTKStrategy::InitMultipliers(std::vector<Multiplier*>& multipliers)

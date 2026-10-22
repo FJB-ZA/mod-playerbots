@@ -53,8 +53,7 @@ constexpr bool BronjahmAllows(bool tankAssist, bool fleeing, bool movement, bool
 
 // Well of Souls damage (68863) reaches 4 yards; the rest is margin for the bot's size and the well's drift
 constexpr float WellAvoidRadius = 6.0f;
-// The sweep reaches 52 degrees either side of his facing and turns up to 90 degrees from where it started,
-// so a bot within 35 degrees of straight behind stays clear for the whole wail
+// The sweep reaches 52 degrees each side and turns up to 90, so 35 degrees either side of behind stays clear
 constexpr float WailingSafeArc = 70.0f * Pi / 180.0f;
 constexpr std::array<float, 5> BehindOffsets = {0.0f, 0.25f, -0.25f, 0.45f, -0.45f};
 // Wider rings only when wells cluster: the multiplier blocks every other action while the bot stands in one

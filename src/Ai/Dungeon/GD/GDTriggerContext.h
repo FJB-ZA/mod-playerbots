@@ -20,6 +20,7 @@ class WotlkDungeonGDTriggerContext : public NamedObjectContext<Trigger>
             creators["slad'ran stack on tank"] = &WotlkDungeonGDTriggerContext::sladran_stack_on_tank;
             creators["slad'ran tank hold"] = &WotlkDungeonGDTriggerContext::sladran_tank_hold;
             creators["whirling slash"] = &WotlkDungeonGDTriggerContext::whirling_slash;
+            creators["eck spit"] = &WotlkDungeonGDTriggerContext::eck_spit;
         }
     private:
         static Trigger* poison_nova(PlayerbotAI* botAI) { return new SladranPoisonNovaTrigger(botAI); }
@@ -27,6 +28,7 @@ class WotlkDungeonGDTriggerContext : public NamedObjectContext<Trigger>
         static Trigger* sladran_stack_on_tank(PlayerbotAI* botAI) { return new SladranStackOnTankTrigger(botAI); }
         static Trigger* sladran_tank_hold(PlayerbotAI* botAI) { return new SladranTankHoldTrigger(botAI); }
         static Trigger* whirling_slash(PlayerbotAI* botAI) { return new GaldarahWhirlingSlashTrigger(botAI); }
+        static Trigger* eck_spit(PlayerbotAI* botAI) { return new EckSpitTrigger(botAI); }
 };
 
 #endif

@@ -21,12 +21,26 @@ public:
     bool Execute(Event event) override;
 };
 
+class AttackGhoulMinionAction : public Action
+{
+public:
+    AttackGhoulMinionAction(PlayerbotAI* botAI) : Action(botAI, "attack ghoul minion") {}
+    bool Execute(Event event) override;
+};
+
 class EpochStackAction : public MovementAction
 {
 public:
     EpochStackAction(PlayerbotAI* botAI) : MovementAction(botAI, "epoch stack") {}
     bool Execute(Event event) override;
     bool isUseful() override;
+};
+
+class MarkInfiniteCorruptorAction : public Action
+{
+public:
+    MarkInfiniteCorruptorAction(PlayerbotAI* botAI) : Action(botAI, "mark infinite corruptor") {}
+    bool Execute(Event event) override;
 };
 
 #endif

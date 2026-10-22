@@ -7,11 +7,14 @@
 #ifndef PLAYERBOTS_MGTSHARED_H
 #define PLAYERBOTS_MGTSHARED_H
 
-#include "Define.h"
-#include "ObjectGuid.h"
 #include <string>
 #include <vector>
 
+#include "Define.h"
+#include "MgTPolicy.h"
+#include "ObjectGuid.h"
+
+class Action;
 class Player;
 class PlayerbotAI;
 class Unit;
@@ -20,131 +23,58 @@ namespace MagistersTerrace
 {
 constexpr uint32 MAP_MAGISTERS_TERRACE = 585;
 
-constexpr float SELIN_LEASH_X   = 216.0f;
-constexpr float SELIN_SAFE_X    = SELIN_LEASH_X + 4.0f;
-constexpr float SELIN_REGROUP_X = 232.0f;
-constexpr float SELIN_FLEE_SLACK = 6.0f;
+// Shared glue (MgTShared.cpp)
 
-constexpr float GROUND_TIER_STEP   = 3.0f;
-constexpr float GROUND_SEARCH_UP   = 5.0f;
-constexpr float GROUND_SEARCH_DOWN = 12.0f;
+void CollectCreaturesByEntry(Player* bot, std::vector<uint32> const& entries, float radius, std::vector<Unit*>& out);
+void CollectAttackersByEntry(Player* bot, std::vector<uint32> const& entries, float radius, std::vector<Unit*>& out);
+void CollectHazardEscapes(Player* bot, std::vector<Hazard> const& hazards, float anchorGap, EscapeSpots& out);
+void CollectRingEscapes(Player* bot, Unit* anchor, std::vector<Hazard> const& hazards, EscapeSpots& out);
 
-constexpr uint8 CONTROL_INTERRUPT_URGENCY = 2;
-
-struct EscapeSpot
-{
-    float x;
-    float y;
-    float z;
-};
-
-using EscapeSpots = std::vector<EscapeSpot>;
-
-struct LapseSpot
-{
-    float x;
-    float y;
-};
-
-struct LapseWorld
-{
-    std::vector<Unit*> spheres;
-    std::vector<LapseSpot> burns;
-};
-
-struct KiteState
-{
-    float turn = 0.0f;
-    uint32 lastMs = 0;
-};
-
-enum class PhoenixRing : uint8
-{
-    None,
-    Threatens,
-    Covers
-};
-
-enum class FocusOrder
-{
-    None,
-    Kael,
-    Delrissa,
-    Trash
-};
-
-Unit* GetSelin(Player* bot);
-Unit* GetKaelthas(Player* bot);
-
-Unit* GetActiveFelCrystal(Player* bot);
-
-void CollectDampeningEscapes(Player* bot, EscapeSpots& out);
-
-Unit* GetGlaiveThrowingMageGuard(Player* bot);
-
-void CollectNovaEscapes(Player* bot, EscapeSpots& out);
-
+uint8 BestCastPriority(Unit* caster, uint8 (*priority)(uint32));
 std::string CastInterrupt(PlayerbotAI* botAI, Unit* target, uint8 urgency);
 
-Unit* GetInterruptTarget(Player* bot);
-
-uint8 GetInterruptUrgency(Unit* caster);
-uint8 GetRetinueInterruptUrgency(Unit* caster);
-
-Unit* GetFocusTarget(Player* bot, ObjectGuid& latched);
-
+Unit* PickRankedFocus(Player* bot, uint8 (*rank)(uint32), std::vector<Unit*> const& extra, ObjectGuid& latched);
 ObjectGuid ResolveFocusOrder(PlayerbotAI* botAI);
-
 FocusOrder ResolveFocusOrderOwner(PlayerbotAI* botAI);
-
 void CollectFocusExclusions(Player* bot, std::vector<ObjectGuid>& out);
+bool ActionPullsOffFocus(Player* bot, Action* action);
 
+// Selin Fireheart (SelinTactics.cpp)
+
+Unit* GetSelin(Player* bot);
+Unit* GetActiveFelCrystal(Player* bot);
+
+// Trash (TrashTactics.cpp)
+
+void CollectDampeningEscapes(Player* bot, EscapeSpots& out);
+Unit* GetGlaiveThrowingMageGuard(Player* bot);
+void CollectNovaEscapes(Player* bot, EscapeSpots& out);
+Unit* GetInterruptTarget(Player* bot);
+uint8 GetInterruptUrgency(Unit* caster);
+Unit* GetFocusTarget(Player* bot, ObjectGuid& latched);
 Unit* GetEnragedWretched(Player* bot);
 
-std::vector<std::string> const& TauntSpellNames();
-
-void ClampIntoRoom(float& x, float& y);
+// Priestess Delrissa (DelrissaTactics.cpp)
 
 bool ShouldHoldTremorTotem(Player* bot);
-
 Unit* GetDelrissaFocusTarget(Player* bot, ObjectGuid& latched);
-
 void CollectDelrissaInterruptPreference(Player* bot, std::vector<Unit*>& out);
-
 void CollectDelrissaPets(Player* bot, std::vector<ObjectGuid>& out);
+uint8 GetRetinueInterruptUrgency(Unit* caster);
 
+// Kael'thas Sunstrider (KaelthasTactics.cpp, KaelthasHeroicTactics.cpp)
+
+Unit* GetKaelthas(Player* bot);
 void CollectFlameStrikeEscapes(Player* bot, EscapeSpots& out);
-
 void CollectPhoenixEscapes(Player* bot, EscapeSpots& out);
-
 PhoenixRing GetPhoenixRing(Player* bot);
-
 Unit* GetKaelInterruptTarget(Player* bot);
-
 bool IsKaelUnattackable(Player* bot);
-
 Unit* GetKaelFocusTarget(Player* bot);
-
+bool IsKaelShielded(Unit* kael);
+Unit* GetShockBarrierKael(Player* bot, Unit* kael);
 bool IsGravityLapseActive(Player* bot);
-
-void CollectLapseWorld(Player* bot, LapseWorld& out);
-
-bool GetGravityLapseKite(Player* bot, LapseWorld const& world, LapseSpot& out, KiteState& state);
-
-bool GetGravityLapseSpot(Player* bot, LapseWorld const& world, LapseSpot& out);
-
-bool GetGravityLapseDodge(Player* bot, LapseWorld const& world, LapseSpot& out);
-
-bool IsLapseMeleeSlot(Player* bot);
-
-bool OnLapseStation(Player* bot, Unit* kael, LapseSpot const& spot);
-
-bool LapseThreatened(Player* bot, LapseWorld const& world);
-
-bool GetLapseApproach(Player* bot, LapseWorld const& world, LapseSpot const& station, bool allowBlocked,
-                      LapseSpot& out);
-
 void CollectMeleePhoenixExclusions(Player* bot, std::vector<ObjectGuid>& out);
-}
+}  // namespace MagistersTerrace
 
 #endif

@@ -48,4 +48,11 @@ public:
     bool Execute(Event event) override;
 };
 
+class DodgeEckSpitAction : public MovementAction
+{
+public:
+    DodgeEckSpitAction(PlayerbotAI* botAI) : MovementAction(botAI, "dodge eck spit") {}
+    bool Execute(Event event) override;
+};
+
 #endif

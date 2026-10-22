@@ -91,6 +91,11 @@ bool PlayerbotAIConfig::Initialize()
     MaxWaitForMove = sConfigMgr->GetOption<int32>("Playerbots.MaxWaitForMove", 5000);
     DisableMoveSplinePath = sConfigMgr->GetOption<int32>("Playerbots.DisableMoveSplinePath", 0);
     MaxMovementSearchTime = sConfigMgr->GetOption<int32>("Playerbots.MaxMovementSearchTime", 3);
+    MovementPlanner = sConfigMgr->GetOption<uint32>("Playerbots.MovementPlanner", 0);
+    MovementPlannerMaxFallDamage = sConfigMgr->GetOption<float>("Playerbots.MovementPlanner.MaxFallDamage", 50.0f);
+    CatchUpTeleport = sConfigMgr->GetOption<bool>("Playerbots.CatchUpTeleport", false);
+    CatchUpTeleportStuckTime = sConfigMgr->GetOption<uint32>("Playerbots.CatchUpTeleport.StuckTime", 8000);
+    CatchUpTeleportDistance = sConfigMgr->GetOption<float>("Playerbots.CatchUpTeleport.Distance", 30.0f);
     ExpireActionTime = sConfigMgr->GetOption<int32>("Playerbots.ExpireActionTime", 5000);
     DispelAuraDuration = sConfigMgr->GetOption<int32>("Playerbots.DispelAuraDuration", 700);
     ReactDelay = sConfigMgr->GetOption<int32>("Playerbots.ReactDelay", 100);
