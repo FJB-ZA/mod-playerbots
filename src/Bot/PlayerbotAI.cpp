@@ -51,6 +51,7 @@
 #include "SocialMgr.h"
 #include "SpellAuraEffects.h"
 #include "SpellInfo.h"
+#include "SubclassBotMgr.h"
 #include "Transport.h"
 #include "Unit.h"
 #include "UpdateTime.h"
@@ -3246,6 +3247,8 @@ bool PlayerbotAI::HasAura(std::string const name, Unit* unit, bool maxStack, boo
         return false;
 
     wstrToLower(wnamepart);
+    if (SubclassBotMgr::Alias const* alias = SubclassBotMgr::instance().FindAlias(bot, wnamepart))
+        wnamepart = alias->lowerName;
 
     int auraAmount = 0;
 

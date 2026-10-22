@@ -35,6 +35,7 @@
 #include "ScriptMgr.h"
 #include "ServerScript.h"
 #include "SessionScript.h"
+#include "SubclassBotMgr.h"
 #include "WorldScript.h"
 #include "cmath"
 
@@ -549,6 +550,7 @@ public:
         sPlayerbotAIConfig.Initialize();
         LivingWorldMgr::instance().Load();
         LivingBondMgr::instance().Load();
+        SubclassBotMgr::instance().Load();
 
         LOG_INFO("server.loading", ">> Loaded playerbots config in {} ms", GetMSTimeDiffToNow(oldMSTime));
         LOG_INFO("server.loading", " ");

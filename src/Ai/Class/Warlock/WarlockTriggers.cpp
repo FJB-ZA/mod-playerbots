@@ -10,6 +10,7 @@
 #include "PlayerbotAI.h"
 #include "PlayerbotAIConfig.h"
 #include "Playerbots.h"
+#include "SubclassBotMgr.h"
 #include "TargetValue.h"
 
 static const uint32 SOUL_SHARD_ITEM_ID = 6265;
@@ -213,7 +214,7 @@ bool WrongPetTrigger::IsActive()
     {
         CreatureTemplate const* ct = pet->GetCreatureTemplate();
         // Check if the pet's NPC entry matches the expected one for the enabled strategy
-        if (ct && ct->Entry == enabledPet->npcEntry)
+        if (ct && SubclassBotMgr::instance().OriginalCreature(ct->Entry) == enabledPet->npcEntry)
             correctPet = true;
     }
 
@@ -223,7 +224,7 @@ bool WrongPetTrigger::IsActive()
 
     // Step 6: Finally, check if the bot actually knows the spell to summon the desired pet.
     //         If so, the trigger is active (bot should summon the correct pet).
-    if (bot->HasSpell(enabledPet->spellId))
+    if (SubclassBotMgr::instance().HasSpellOrMirror(bot, enabledPet->spellId))
         return true;
 
     // Step 7: If we get here, the bot doesn't know the spell required to support the active pet strategy
@@ -248,7 +249,7 @@ bool RainOfFireChannelCheckTrigger::IsActive()
     if (Spell* spell = bot->GetCurrentSpell(CURRENT_CHANNELED_SPELL))
     {
         // Only trigger if the spell being channeled is Rain of Fire
-        if (RAIN_OF_FIRE_SPELL_IDS.count(spell->m_spellInfo->Id))
+        if (RAIN_OF_FIRE_SPELL_IDS.count(SubclassBotMgr::instance().OriginalSpell(spell->m_spellInfo->Id)))
             return !HasEnoughAoeTargets(botAI, bot->GetPosition(), sPlayerbotAIConfig.SightDistance, minEnemies);
     }
 
