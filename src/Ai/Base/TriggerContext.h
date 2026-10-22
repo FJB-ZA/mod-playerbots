@@ -14,6 +14,7 @@
 #include "GuildTriggers.h"
 #include "HealthTriggers.h"
 #include "LfgTriggers.h"
+#include "LivingArenaActions.h"
 #include "LootTriggers.h"
 #include "NamedObjectContext.h"
 #include "NewRpgStrategy.h"
@@ -43,6 +44,7 @@ public:
         creators["timer bg"] = &TriggerContext::TimerBG;
         creators["random"] = &TriggerContext::Random;
         creators["seldom"] = &TriggerContext::seldom;
+        creators["living arena"] = &TriggerContext::living_arena;
         creators["often"] = &TriggerContext::often;
         creators["very often"] = &TriggerContext::very_often;
 
@@ -344,6 +346,7 @@ private:
     static Trigger* enemy_player_near(PlayerbotAI* botAI) { return new EnemyPlayerNear(botAI); }
     static Trigger* Random(PlayerbotAI* botAI) { return new RandomTrigger(botAI, "random", 20); }
     static Trigger* seldom(PlayerbotAI* botAI) { return new RandomTrigger(botAI, "seldom", 300); }
+    static Trigger* living_arena(PlayerbotAI* botAI) { return new LivingArenaTrigger(botAI); }
     static Trigger* often(PlayerbotAI* botAI) { return new RandomTrigger(botAI, "often", 5); }
     static Trigger* very_often(PlayerbotAI* botAI) { return new RandomTrigger(botAI, "often", 3); }
     static Trigger* EnemyOutOfMelee(PlayerbotAI* botAI) { return new EnemyOutOfMeleeTrigger(botAI); }

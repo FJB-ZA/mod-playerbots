@@ -106,6 +106,13 @@ public:
 
     bool Enabled;
     bool LivingWorldEnabled = false;
+    bool LivingArenaEnabled = false;
+    uint32 LivingArenaSeason = 0;
+    uint32 IndividualProgressionTbcArenaSeason = 1;
+    uint32 IndividualProgressionWotlkArenaSeason = 5;
+    uint32 LivingArenaMaxRatingAbove = 150;
+    uint32 LivingArenaMaxGearScoreAbove = 5;
+    uint32 LivingArenaPartnerSkill = 85;
     bool DisabledWithoutRealPlayer;
     bool EnableICCBuffs;
     bool AllowAccountBots, AllowGuildBots, AllowTrustedAccountBots;
@@ -256,12 +263,14 @@ public:
     bool RandomBotAutoJoinBG;
 
     std::string RandomBotAutoJoinICBrackets;
+    std::string RandomBotAutoJoinSABrackets;
     std::string RandomBotAutoJoinEYBrackets;
     std::string RandomBotAutoJoinAVBrackets;
     std::string RandomBotAutoJoinABBrackets;
     std::string RandomBotAutoJoinWSBrackets;
 
     uint32 RandomBotAutoJoinBGICCount;
+    uint32 RandomBotAutoJoinBGSACount;
     uint32 RandomBotAutoJoinBGEYCount;
     uint32 RandomBotAutoJoinBGAVCount;
     uint32 RandomBotAutoJoinBGABCount;

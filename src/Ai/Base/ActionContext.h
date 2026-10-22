@@ -38,6 +38,7 @@
 #include "ImbueAction.h"
 #include "InviteToGroupAction.h"
 #include "LeaveGroupAction.h"
+#include "LivingArenaActions.h"
 #include "LivingEconomyActions.h"
 #include "LivingFieldActions.h"
 #include "LivingProcessingActions.h"
@@ -82,6 +83,14 @@ class ActionContext : public NamedObjectContext<Action>
 public:
     ActionContext()
     {
+        creators["living arena call"] = &ActionContext::living_arena_call;
+        creators["living arena trinket"] = &ActionContext::living_arena_trinket;
+        creators["living arena interrupt"] = &ActionContext::living_arena_interrupt;
+        creators["living arena peel"] = &ActionContext::living_arena_peel;
+        creators["living arena cc"] = &ActionContext::living_arena_cc;
+        creators["living arena los"] = &ActionContext::living_arena_los;
+        creators["living arena kite"] = &ActionContext::living_arena_kite;
+        creators["living arena stealth"] = &ActionContext::living_arena_stealth;
         creators["living train"] = &ActionContext::living_train;
         creators["living craft"] = &ActionContext::living_craft;
         creators["living processing"] = &ActionContext::living_processing;
@@ -294,6 +303,14 @@ public:
     }
 
 private:
+    static Action* living_arena_call(PlayerbotAI* botAI) { return new LivingArenaCallAction(botAI); }
+    static Action* living_arena_trinket(PlayerbotAI* botAI) { return new LivingArenaTrinketAction(botAI); }
+    static Action* living_arena_interrupt(PlayerbotAI* botAI) { return new LivingArenaInterruptAction(botAI); }
+    static Action* living_arena_peel(PlayerbotAI* botAI) { return new LivingArenaPeelAction(botAI); }
+    static Action* living_arena_cc(PlayerbotAI* botAI) { return new LivingArenaCcAction(botAI); }
+    static Action* living_arena_los(PlayerbotAI* botAI) { return new LivingArenaLosAction(botAI); }
+    static Action* living_arena_kite(PlayerbotAI* botAI) { return new LivingArenaKiteAction(botAI); }
+    static Action* living_arena_stealth(PlayerbotAI* botAI) { return new LivingArenaStealthAction(botAI); }
     static Action* living_train(PlayerbotAI* botAI) { return new LivingTrainAction(botAI); }
     static Action* living_craft(PlayerbotAI* botAI) { return new LivingCraftAction(botAI); }
     static Action* living_processing(PlayerbotAI* botAI) { return new LivingProcessingAction(botAI); }

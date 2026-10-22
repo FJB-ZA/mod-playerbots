@@ -36,6 +36,7 @@
 #include "InviteToGroupAction.h"
 #include "LeaveGroupAction.h"
 #include "ListQuestsActions.h"
+#include "LivingArenaActions.h"
 #include "ListSpellsAction.h"
 #include "LogLevelAction.h"
 #include "LootRollAction.h"
@@ -133,6 +134,7 @@ public:
         creators["reward"] = &ChatActionContext::reward;
         creators["trade"] = &ChatActionContext::trade;
         creators["talents"] = &ChatActionContext::talents;
+        creators["arena skill"] = &ChatActionContext::arena_skill;
         creators["spells"] = &ChatActionContext::spells;
         creators["co"] = &ChatActionContext::co;
         creators["nc"] = &ChatActionContext::nc;
@@ -273,6 +275,7 @@ private:
     static Action* dead(PlayerbotAI* botAI) { return new ChangeDeadStrategyAction(botAI); }
     static Action* spells(PlayerbotAI* botAI) { return new ListSpellsAction(botAI); }
     static Action* talents(PlayerbotAI* botAI) { return new ChangeTalentsAction(botAI); }
+    static Action* arena_skill(PlayerbotAI* botAI) { return new LivingArenaSkillAction(botAI); }
 
     static Action* equip(PlayerbotAI* botAI) { return new EquipAction(botAI); }
     static Action* unequip(PlayerbotAI* botAI) { return new UnequipAction(botAI); }

@@ -53,6 +53,8 @@ void WorldPacketHandlerStrategy::InitTriggers(std::vector<TriggerNode*>& trigger
     triggers.push_back(new TriggerNode("arena team invite", { NextAction("arena team accept", relevance) }));
     //triggers.push_back(new TriggerNode("no non bot players around", { NextAction("delay", relevance) }));
     triggers.push_back(new TriggerNode("bg status", { NextAction("bg status", relevance) }));
+    // a grouped bot that misses the one invite packet would sit out the arena: re-ask while invited
+    triggers.push_back(new TriggerNode("bg invite active", { NextAction("bg status check", relevance) }));
     triggers.push_back(new TriggerNode("xpgain", { NextAction("xp gain", relevance) }));
     triggers.push_back(
         new TriggerNode("levelup", { NextAction("auto maintenance on levelup", relevance + 3) }));

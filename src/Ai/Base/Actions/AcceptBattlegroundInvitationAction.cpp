@@ -6,7 +6,9 @@
 
 #include "AcceptBattlegroundInvitationAction.h"
 #include "Event.h"
+#include "LivingWorldMgr.h"
 #include "PlayerbotAI.h"
+#include "Playerbots.h"
 
 bool AcceptBgInvitationAction::Execute(Event /*event*/)
 {
@@ -20,6 +22,9 @@ bool AcceptBgInvitationAction::Execute(Event /*event*/)
     packet << type << unk2 << (uint32)bgTypeId_ << unk << action;
     bot->GetSession()->HandleBattleFieldPortOpcode(packet);
 
+    // the queue join paths set a role; without one every bot here would defend
+    botAI->GetAiObjectContext()->GetValue<uint32>("bg role")->Set(
+        LivingWorldMgr::instance().GetBattlegroundRole(bot, urand(0, 9)));
     botAI->ResetStrategies();
 
     return true;

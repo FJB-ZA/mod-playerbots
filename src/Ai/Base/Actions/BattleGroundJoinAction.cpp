@@ -12,6 +12,8 @@
 #include "Event.h"
 #include "GameTime.h"
 #include "GroupMgr.h"
+#include "LivingArenaMgr.h"
+#include "LivingBattlegroundPolicy.h"
 #include "LivingWorldMgr.h"
 #include "LivingWorldPolicy.h"
 #include "RandomPlayerbotMgr.h"
@@ -22,7 +24,8 @@
 namespace
 {
 // Living-world bots fill a match with real players in it according to a gear-score spread
-// around those players (see LivingWorld::GearMatchChance).
+// around those players: teammates close to them (LivingWorld::GearMatchChance), opponents
+// mostly greener (LivingBattleground::EnemyGearChance).
 bool GearFitsQueue(Player* bot, BattlegroundQueueTypeId queueTypeId, BattlegroundBracketId bracketId)
 {
     if (!LivingWorldMgr::instance().IsEnabled(bot))
@@ -30,12 +33,26 @@ bool GearFitsQueue(Player* bot, BattlegroundQueueTypeId queueTypeId, Battlegroun
     BattlegroundInfo const& data = sRandomPlayerbotMgr.BattlegroundData[queueTypeId][bracketId];
     if (!data.playerGearScoreCount)
         return true;  // bots-only match: nothing to match against
-    uint32 const playerGearScore = static_cast<uint32>(data.playerGearScoreSum / data.playerGearScoreCount);
-    uint32 const chance = LivingWorld::GearMatchChance(PlayerbotAI::GetMixedGearScore(bot, false, false),
-                                                       playerGearScore,
-                                                       LivingWorldMgr::instance().GetProfile(bot).temperament);
-    return LivingWorld::GearMatchRoll(bot->GetGUID().GetCounter(), queueTypeId,
-                                      GameTime::GetGameTime().count(), chance);
+    TeamId const team = bot->GetTeamId();
+    TeamId const enemy = team == TEAM_ALLIANCE ? TEAM_HORDE : TEAM_ALLIANCE;
+    uint32 const botGearScore = PlayerbotAI::GetMixedGearScore(bot, false, false);
+    auto const temperament = LivingWorldMgr::instance().GetProfile(bot).temperament;
+    uint64 const now = GameTime::GetGameTime().count();
+    uint32 chance;
+    if (!data.teamGearScoreCount[team] && data.teamGearScoreCount[enemy])
+    {
+        uint32 const enemyGearScore =
+            static_cast<uint32>(data.teamGearScoreSum[enemy] / data.teamGearScoreCount[enemy]);
+        chance = LivingBattleground::EnemyGearChance(botGearScore, enemyGearScore,
+                                                     LivingBattleground::GreenTeam(queueTypeId, now), temperament);
+    }
+    else
+    {
+        uint32 const count = data.teamGearScoreCount[team] ? data.teamGearScoreCount[team] : data.playerGearScoreCount;
+        uint64 const sum = data.teamGearScoreCount[team] ? data.teamGearScoreSum[team] : data.playerGearScoreSum;
+        chance = LivingWorld::GearMatchChance(botGearScore, static_cast<uint32>(sum / count), temperament);
+    }
+    return LivingWorld::GearMatchRoll(bot->GetGUID().GetCounter(), queueTypeId, now, chance);
 }
 }  // namespace
 
@@ -281,7 +298,9 @@ bool BGJoinAction::shouldJoinBg(BattlegroundQueueTypeId queueTypeId, Battlegroun
 
         if (isRated)
         {
-            if (sArenaTeamMgr->GetArenaTeamByCaptain(bot->GetGUID(), type))
+            // Living arena picks which bot teams play, so a captain queues only when scheduled.
+            if (sArenaTeamMgr->GetArenaTeamByCaptain(bot->GetGUID(), type) &&
+                LivingArenaMgr::instance().MayQueueRated(bot, type))
             {
                 sRandomPlayerbotMgr.BattlegroundData[queueTypeId][bracketId].ratedArenaBotCount += TeamSize;
                 ratedList.push_back(queueTypeId);
@@ -733,6 +752,10 @@ bool BGStatusAction::LeaveBG(PlayerbotAI* botAI)
     botAI->ChangeStrategy("-eye", BOT_STATE_NON_COMBAT);
     botAI->ChangeStrategy("-isle", BOT_STATE_COMBAT);
     botAI->ChangeStrategy("-isle", BOT_STATE_NON_COMBAT);
+    botAI->ChangeStrategy("-alterac", BOT_STATE_COMBAT);
+    botAI->ChangeStrategy("-alterac", BOT_STATE_NON_COMBAT);
+    botAI->ChangeStrategy("-strand", BOT_STATE_COMBAT);
+    botAI->ChangeStrategy("-strand", BOT_STATE_NON_COMBAT);
     botAI->ChangeStrategy("-Battleground", BOT_STATE_COMBAT);
     botAI->ChangeStrategy("-Battleground", BOT_STATE_NON_COMBAT);
     botAI->ChangeStrategy("-arena", BOT_STATE_COMBAT);
@@ -759,6 +782,17 @@ bool BGStatusAction::LeaveBG(PlayerbotAI* botAI)
     pos.Reset();
     posMap["bg objective"] = pos;
     return true;
+}
+
+// The core drops a refused port without a reply: log what it checks and clear the combat it refuses
+static void PreparePort(Player* bot, BattlegroundQueueTypeId queueTypeId)
+{
+    constexpr uint32 SPELL_GM_FREEZE = 9454;
+    if (sPlayerbotAIConfig.LivingWorldEnabled && bot->IsInCombat())
+        bot->CombatStop(true);
+    LOG_DEBUG("playerbots", "Bot {} port check: queued {} invited {} combat {} charm {} freeze {}", bot->GetName(),
+              bot->InBattlegroundQueue(), bot->IsInvitedForBattlegroundQueueType(queueTypeId), bot->IsInCombat(),
+              bot->GetCharm() != nullptr, bot->HasAura(SPELL_GM_FREEZE));
 }
 
 bool BGStatusAction::isUseful() { return bot->InBattlegroundQueue(); }
@@ -927,6 +961,7 @@ bool BGStatusAction::Execute(Event event)
                     WorldPacket emptyPacket;
                     bot->GetSession()->HandleCancelMountAuraOpcode(emptyPacket);
                     action = 0x1;
+                    PreparePort(bot, queueTypeId);
 
                     WorldPacket packet(CMSG_BATTLEFIELD_PORT, 20);
                     packet << type << unk2 << (uint32)_bgTypeId << unk << action;
@@ -962,7 +997,8 @@ bool BGStatusAction::Execute(Event event)
         else
             timer = TIME_TO_AUTOREMOVE + IN_MILLISECONDS * (bg->GetMaxPlayersPerTeam() * 8);
 
-        if (Time2 > timer && isArena)  // disabled for BG
+        // upstream only times out arena queues; the living world also frees bots from a battleground that can't fill
+        if (Time2 > timer && (isArena || sPlayerbotAIConfig.LivingWorldEnabled))
             leaveQ = true;
 
         if (leaveQ && ((bot->GetGroup() && bot->GetGroup()->IsLeader(bot->GetGUID())) ||
@@ -970,11 +1006,13 @@ bool BGStatusAction::Execute(Event event)
         {
             //TeamId teamId = bot->GetTeamId(); //not used, line marked for removal.
             bool realPlayers = false;
-            if (isRated)
-                realPlayers = sRandomPlayerbotMgr.BattlegroundData[queueTypeId][bracketId].ratedArenaPlayerCount > 0;
+            auto const& queueInfo = sRandomPlayerbotMgr.BattlegroundData[queueTypeId][bracketId];
+            if (!isArena)  // a battleground that can't fill holds its bots forever unless a player waits in it
+                realPlayers = queueInfo.bgAlliancePlayerCount + queueInfo.bgHordePlayerCount > 0;
+            else if (isRated)
+                realPlayers = queueInfo.ratedArenaPlayerCount > 0;
             else
-                realPlayers =
-                    sRandomPlayerbotMgr.BattlegroundData[queueTypeId][bracketId].skirmishArenaPlayerCount > 0;
+                realPlayers = queueInfo.skirmishArenaPlayerCount > 0;
 
             if (realPlayers)
                 return false;
@@ -1050,6 +1088,7 @@ bool BGStatusAction::Execute(Event event)
         bot->GetSession()->HandleCancelMountAuraOpcode(emptyPacket);
 
         action = 0x1;
+        PreparePort(bot, queueTypeId);
 
         WorldPacket packet(CMSG_BATTLEFIELD_PORT, 20);
         packet << type << unk2 << (uint32)_bgTypeId << unk << action;

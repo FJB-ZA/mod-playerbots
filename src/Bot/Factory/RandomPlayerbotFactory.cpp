@@ -12,6 +12,7 @@
 #include "ObjectAccessor.h"
 #include "Player.h"
 #include "DatabaseEnv.h"
+#include "LivingArenaMgr.h"
 #include "Log.h"
 #include "PlayerbotAI.h"
 #include "PlayerbotAIConfig.h"
@@ -911,6 +912,10 @@ void RandomPlayerbotFactory::AssignBotToArenaTeam(Player* bot)
         return;
 
     if (sPlayerbotAIConfig.DeleteRandomBotArenaTeams)
+        return;
+
+    // Living arena forms its own teams by composition and starts them at the season's base rating.
+    if (LivingArenaMgr::instance().IsEnabled())
         return;
 
     if (bot->GetLevel() < 70)

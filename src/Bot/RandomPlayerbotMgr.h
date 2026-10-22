@@ -47,6 +47,9 @@ struct BattlegroundInfo
     // Real players queued or playing in this bracket: summed gear score, for living-world matching
     uint64 playerGearScoreSum = 0;
     uint32 playerGearScoreCount = 0;
+    // The same split by the real players' team, indexed by TeamId (alliance, horde)
+    uint64 teamGearScoreSum[2] = {0, 0};
+    uint32 teamGearScoreCount[2] = {0, 0};
 };
 
 class ChatHandler;
