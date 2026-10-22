@@ -19,6 +19,7 @@
 #include "DebugStrategy.h"
 #include "DpsAssistStrategy.h"
 #include "DuelStrategy.h"
+#include "DungeonLeadActions.h"
 #include "EmoteStrategy.h"
 #include "FocusTargetStrategy.h"
 #include "FollowMasterStrategy.h"
@@ -126,6 +127,7 @@ public:
         creators["maintenance"] = &StrategyContext::maintenance;
         creators["living arena"] = &StrategyContext::living_arena;
         creators["living professions"] = &StrategyContext::living_professions;
+        creators["dungeon lead"] = &StrategyContext::dungeon_lead;
         creators["living fieldwork"] = &StrategyContext::living_fieldwork;
         creators["group"] = &StrategyContext::group;
         creators["guild"] = &StrategyContext::guild;
@@ -145,6 +147,7 @@ public:
 private:
     static Strategy* living_arena(PlayerbotAI* botAI) { return new LivingArenaStrategy(botAI); }
     static Strategy* living_professions(PlayerbotAI* botAI) { return new LivingProfessionStrategy(botAI); }
+    static Strategy* dungeon_lead(PlayerbotAI* botAI) { return new DungeonLeadStrategy(botAI); }
     static Strategy* living_fieldwork(PlayerbotAI* botAI) { return new LivingFieldStrategy(botAI); }
     static Strategy* behind(PlayerbotAI* botAI) { return new SetBehindCombatStrategy(botAI); }
     static Strategy* ranged(PlayerbotAI* botAI) { return new RangedCombatStrategy(botAI); }

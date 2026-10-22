@@ -5,6 +5,7 @@
  */
 
 #include "FollowActions.h"
+#include "DungeonLead.h"
 #include "Event.h"
 #include "Formations.h"
 #include "LastMovementValue.h"
@@ -210,7 +211,14 @@ bool FollowAction::Execute(Event /*event*/)
     // end unified transport handling
 
     bool moved = false;
-    if (!target.empty())
+    Player* leader = DungeonLead::Leader(botAI);
+    if (!target.empty() && leader)
+    {
+        if (leader == bot)
+            return false;
+        moved = Follow(leader);
+    }
+    else if (!target.empty())
     {
         moved = Follow(AI_VALUE(Unit*, target));
     }
@@ -255,8 +263,12 @@ bool FollowAction::isUseful()
 
     std::string const target = formation->GetTargetName();
 
+    // A bot tank leading the run replaces the formation's own target.
+    Player* leader = DungeonLead::Leader(botAI);
     Unit* fTarget = nullptr;
-    if (!target.empty())
+    if (leader)
+        fTarget = leader;
+    else if (!target.empty())
         fTarget = AI_VALUE(Unit*, target);
     else if (botAI->GetMaster())
         fTarget = botAI->GetMaster();
@@ -276,7 +288,11 @@ bool FollowAction::isUseful()
     }
 
     float distance = 0.f;
-    if (!target.empty())
+    if (!target.empty() && leader)
+    {
+        distance = bot->GetDistance(leader);
+    }
+    else if (!target.empty())
     {
         distance = AI_VALUE2(float, "distance", target);
     }
@@ -296,7 +312,9 @@ bool FollowAction::isUseful()
 
 bool FollowAction::CatchUpToLeader()
 {
-    Unit* leader = botAI->GetMaster();
+    Unit* leader = DungeonLead::Leader(botAI);
+    if (!leader)
+        leader = botAI->GetMaster();
     if (!leader)
         leader = AI_VALUE(Unit*, "group leader");
     if (!leader || leader == bot || !bot->IsAlive())

@@ -107,6 +107,7 @@ public:
     bool Enabled;
     bool LivingWorldEnabled = false;
     bool LivingArenaEnabled = false;
+    bool LivingTransmogEnabled = false;
     uint32 LivingArenaSeason = 0;
     uint32 IndividualProgressionTbcArenaSeason = 1;
     uint32 IndividualProgressionWotlkArenaSeason = 5;
@@ -296,6 +297,7 @@ public:
     std::string RandomBotCombatStrategies, RandomBotNonCombatStrategies;
     std::string ReactStrategies, RandomBotReactStrategies;
     bool ApplyInstanceStrategies;
+    bool DungeonLeadEnabled;
     uint32 RandomBotMinLevel, RandomBotMaxLevel;
     float RandomChangeMultiplier;
 

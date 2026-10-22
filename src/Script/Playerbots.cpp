@@ -17,6 +17,7 @@
 #include "Config.h"
 #include "DBUpdater.h"
 #include "DatabaseEnv.h"
+#include "DungeonLead.h"
 #include "GatherNodeMgr.h"
 #include "GlobalScript.h"
 #include "GuildTaskMgr.h"
@@ -293,6 +294,8 @@ public:
         // Addon traffic (DBM, Carbonite, ...) is no bot command; its text used to trigger item commands like trade.
         if (lang == LANG_ADDON)
             return true;
+
+        DungeonLead::OnPartyChat(player, type, msg, group);
 
         for (GroupReference* itr = group->GetFirstMember(); itr != nullptr; itr = itr->next())
         {

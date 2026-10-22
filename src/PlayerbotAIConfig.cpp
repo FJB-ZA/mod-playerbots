@@ -472,6 +472,7 @@ bool PlayerbotAIConfig::Initialize()
     ReactStrategies = sConfigMgr->GetOption<std::string>("Playerbots.ReactStrategies", "");
     RandomBotReactStrategies = sConfigMgr->GetOption<std::string>("Playerbots.RandomBotReactStrategies", "");
     ApplyInstanceStrategies = sConfigMgr->GetOption<bool>("Playerbots.ApplyInstanceStrategies", true);
+    DungeonLeadEnabled = sConfigMgr->GetOption<bool>("Playerbots.DungeonLead.Enabled", false);
 
     CommandPrefix = sConfigMgr->GetOption<std::string>("Playerbots.CommandPrefix", "");
     CommandSeparator = sConfigMgr->GetOption<std::string>("Playerbots.CommandSeparator", "\\\\");
@@ -768,6 +769,7 @@ bool PlayerbotAIConfig::Initialize()
 
     LivingWorldEnabled = sConfigMgr->GetOption<bool>("Playerbots.LivingWorld.Enabled", false);
     LivingArenaEnabled = sConfigMgr->GetOption<bool>("Playerbots.LivingArena.Enabled", false);
+    LivingTransmogEnabled = sConfigMgr->GetOption<bool>("Playerbots.LivingTransmog.Enabled", false);
     LivingArenaSeason = sConfigMgr->GetOption<uint32>("Playerbots.LivingArena.Season", 0);
     // mod-individual-progression's era seasons, the fallback when Playerbots.LivingArena.Season is 0.
     IndividualProgressionTbcArenaSeason =

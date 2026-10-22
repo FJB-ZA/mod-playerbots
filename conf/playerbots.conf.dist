@@ -27,6 +27,12 @@ Playerbots.LivingArena.MaxRatingAbove = 150
 Playerbots.LivingArena.MaxGearScoreAbovePct = 5
 Playerbots.LivingArena.PartnerSkill = 85
 
+# Living-world bots restyle their gear at mod-transmog's Warpweaver (190010). Needs LivingWorld.Enabled and mod-transmog.
+# Only in Stormwind, Orgrimmar, Shattrath and Dalaran, in person: a bot in town that wants a new look walks over while
+# visiting NPCs and picks rare-or-better appearances from its own collection, paying the module's price.
+# Gear-minded bots care most; a bot restyles at most once a day.
+Playerbots.LivingTransmog.Enabled = 0
+
 # Random bots well above a real player's level accept that player's group invite instead of refusing it
 # for the level or gear-score gap, and fight at the player's level through the core's mentor mode.
 # Needs the solo-wow core fork with MentorMode.Enable = 1 (its default) in worldserver.conf.
@@ -531,6 +537,14 @@ Playerbots.DropObsoleteQuests = 1
 
 # Auto add dungeon/raid strategies when entering the instance if implemented
 Playerbots.ApplyInstanceStrategies = 1
+
+# A bot tank leads 5-man dungeon runs: the group follows it, and it pulls pack by pack toward the next boss once
+# everyone is alive, healed and has mana. Healers call oom and drink; a player who says "oom", "drinking" or "mana"
+# in party chat is waited for until their mana is back (80-90%), and "ready" lifts the wait. How the tank marks,
+# asks for crowd control, pulls around corners and paces the run depends on its hidden skill. A player who tanks
+# leads instead. Needs ApplyInstanceStrategies.
+# Default: 0 (disabled)
+Playerbots.DungeonLead.Enabled = 0
 
 # Enable auto avoid aoe strategy
 # Default: 1 (enabled)

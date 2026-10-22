@@ -26,6 +26,7 @@
 #include "DistanceValue.h"
 #include "DpsTargetValue.h"
 #include "DuelTargetValue.h"
+#include "DungeonLead.h"
 #include "EnemyHealerTargetValue.h"
 #include "EnemyPlayerValue.h"
 #include "EstimatedLifetimeValue.h"
@@ -52,6 +53,7 @@
 #include "LfgValues.h"
 #include "LineTargetValue.h"
 #include "LivingEconomyActions.h"
+#include "LivingTransmogActions.h"
 #include "LivingFieldActions.h"
 #include "LivingGearActions.h"
 #include "LivingProcessingActions.h"
@@ -116,6 +118,7 @@ public:
         creators["living gear hunt"] = &ValueContext::living_gear_hunt;
         creators["living market trip"] = &ValueContext::living_market_trip;
         creators["living training trip"] = &ValueContext::living_training_trip;
+        creators["living transmog trip"] = &ValueContext::living_transmog_trip;
         creators["living supplies"] = &ValueContext::living_supplies;
         creators["living auction"] = &ValueContext::living_auction;
         creators["living mail"] = &ValueContext::living_mail;
@@ -219,6 +222,8 @@ public:
         creators["aoe heal"] = &ValueContext::aoe_heal;
 
         creators["rti cc"] = &ValueContext::rti_cc;
+        creators["dungeon leader"] = &ValueContext::dungeon_leader;
+        creators["dungeon lead state"] = &ValueContext::dungeon_lead_state;
         creators["rti"] = &ValueContext::rti;
         creators["position"] = &ValueContext::position;
         creators["pos"] = &ValueContext::pos;
@@ -357,6 +362,7 @@ private:
     static UntypedValue* living_gear_hunt(PlayerbotAI* botAI) { return new LivingGearHuntValue(botAI); }
     static UntypedValue* living_market_trip(PlayerbotAI* botAI) { return new LivingMarketTripValue(botAI); }
     static UntypedValue* living_training_trip(PlayerbotAI* botAI) { return new LivingTrainingTripValue(botAI); }
+    static UntypedValue* living_transmog_trip(PlayerbotAI* botAI) { return new LivingTransmogTripValue(botAI); }
     static UntypedValue* living_supplies(PlayerbotAI* botAI)
     {
         return new LivingEconomyValue(botAI, "living supplies", LivingEconomyJob::Supplies);
@@ -403,6 +409,8 @@ private:
     static UntypedValue* current_position(PlayerbotAI* botAI) { return new CurrentPositionValue(botAI); }
     static UntypedValue* rti(PlayerbotAI* botAI) { return new RtiValue(botAI); }
     static UntypedValue* rti_cc(PlayerbotAI* botAI) { return new RtiCcValue(botAI); }
+    static UntypedValue* dungeon_leader(PlayerbotAI* botAI) { return new DungeonLeaderValue(botAI); }
+    static UntypedValue* dungeon_lead_state(PlayerbotAI* botAI) { return new DungeonLeadStateValue(botAI); }
 
     static UntypedValue* aoe_heal(PlayerbotAI* botAI) { return new AoeHealValue(botAI); }
 
