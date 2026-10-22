@@ -14,6 +14,7 @@
 #include "IVMapMgr.h"
 #include "LivingEconomyActions.h"
 #include "LivingEconomyPolicy.h"
+#include "LivingTransmogActions.h"
 #include "MotionMaster.h"
 #include "MoveSpline.h"
 #include "NewRpgInfo.h"
@@ -408,6 +409,25 @@ bool NewRpgWanderNpcAction::Execute(Event /*event*/)
         botAI->GetAiObjectContext()->GetValue<LivingMarketTrip>("living market trip")->Get();
     if (trip.go && bot->GetExactDist(trip.destination) > LivingWorld::MarketReach && MoveFarTo(trip.destination))
         return true;
+
+    // A bot in town that wants a new look walks to the Warpweaver before any other NPC.
+    LivingTransmogTrip const look =
+        botAI->GetAiObjectContext()->GetValue<LivingTransmogTrip>("living transmog trip")->Get();
+    if (look.go)
+    {
+        WorldObject* warpweaver = ObjectAccessor::GetWorldObject(*bot, look.warpweaver);
+        if (warpweaver && IsWithinInteractionDist(warpweaver))
+        {
+            // Stand still until the world thread has talked to it.
+            ForceToWait(3000);
+            return LivingTransmog::QueueVisit(botAI, look.warpweaver);
+        }
+        if (warpweaver && IsWaitingForLastMove(MovementPriority::MOVEMENT_NORMAL))
+            return false;
+        if (warpweaver && MoveWorldObjectTo(look.warpweaver))
+            return true;
+        LivingTransmog::EndTrip(botAI);
+    }
 
     NewRpgInfo& info = botAI->rpgInfo;
     auto* dataPtr = std::get_if<NewRpgInfo::WanderNpc>(&info.data);

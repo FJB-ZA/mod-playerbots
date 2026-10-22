@@ -768,6 +768,7 @@ bool PlayerbotAIConfig::Initialize()
 
     LivingWorldEnabled = sConfigMgr->GetOption<bool>("Playerbots.LivingWorld.Enabled", false);
     LivingArenaEnabled = sConfigMgr->GetOption<bool>("Playerbots.LivingArena.Enabled", false);
+    LivingTransmogEnabled = sConfigMgr->GetOption<bool>("Playerbots.LivingTransmog.Enabled", false);
     LivingArenaSeason = sConfigMgr->GetOption<uint32>("Playerbots.LivingArena.Season", 0);
     // mod-individual-progression's era seasons, the fallback when Playerbots.LivingArena.Season is 0.
     IndividualProgressionTbcArenaSeason =

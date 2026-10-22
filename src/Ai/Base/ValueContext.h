@@ -52,6 +52,7 @@
 #include "LfgValues.h"
 #include "LineTargetValue.h"
 #include "LivingEconomyActions.h"
+#include "LivingTransmogActions.h"
 #include "LivingFieldActions.h"
 #include "LivingGearActions.h"
 #include "LivingProcessingActions.h"
@@ -115,6 +116,7 @@ public:
         creators["living field state"] = &ValueContext::living_field_state;
         creators["living gear hunt"] = &ValueContext::living_gear_hunt;
         creators["living market trip"] = &ValueContext::living_market_trip;
+        creators["living transmog trip"] = &ValueContext::living_transmog_trip;
         creators["living supplies"] = &ValueContext::living_supplies;
         creators["living auction"] = &ValueContext::living_auction;
         creators["living mail"] = &ValueContext::living_mail;
@@ -355,6 +357,7 @@ private:
     static UntypedValue* living_field_state(PlayerbotAI* botAI) { return new LivingFieldStateValue(botAI); }
     static UntypedValue* living_gear_hunt(PlayerbotAI* botAI) { return new LivingGearHuntValue(botAI); }
     static UntypedValue* living_market_trip(PlayerbotAI* botAI) { return new LivingMarketTripValue(botAI); }
+    static UntypedValue* living_transmog_trip(PlayerbotAI* botAI) { return new LivingTransmogTripValue(botAI); }
     static UntypedValue* living_supplies(PlayerbotAI* botAI)
     {
         return new LivingEconomyValue(botAI, "living supplies", LivingEconomyJob::Supplies);
