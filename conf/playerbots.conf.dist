@@ -355,6 +355,11 @@ Playerbots.LootRollRecipe = 0
 # Default: 0 (disabled)
 Playerbots.LootRollDisenchant = 0
 
+# Percent of bots with a ninja streak: they roll NEED on every item, even ones that don't help them.
+# The same bots stay ninjas (picked from the character), so a group learns who they are.
+# Default: 0 (no ninjas)
+Playerbots.LootRoll.NinjaPercent = 0
+
 # A list of GameObject GUIDs that bots will not interact with.
 # List of default GUIDs:
 # QuestItems:

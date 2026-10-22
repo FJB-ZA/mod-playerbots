@@ -721,6 +721,7 @@ bool PlayerbotAIConfig::Initialize()
     LootRollRecipe = sConfigMgr->GetOption<bool>("Playerbots.LootRollRecipe", false);
     LootRollDisenchant = sConfigMgr->GetOption<bool>("Playerbots.LootRollDisenchant", false);
     LootGreedRollLevel = sConfigMgr->GetOption<bool>("Playerbots.LootGreedRollLevel", false);
+    LootRollNinjaPercent = std::min(sConfigMgr->GetOption<uint32>("Playerbots.LootRoll.NinjaPercent", 0), 100u);
     AutoPickReward = sConfigMgr->GetOption<std::string>("Playerbots.AutoPickReward", "yes");
     AutoEquipUpgradeLoot = sConfigMgr->GetOption<bool>("Playerbots.AutoEquipUpgradeLoot", true);
     EquipUpgradeThreshold = sConfigMgr->GetOption<float>("Playerbots.EquipUpgradeThreshold", 1.1f);

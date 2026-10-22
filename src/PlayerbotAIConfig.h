@@ -394,6 +394,7 @@ public:
     bool LootGreedRollLevel;
     bool LootRollRecipe;
     bool LootRollDisenchant;
+    uint32 LootRollNinjaPercent;
     std::string AutoPickReward;
     bool AutoEquipUpgradeLoot;
     float EquipUpgradeThreshold;
