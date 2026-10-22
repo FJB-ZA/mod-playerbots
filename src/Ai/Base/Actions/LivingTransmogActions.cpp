@@ -35,6 +35,7 @@ namespace
 struct LookWish
 {
     time_t next = 0;
+    time_t started = 0;
     bool wants = false;
 };
 
@@ -58,12 +59,14 @@ bool WantsNewLook(Player* bot)
     LookLedger& ledger = Looks();
     std::lock_guard<std::mutex> guard(ledger.lock);
     LookWish& wish = ledger.bots[bot->GetGUID().GetCounter()];
-    if (wish.wants)
+    if (wish.wants && !LivingWorld::TransmogTripOver(wish.started, now))
         return true;
-    if (now < wish.next)
+    if (!wish.wants && now < wish.next)
         return false;
-    wish.wants = urand(1, 100) <= percent;
-    if (!wish.wants)
+    wish.wants = !wish.wants && urand(1, 100) <= percent;
+    if (wish.wants)
+        wish.started = now;
+    else
         wish.next = now + LivingWorld::TransmogRetrySeconds;
     return wish.wants;
 }
@@ -104,10 +107,12 @@ public:
 
         uint32 const wanted =
             LivingWorld::TransmogSlotsPerVisit(LivingWorldMgr::instance().GetProfile(player).motivation);
+        uint32 const attempts = LivingWorld::TransmogSlotAttempts(wanted);
         uint32 restyled = 0;
+        uint32 tried = 0;
         for (uint32 slot : slots)
         {
-            if (restyled >= wanted)
+            if (restyled >= wanted || tried++ >= attempts)
                 break;
             restyled += Restyle(player, slot);
         }

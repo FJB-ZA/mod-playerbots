@@ -29,6 +29,10 @@ inline constexpr float TransmogSearchRange = 250.0f;
 // A bot that did not feel like restyling asks itself again after this; one that did waits a day.
 inline constexpr uint32_t TransmogRetrySeconds = 2 * 3600;
 inline constexpr uint32_t TransmogCooldownSeconds = 24 * 3600;
+// A bot that cannot reach the Warpweaver gives up after this and waits out the retry window.
+inline constexpr uint32_t TransmogTripSeconds = 5 * 60;
+
+constexpr bool TransmogTripOver(uint64_t started, uint64_t now) { return now >= started + TransmogTripSeconds; }
 
 // Chance that a bot in town with time on its hands goes to the Warpweaver: gear chasers care most
 // about their look, power levellers least.
@@ -65,6 +69,9 @@ constexpr uint32_t TransmogSlotsPerVisit(Motivation motivation)
             return 2;
     }
 }
+
+// Every slot tried builds that slot's whole look menu, so a visit gives up after a couple of misses.
+constexpr uint32_t TransmogSlotAttempts(uint32_t wanted) { return wanted + 2; }
 
 // Too poor to bother walking over: 5 silver per level (4 gold at 80).
 constexpr uint32_t TransmogMinPurse(uint32_t level) { return level * 500; }
