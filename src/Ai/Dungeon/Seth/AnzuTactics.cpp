@@ -1,3 +1,9 @@
+/*
+ * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
+ * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
+ * or (at your option) any later version.
+ */
+
 // Anzu bot tactics: skull or moon him as his banish comes and goes, HoT the bird spirits, hold casts under Spell Bomb.
 
 #include "EncounterHelpers.h"

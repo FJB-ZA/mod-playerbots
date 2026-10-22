@@ -1,3 +1,9 @@
+/*
+ * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
+ * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
+ * or (at your option) any later version.
+ */
+
 // When a bot looks for a jump instead of walking, and which jump route it takes.
 
 #ifndef _PLAYERBOTS_ROUTE_POLICY_H

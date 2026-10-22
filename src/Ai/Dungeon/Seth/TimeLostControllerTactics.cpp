@@ -1,3 +1,9 @@
+/*
+ * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
+ * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
+ * or (at your option) any later version.
+ */
+
 // Time-Lost Controller bot tactics: skull its Charming Totem so the group kills it before it charms anyone.
 
 #include "EncounterHelpers.h"

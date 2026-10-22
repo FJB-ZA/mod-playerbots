@@ -1,3 +1,9 @@
+/*
+ * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
+ * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
+ * or (at your option) any later version.
+ */
+
 // Fall damage as the core deals it, and when a bot takes a drop: never a leader's fatal fall unless the group wipes.
 
 #ifndef _PLAYERBOTS_FALL_POLICY_H

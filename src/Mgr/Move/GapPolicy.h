@@ -1,3 +1,9 @@
+/*
+ * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
+ * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
+ * or (at your option) any later version.
+ */
+
 // Whether a bot can cross a gap between two pieces of navmesh by stepping, jumping or dropping.
 
 #ifndef _PLAYERBOTS_GAP_POLICY_H

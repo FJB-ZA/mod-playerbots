@@ -1,3 +1,9 @@
+/*
+ * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
+ * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
+ * or (at your option) any later version.
+ */
+
 // Pure rules for the Utgarde Keep bosses: Keleseth's tombs, Dalronn first, and Ingvar's smashes and roars.
 
 #ifndef _PLAYERBOTS_UK_POLICY_H

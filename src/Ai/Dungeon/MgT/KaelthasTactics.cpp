@@ -1,3 +1,9 @@
+/*
+ * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
+ * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
+ * or (at your option) any later version.
+ */
+
 // Kael'thas Sunstrider bot tactics: leave Flame Strike and phoenix burns, kill eggs, kick Fireball, fly the lapse.
 
 #include <algorithm>

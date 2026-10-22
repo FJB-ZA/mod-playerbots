@@ -1,3 +1,9 @@
+/*
+ * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
+ * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
+ * or (at your option) any later version.
+ */
+
 // Mage-Lord Urom bot tactics: leave him alone on the platforms, hide from his explosion, carry a Time Bomb away.
 
 #include "MovementActions.h"

@@ -1,3 +1,9 @@
+/*
+ * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
+ * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
+ * or (at your option) any later version.
+ */
+
 // Gal'darah bot tactics: everyone steps out of Whirling Slash, the tank twice as far since he chases her.
 
 #include "GDActions.h"

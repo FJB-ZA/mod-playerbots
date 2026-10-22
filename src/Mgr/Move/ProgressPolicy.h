@@ -1,3 +1,9 @@
+/*
+ * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
+ * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
+ * or (at your option) any later version.
+ */
+
 // Stuck detection for a moving bot, and when a stuck follower may catch up to its leader.
 
 #ifndef _PLAYERBOTS_PROGRESS_POLICY_H

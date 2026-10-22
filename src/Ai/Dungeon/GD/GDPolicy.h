@@ -1,3 +1,9 @@
+/*
+ * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
+ * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
+ * or (at your option) any later version.
+ */
+
 // Pure rules for the Gundrak bosses: Slad'ran's nova, snake wraps and stack, Gal'darah's Whirling Slash, Eck's Spit.
 
 #ifndef _PLAYERBOTS_GD_POLICY_H
