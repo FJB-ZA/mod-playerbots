@@ -1432,6 +1432,7 @@ std::vector<Player*> LivingArenaMgr::FindPartnerCandidates(Player* player, uint8
     return result;
 }
 
+// Random bots only: a purchase sells the replaced piece and re-gems, so a player's own alts never shop.
 std::vector<Player*> LivingArenaMgr::GetShoppers() const
 {
     std::vector<Player*> shoppers;
@@ -1439,19 +1440,6 @@ std::vector<Player*> LivingArenaMgr::GetShoppers() const
     {
         if (bot && bot->GetLevel() == GetArenaLevel() && OnAnyArenaTeam(bot))
             shoppers.push_back(bot);
-    }
-    for (Player* player : sRandomPlayerbotMgr.GetPlayers())
-    {
-        PlayerbotMgr* mgr = player ? GET_PLAYERBOT_MGR(player) : nullptr;
-        if (!mgr)
-            continue;
-        for (auto it = mgr->GetPlayerBotsBegin(); it != mgr->GetPlayerBotsEnd(); ++it)
-        {
-            Player* bot = it->second;
-            if (bot && bot->GetLevel() == GetArenaLevel() && OnAnyArenaTeam(bot) &&
-                std::find(shoppers.begin(), shoppers.end(), bot) == shoppers.end())
-                shoppers.push_back(bot);
-        }
     }
     return shoppers;
 }
