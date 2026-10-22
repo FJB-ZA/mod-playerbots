@@ -333,22 +333,36 @@ LivingEconomyPlan RecipePlan(Player* player, Offers const& offers)
     return best;
 }
 
-// Uses one recipe from the bags that the bot can learn, as a player would. A bought recipe is learned at
-// once; one whose learning cast failed is retried after the next purchase.
-void LearnOwnedRecipe(Player* player)
+// A recipe the bot may learn now: one of its professions, within the era, not yet known.
+bool Learnable(Player* player, Item* item)
+{
+    ItemTemplate const* proto = item ? item->GetTemplate() : nullptr;
+    uint32 const taught = proto ? TaughtSpell(proto) : 0;
+    return taught && !player->HasSpell(taught) && player->CanUseItem(proto) == EQUIP_ERR_OK &&
+           LivingWorld::RecipeWithinEra(proto->RequiredSkillRank, sPlayerbotAIConfig.RandomBotMaxLevel);
+}
+
+Item* OwnedRecipe(Player* player)
 {
     for (Item* item : BagItems(player))
-    {
-        ItemTemplate const* proto = item->GetTemplate();
-        uint32 const taught = TaughtSpell(proto);
-        if (!taught || player->HasSpell(taught) || player->CanUseItem(proto) != EQUIP_ERR_OK ||
-            !LivingWorld::RecipeWithinEra(proto->RequiredSkillRank, sPlayerbotAIConfig.RandomBotMaxLevel))
-            continue;
-        SpellCastTargets targets;
-        targets.SetUnitTarget(player);
-        player->CastItemUseSpell(item, targets, 1, 0);
-        return;
-    }
+        if (Learnable(player, item))
+            return item;
+    return nullptr;
+}
+
+// Learns a recipe by using it, as a player would.
+void Learn(Player* player, Item* recipe)
+{
+    SpellCastTargets targets;
+    targets.SetUnitTarget(player);
+    player->CastItemUseSpell(recipe, targets, 1, 0);
+}
+
+// A bought recipe is learned at once; looted ones and failed learns are picked up by "living learn recipe".
+void LearnOwnedRecipe(Player* player)
+{
+    if (Item* recipe = OwnedRecipe(player))
+        Learn(player, recipe);
 }
 
 // A trader that could make a scroll right now but has no vellum for it buys the cheapest fitting one nearby.
@@ -832,6 +846,31 @@ LivingMarketTrip LivingMarketTripValue::Calculate()
     trip.go = LivingWorld::WorthMarketTrip(bot->GetExactDist(auctioneer.loc));
     trip.destination = auctioneer.loc;
     return trip;
+}
+
+ObjectGuid LivingRecipeValue::Calculate()
+{
+    if (!LivingProfessions::CanWork(botAI))
+        return ObjectGuid::Empty;
+    Item* recipe = OwnedRecipe(bot);
+    return recipe ? recipe->GetGUID() : ObjectGuid::Empty;
+}
+
+bool LivingLearnRecipeAction::isUseful()
+{
+    return LivingProfessions::CanWork(botAI) && !bot->IsNonMeleeSpellCast(false);
+}
+bool LivingLearnRecipeAction::isPossible() { return !AI_VALUE(ObjectGuid, "living recipe").IsEmpty(); }
+
+bool LivingLearnRecipeAction::Execute(Event /*event*/)
+{
+    auto* value = context->GetValue<ObjectGuid>("living recipe");
+    Item* recipe = bot->GetItemByGuid(value->Get());
+    value->Set(ObjectGuid::Empty);
+    if (!Learnable(bot, recipe))
+        return false;
+    Learn(bot, recipe);
+    return true;
 }
 
 bool LivingEconomyAction::isUseful() { return LivingProfessions::CanWork(botAI); }

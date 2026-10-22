@@ -316,6 +316,7 @@ void LivingProfessionStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
         "often", {NextAction("living train", ACTION_NORMAL + 2.0f), NextAction("living craft", ACTION_NORMAL + 1.0f)}));
     triggers.push_back(new TriggerNode(
         "often",
-        {NextAction("living supplies", ACTION_NORMAL + 1.5f), NextAction("living processing", ACTION_NORMAL + 0.5f),
-         NextAction("living auction", ACTION_NORMAL + 1.0f), NextAction("living mail", ACTION_NORMAL + 2.5f)}));
+        {NextAction("living learn recipe", ACTION_NORMAL + 3.0f), NextAction("living supplies", ACTION_NORMAL + 1.5f),
+         NextAction("living processing", ACTION_NORMAL + 0.5f), NextAction("living auction", ACTION_NORMAL + 1.0f),
+         NextAction("living mail", ACTION_NORMAL + 2.5f)}));
 }

@@ -104,6 +104,7 @@ public:
         creators["living fieldwork"] = &ActionContext::living_fieldwork;
         creators["living restore weapons"] = &ActionContext::living_restore_weapons;
         creators["living supplies"] = &ActionContext::living_supplies;
+        creators["living learn recipe"] = &ActionContext::living_learn_recipe;
         creators["living auction"] = &ActionContext::living_auction;
         creators["living mail"] = &ActionContext::living_mail;
         creators["mark rti"] = &ActionContext::mark_rti;
@@ -329,6 +330,7 @@ private:
     static Action* living_processing(PlayerbotAI* botAI) { return new LivingProcessingAction(botAI); }
     static Action* living_fieldwork(PlayerbotAI* botAI) { return new LivingFieldAction(botAI); }
     static Action* living_restore_weapons(PlayerbotAI* botAI) { return new LivingRestoreWeaponsAction(botAI); }
+    static Action* living_learn_recipe(PlayerbotAI* botAI) { return new LivingLearnRecipeAction(botAI); }
     static Action* living_supplies(PlayerbotAI* botAI)
     {
         return new LivingEconomyAction(botAI, "living supplies", LivingEconomyJob::Supplies);

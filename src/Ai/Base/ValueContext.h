@@ -120,6 +120,7 @@ public:
         creators["living training trip"] = &ValueContext::living_training_trip;
         creators["living transmog trip"] = &ValueContext::living_transmog_trip;
         creators["living supplies"] = &ValueContext::living_supplies;
+        creators["living recipe"] = &ValueContext::living_recipe;
         creators["living auction"] = &ValueContext::living_auction;
         creators["living mail"] = &ValueContext::living_mail;
         creators["active spell"] = &ValueContext::active_spell;
@@ -363,6 +364,7 @@ private:
     static UntypedValue* living_market_trip(PlayerbotAI* botAI) { return new LivingMarketTripValue(botAI); }
     static UntypedValue* living_training_trip(PlayerbotAI* botAI) { return new LivingTrainingTripValue(botAI); }
     static UntypedValue* living_transmog_trip(PlayerbotAI* botAI) { return new LivingTransmogTripValue(botAI); }
+    static UntypedValue* living_recipe(PlayerbotAI* botAI) { return new LivingRecipeValue(botAI); }
     static UntypedValue* living_supplies(PlayerbotAI* botAI)
     {
         return new LivingEconomyValue(botAI, "living supplies", LivingEconomyJob::Supplies);
