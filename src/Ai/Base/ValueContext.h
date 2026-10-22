@@ -115,6 +115,7 @@ public:
         creators["living field state"] = &ValueContext::living_field_state;
         creators["living gear hunt"] = &ValueContext::living_gear_hunt;
         creators["living market trip"] = &ValueContext::living_market_trip;
+        creators["living training trip"] = &ValueContext::living_training_trip;
         creators["living supplies"] = &ValueContext::living_supplies;
         creators["living auction"] = &ValueContext::living_auction;
         creators["living mail"] = &ValueContext::living_mail;
@@ -355,6 +356,7 @@ private:
     static UntypedValue* living_field_state(PlayerbotAI* botAI) { return new LivingFieldStateValue(botAI); }
     static UntypedValue* living_gear_hunt(PlayerbotAI* botAI) { return new LivingGearHuntValue(botAI); }
     static UntypedValue* living_market_trip(PlayerbotAI* botAI) { return new LivingMarketTripValue(botAI); }
+    static UntypedValue* living_training_trip(PlayerbotAI* botAI) { return new LivingTrainingTripValue(botAI); }
     static UntypedValue* living_supplies(PlayerbotAI* botAI)
     {
         return new LivingEconomyValue(botAI, "living supplies", LivingEconomyJob::Supplies);

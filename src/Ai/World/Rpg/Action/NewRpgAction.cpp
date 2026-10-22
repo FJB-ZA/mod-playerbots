@@ -14,6 +14,8 @@
 #include "IVMapMgr.h"
 #include "LivingEconomyActions.h"
 #include "LivingEconomyPolicy.h"
+#include "LivingProfessionActions.h"
+#include "LivingProfessionPolicy.h"
 #include "MotionMaster.h"
 #include "MoveSpline.h"
 #include "NewRpgInfo.h"
@@ -407,6 +409,12 @@ bool NewRpgWanderNpcAction::Execute(Event /*event*/)
     LivingMarketTrip const trip =
         botAI->GetAiObjectContext()->GetValue<LivingMarketTrip>("living market trip")->Get();
     if (trip.go && bot->GetExactDist(trip.destination) > LivingWorld::MarketReach && MoveFarTo(trip.destination))
+        return true;
+
+    // A bot with a lesson it can afford but no trainer for it nearby walks to the nearest one on its map.
+    LivingTrainingTrip const lesson =
+        botAI->GetAiObjectContext()->GetValue<LivingTrainingTrip>("living training trip")->Get();
+    if (lesson.go && bot->GetExactDist(lesson.destination) > LivingWorld::TrainerReach && MoveFarTo(lesson.destination))
         return true;
 
     NewRpgInfo& info = botAI->rpgInfo;

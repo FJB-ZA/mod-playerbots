@@ -33,6 +33,13 @@ struct LivingTrainingPlan
     uint32 spell = 0;
 };
 
+// A lesson the bot could take at a profession trainer beyond its reach, on the same map.
+struct LivingTrainingTrip
+{
+    bool go = false;
+    WorldLocation destination;
+};
+
 struct LivingCraftPlan
 {
     uint32 spell = 0;
@@ -44,6 +51,13 @@ class LivingTrainingValue : public CalculatedValue<LivingTrainingPlan>
 public:
     LivingTrainingValue(PlayerbotAI* botAI) : CalculatedValue(botAI, "living training", 60) {}
     LivingTrainingPlan Calculate() override;
+};
+
+class LivingTrainingTripValue : public CalculatedValue<LivingTrainingTrip>
+{
+public:
+    LivingTrainingTripValue(PlayerbotAI* botAI) : CalculatedValue(botAI, "living training trip", 60000) {}
+    LivingTrainingTrip Calculate() override;
 };
 
 class LivingCraftValue : public CalculatedValue<LivingCraftPlan>

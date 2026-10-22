@@ -36,6 +36,11 @@ inline constexpr std::array<Profession, 14> Professions{{{129, 0, true},
 inline uint8_t Expansion(uint32_t levelCap) { return levelCap <= 60 ? 0 : levelCap <= 70 ? 1 : 2; }
 inline uint32_t ProfessionCap(uint32_t levelCap) { return 300 + 75 * Expansion(levelCap); }
 
+// Training trips: a bot walks to a profession trainer elsewhere on its map when none within reach can teach it.
+inline constexpr float TrainerReach = 40.0f;
+inline constexpr float MaxTrainingTrip = 3000.0f;
+constexpr bool WorthTrainingTrip(float distance) { return distance > TrainerReach && distance <= MaxTrainingTrip; }
+
 // Recipes carry no expansion tag, so use the skill they require: vanilla recipes need under 300
 // (300 is the first Outland tier, e.g. Smelt Fel Iron), TBC tops out at Master (375).
 // Wrath's 350-375 recipes overlap TBC, but their reagents only exist in Northrend.

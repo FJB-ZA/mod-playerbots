@@ -13,6 +13,7 @@
 #include "PlayerbotFactory.h"
 #include "Playerbots.h"
 #include "Trainer.h"
+#include "TravelMgr.h"
 
 namespace LivingProfessions
 {
@@ -44,11 +45,12 @@ bool WithinEra(Trainer::Spell const& lesson)
     return true;
 }
 
-bool CanTrain(Player* player, Creature* npc, Trainer::Trainer* trainer, Trainer::Spell const& lesson)
+// The lesson rules that don't depend on the trainer NPC in front of the bot. `discount` is the NPC's
+// reputation discount, or 1 when the bot is only deciding whether a trip there is worth it.
+bool CanTrainFrom(Player* player, Trainer::Trainer* trainer, Trainer::Spell const& lesson, float discount)
 {
-    if (!npc || !npc->IsAlive() || npc->IsHostileTo(player) || !trainer ||
-        trainer->GetTrainerType() != Trainer::Type::Tradeskill || !trainer->IsTrainerValidForPlayer(player) ||
-        !trainer->CanTeachSpell(player, &lesson) || !WithinEra(lesson))
+    if (!trainer || trainer->GetTrainerType() != Trainer::Type::Tradeskill ||
+        !trainer->IsTrainerValidForPlayer(player) || !trainer->CanTeachSpell(player, &lesson) || !WithinEra(lesson))
         return false;
     uint32 const era = sPlayerbotAIConfig.RandomBotMaxLevel;
     uint32 const skill = PlayerbotFactory::GetTrainerSpellTradeSkill(&lesson);
@@ -57,8 +59,14 @@ bool CanTrain(Player* player, Creature* npc, Trainer::Trainer* trainer, Trainer:
         known[i] = player->HasSkill(LivingWorld::Professions[i].skill);
     if (!LivingWorld::WantsProfession(player->GetGUID().GetCounter(), skill, era, known))
         return false;
-    uint32 const cost = static_cast<uint32>(lesson.MoneyCost * player->GetReputationPriceDiscount(npc));
+    uint32 const cost = static_cast<uint32>(lesson.MoneyCost * discount);
     return LivingWorld::CanAffordTraining(player->GetMoney(), cost, player->GetLevel());
+}
+
+bool CanTrain(Player* player, Creature* npc, Trainer::Trainer* trainer, Trainer::Spell const& lesson)
+{
+    return npc && npc->IsAlive() && !npc->IsHostileTo(player) &&
+           CanTrainFrom(player, trainer, lesson, player->GetReputationPriceDiscount(npc));
 }
 
 bool HasReagents(Player* player, SpellInfo const* spell)
@@ -181,6 +189,36 @@ LivingTrainingPlan LivingTrainingValue::Calculate()
             }
     }
     return result;
+}
+
+LivingTrainingTrip LivingTrainingTripValue::Calculate()
+{
+    LivingTrainingTrip trip;
+    if (!CanWork(botAI) || AI_VALUE(LivingTrainingPlan, "living training").spell)
+        return trip;
+    // Many spawns share one trainer's lesson list, so each list is checked once.
+    std::unordered_map<Trainer::Trainer*, bool> teaches;
+    auto const teachesNow = [&](uint32 entry)
+    {
+        Trainer::Trainer* trainer = sObjectMgr->GetTrainer(entry);
+        if (!trainer)
+            return false;
+        auto [it, added] = teaches.try_emplace(trainer, false);
+        if (added)
+            for (auto const& lesson : trainer->GetSpells())
+                if (CanTrainFrom(bot, trainer, lesson, 1.0f))
+                {
+                    it->second = true;
+                    break;
+                }
+        return it->second;
+    };
+    TravelMgr::NpcLocation trainer;
+    if (!sTravelMgr.SelectProfessionTrainerByMap(bot, teachesNow, trainer))
+        return trip;
+    trip.go = LivingWorld::WorthTrainingTrip(bot->GetExactDist(trainer.loc));
+    trip.destination = trainer.loc;
+    return trip;
 }
 
 LivingCraftPlan LivingCraftValue::Calculate()

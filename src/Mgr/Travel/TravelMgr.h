@@ -13,6 +13,7 @@
 #include "GridDefines.h"
 #include "PlayerbotAIConfig.h"
 #include <boost/functional/hash.hpp>
+#include <functional>
 #include <map>
 #include <random>
 
@@ -881,6 +882,8 @@ public:
     std::vector<WorldLocation> GetCityLocations(Player* bot);
     std::vector<uint32> GetFlightNodesInZone(uint32 zoneId, TeamId team, uint32 excludeNode = 0) const;
     bool SelectAuctioneerByMap(Player* bot, NpcLocation& outAuctioneer);
+    // The nearest profession trainer on the bot's map, for its faction, that `teaches` accepts (by creature entry).
+    bool SelectProfessionTrainerByMap(Player* bot, std::function<bool(uint32)> const& teaches, NpcLocation& outTrainer);
     std::vector<WorldLocation> const& GetLocsPerLevelCache(uint8 level) { return locsPerLevelCache[level]; }
 
     // Living-world gear hunting (built once in PrepareDestinationCache, read-only afterwards):
@@ -1015,6 +1018,7 @@ private:
         bool forHorde;
     };
     std::vector<Auctioneer> auctioneers;
+    std::vector<Auctioneer> professionTrainers;  // same shape: a spot in front of the NPC and who may use it
     std::map<uint8, std::vector<uint32>> gearHuntEntriesPerLevel;
     std::unordered_map<uint32, std::vector<WorldLocation>> gearHuntLocs;
     std::unordered_map<uint32, std::vector<uint32>> gearDrops;
