@@ -35,6 +35,8 @@ public:
     static std::map<uint8, uint32> GetPlayerSpecTabs(Player* player);
     static BotRoles GetPlayerRoles(Player* player);
     static std::string GetPlayerSpecName(Player* player);
+    // A spec whose abilities need a shield, so its off hand never takes a second weapon.
+    static bool KeepsShieldOffhand(Player* player);
 };
 
 #endif

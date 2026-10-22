@@ -317,6 +317,23 @@ void StatsWeightCalculator::GenerateBasicWeights(Player* player)
         stats_weights_[STATS_TYPE_EXPERTISE] += 2.1f;
         stats_weights_[STATS_TYPE_MELEE_DPS] += 5.0f;
     }
+    else if (cls == CLASS_WARRIOR && tab == WARRIOR_TAB_GLADIATOR)
+    {
+        // Arms' damage stats, plus the shield's block value that Shield Slam scales with.
+        stats_weights_[STATS_TYPE_AGILITY] += 0.8f;
+        stats_weights_[STATS_TYPE_STRENGTH] += 2.5f;
+        stats_weights_[STATS_TYPE_STAMINA] += 0.4f;
+        stats_weights_[STATS_TYPE_ATTACK_POWER] += 0.8f;
+        stats_weights_[STATS_TYPE_ARMOR_PENETRATION] += 1.7f;
+        stats_weights_[STATS_TYPE_HIT] += 2.0f;
+        stats_weights_[STATS_TYPE_CRIT] += 2.0f;
+        stats_weights_[STATS_TYPE_HASTE] += 0.8f;
+        stats_weights_[STATS_TYPE_SPELL_POWER] -= 2.0f;
+        stats_weights_[STATS_TYPE_EXPERTISE] += 1.8f;
+        stats_weights_[STATS_TYPE_BLOCK_VALUE] += 1.0f;
+        stats_weights_[STATS_TYPE_ARMOR] += 0.02f;
+        stats_weights_[STATS_TYPE_MELEE_DPS] += 7.0f;
+    }
     else if (cls == CLASS_WARRIOR && tab == WARRIOR_TAB_FURY)
     {
         stats_weights_[STATS_TYPE_AGILITY] += 0.8f;
@@ -638,6 +655,7 @@ void StatsWeightCalculator::CalculateItemTypePenalty(ItemTemplate const* proto)
                  (cls == CLASS_WARRIOR && tab == WARRIOR_TAB_FURY && !player_->CanTitanGrip() &&
                   player_->CanDualWield()) ||
                  (cls == CLASS_WARRIOR && tab == WARRIOR_TAB_PROTECTION) ||
+                 (cls == CLASS_WARRIOR && tab == WARRIOR_TAB_GLADIATOR) ||
                  (cls == CLASS_PALADIN && tab == PALADIN_TAB_PROTECTION) ||
                  (cls == CLASS_PALADIN && tab == PALADIN_TAB_HOLY)))
             {
@@ -667,6 +685,11 @@ void StatsWeightCalculator::CalculateItemTypePenalty(ItemTemplate const* proto)
             if (cls == CLASS_PALADIN && tab == PALADIN_TAB_HOLY)
             {
                 weight_ *= 0.8;
+            }
+            // The Gladiator's off hand holds the shield its abilities need.
+            if (cls == CLASS_WARRIOR && tab == WARRIOR_TAB_GLADIATOR && proto->InventoryType == INVTYPE_WEAPONOFFHAND)
+            {
+                weight_ *= 0.1;
             }
         }
         // fury with titan's grip
@@ -903,7 +926,7 @@ float StatsWeightCalculator::ApplyPreferredSpecWeapons(ItemTemplate const* proto
                         return boost;
                 }
             }
-            else if (tab == WARRIOR_TAB_PROTECTION)
+            else if (tab == WARRIOR_TAB_PROTECTION || tab == WARRIOR_TAB_GLADIATOR)
             {
                 // Prot: slow 1H (>=2600) in mainhand. Shield in offhand, no speed bonus.
                 if (slot == EQUIPMENT_SLOT_MAINHAND && delay >= 2600)
