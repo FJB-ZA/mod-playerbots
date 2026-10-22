@@ -22,6 +22,8 @@
 #include "Mail.h"
 #include "PlayerbotWorldThreadProcessor.h"
 #include "Playerbots.h"
+#include "StringConvert.h"
+#include "Tokenize.h"
 #include "TravelMgr.h"
 
 namespace LivingProfessions
@@ -127,6 +129,36 @@ bool FlipScanDue(Player* player)
     auto const it = ledger.lastScan.find(player->GetGUID().GetCounter());
     return it == ledger.lastScan.end() ||
            GameTime::GetGameTime().count() - it->second >= LivingWorld::FlipCooldownSeconds;
+}
+
+// Per trader and item, the share of the going rate it asks (see LivingWorld::AfterExpiry). Read and
+// updated only by world-thread operations, like the market snapshot.
+std::unordered_map<uint64, uint32>& Demand()
+{
+    static std::unordered_map<uint64, uint32> demand;
+    return demand;
+}
+
+uint64 DemandKey(ObjectGuid bot, uint32 entry) { return (uint64(bot.GetCounter()) << 32) | entry; }
+
+uint32 DemandPct(ObjectGuid bot, uint32 entry)
+{
+    auto const it = Demand().find(DemandKey(bot, entry));
+    return it == Demand().end() ? 100 : it->second;
+}
+
+// Auction mail subjects read "item:0:response:auction:count". Called once per mail, as it is deleted.
+void RecordAuctionOutcome(ObjectGuid bot, Mail const* mail)
+{
+    if (mail->messageType != MAIL_AUCTION)
+        return;
+    std::vector<std::string_view> const fields = Acore::Tokenize(mail->subject, ':', false);
+    Optional<uint32> const entry = fields.size() > 2 ? Acore::StringTo<uint32>(fields[0]) : Optional<uint32>();
+    Optional<uint32> const response = fields.size() > 2 ? Acore::StringTo<uint32>(fields[2]) : Optional<uint32>();
+    if (!entry || !response || (*response != AUCTION_EXPIRED && *response != AUCTION_SUCCESSFUL))
+        return;
+    uint32& pct = Demand().try_emplace(DemandKey(bot, *entry), 100).first->second;
+    pct = *response == AUCTION_EXPIRED ? LivingWorld::AfterExpiry(pct) : LivingWorld::AfterSale(pct);
 }
 
 bool IsLivingMail(Mail const* mail)
@@ -551,7 +583,7 @@ public:
             paid ? LivingWorld::FlipResalePrice(paid, PeerPrice(market, product, _bot))
                  : LivingWorld::AuctionUnitPrice(item->GetTemplate()->SellPrice,
                                                  cost == stock.costs.end() ? 0 : cost->second,
-                                                 PeerPrice(market, product, _bot), count);
+                                                 PeerPrice(market, product, _bot), count, DemandPct(_bot, product));
         if (price && uint64(price) * count > LivingWorld::MoneyLimit)
             return false;
         if (!price)
@@ -703,6 +735,7 @@ public:
             }
             if (LivingWorld::CanDeleteLivingMail(IsLivingMail(mail), mail->money, mail->items.size(), mail->COD))
             {
+                RecordAuctionOutcome(_bot, mail);
                 WorldPacket packet(CMSG_MAIL_DELETE);
                 packet << _mailbox << id << uint32(mail->mailTemplateId);
                 player->GetSession()->HandleMailDelete(packet);
