@@ -27,6 +27,12 @@ Playerbots.LivingArena.MaxRatingAbove = 150
 Playerbots.LivingArena.MaxGearScoreAbovePct = 5
 Playerbots.LivingArena.PartnerSkill = 85
 
+# Living-world bots restyle their gear at mod-transmog's Warpweaver (190010). Needs LivingWorld.Enabled and mod-transmog.
+# Only in Stormwind, Orgrimmar, Shattrath and Dalaran, in person: a bot in town that wants a new look walks over while
+# visiting NPCs and picks rare-or-better appearances from its own collection, paying the module's price.
+# Gear-minded bots care most; a bot restyles at most once a day.
+Playerbots.LivingTransmog.Enabled = 0
+
 # Overview
 # "Randombot": randomly generated bots that log in separately from players and populate the world. Randombots may automatically grind, quest, level up, and upgrade equipment and can be invited to groups and given commands.
 # "AddClass bot": bots from the AddClassAccountPoolSize accounts. They are used for quickly adding a leveled and geared bot of any class to your party. They are recommended for a quick formation of a party.

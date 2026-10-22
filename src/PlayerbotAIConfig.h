@@ -107,6 +107,7 @@ public:
     bool Enabled;
     bool LivingWorldEnabled = false;
     bool LivingArenaEnabled = false;
+    bool LivingTransmogEnabled = false;
     uint32 LivingArenaSeason = 0;
     uint32 IndividualProgressionTbcArenaSeason = 1;
     uint32 IndividualProgressionWotlkArenaSeason = 5;
