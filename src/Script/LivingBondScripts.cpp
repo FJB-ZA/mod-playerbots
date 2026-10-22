@@ -126,6 +126,7 @@ public:
         Bonds().Record(killed, killer, BondEvent::KilledBy);
         if (LivingWorld::IsGank(seconds, killedBefore, killer->GetLevel(), killed->GetLevel()))
             Bonds().Record(killed, killer, BondEvent::Ganked);
+        Bonds().RecordKill(killer, killed);
     }
 
     // Everyone who rolled for the item remembers a winner who needed gear it can't use or wouldn't wear.

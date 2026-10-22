@@ -99,6 +99,25 @@ bool LivingBondMgr::Record(Player* bot, Player* other, LivingWorld::BondEvent ev
     return true;
 }
 
+void LivingBondMgr::RecordKill(Player* killer, Player* victim)
+{
+    if (!killer || !victim || killer == victim || !LivingWorldMgr::instance().IsEnabled(killer))
+        return;
+    uint32 const now = Now();
+    std::lock_guard<std::mutex> lock(_mutex);
+    // Old kills no longer matter; dropping them keeps the map to the last window's kills.
+    if (_lastKill.size() > 1024)
+        std::erase_if(_lastKill, [now](auto const& kill) { return now - kill.second > LivingWorld::GankWindow; });
+    _lastKill[Key(killer->GetGUID().GetCounter(), victim->GetGUID().GetCounter())] = now;
+}
+
+bool LivingBondMgr::KilledRecently(uint32 bot, uint32 other)
+{
+    std::lock_guard<std::mutex> lock(_mutex);
+    auto const found = _lastKill.find(Key(bot, other));
+    return found != _lastKill.end() && Now() - found->second <= LivingWorld::GankWindow;
+}
+
 bool LivingBondMgr::SecondsSince(uint32 bot, uint32 other, LivingWorld::BondEvent event, uint32& seconds)
 {
     seconds = 0;

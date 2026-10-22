@@ -40,6 +40,10 @@ public:
     bool TryGreet(uint32 bot, uint32 other, bool whisper);
     // True (and starts the weekly cooldown) when `bot` may offer `other` its guild again.
     bool TryGuildInvite(uint32 bot, uint32 other);
+    // World PvP kills by living bots, so a bot does not camp the corpse: it leaves alone a character it
+    // killed within the gank window unless that character attacks it again.
+    void RecordKill(Player* killer, Player* victim);
+    bool KilledRecently(uint32 bot, uint32 other);
 
     // Group membership times, for time spent adventuring together.
     void OnGroupJoin(uint32 group, uint32 member);
@@ -56,6 +60,7 @@ private:
     std::unordered_map<uint64, std::array<uint32, size_t(LivingWorld::BondEvent::Count)>> _lastEvent;
     std::unordered_map<uint32, std::unordered_map<uint32, uint32>> _groupJoins;  // group -> member -> joined
     std::unordered_map<uint64, std::array<uint32, 3>> _lastGreet;               // pair -> [in person, whisper, guild invite]
+    std::unordered_map<uint64, uint32> _lastKill;                               // bot, victim -> time of the kill
 };
 
 #endif

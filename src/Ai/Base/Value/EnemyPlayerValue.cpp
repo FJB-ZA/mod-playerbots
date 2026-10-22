@@ -65,6 +65,13 @@ Unit* EnemyPlayerValue::Calculate()
                LivingBondMgr::instance().AttitudeOf(bot->GetGUID().GetCounter(), unit->GetGUID().GetCounter()) ==
                    LivingWorld::Attitude::Rival;
     };
+    // No corpse camping: someone this bot killed in world PvP within the gank window is left alone unless
+    // they fight back (step 1 below, which goes by the combat the other side started).
+    auto const killedRecently = [&](Unit const* unit)
+    {
+        return grudges &&
+               LivingBondMgr::instance().KilledRecently(bot->GetGUID().GetCounter(), unit->GetGUID().GetCounter());
+    };
 
     // 1. Check units we are currently in PvP combat with.
     std::vector<Unit*> targets;
@@ -119,7 +126,8 @@ Unit* EnemyPlayerValue::Calculate()
         for (auto const& gTarget : players)
         {
             Player* rival = dynamic_cast<Player*>(botAI->GetUnit(gTarget));
-            if (rival && rival != pVictim && isRival(rival) && bot->IsWithinDist(rival, maxAggroDistance) &&
+            if (rival && rival != pVictim && isRival(rival) && !killedRecently(rival) &&
+                bot->IsWithinDist(rival, maxAggroDistance) &&
                 bot->IsWithinLOSInMap(rival) && fabs(bot->GetPositionZ() - rival->GetPositionZ()) < 30.0f)
                 return rival;
         }
@@ -133,7 +141,7 @@ Unit* EnemyPlayerValue::Calculate()
         for (auto const& gTarget : players)
         {
             Player* enemy = dynamic_cast<Player*>(botAI->GetUnit(gTarget));
-            if (!enemy || enemy == pVictim)
+            if (!enemy || enemy == pVictim || killedRecently(enemy))
                 continue;
             if (enemy->HasAura(enemyFlag))
             {
@@ -157,7 +165,7 @@ Unit* EnemyPlayerValue::Calculate()
         if (!pTarget)
             continue;
 
-        if (pTarget == pVictim)
+        if (pTarget == pVictim || killedRecently(pTarget))
             continue;
 
         if (bot->GetTeamId() == TEAM_HORDE)
