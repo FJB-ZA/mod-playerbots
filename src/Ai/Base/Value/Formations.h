@@ -28,6 +28,8 @@ public:
 
 protected:
     float GetFollowAngle();
+    // The bot tank leading a dungeon run when there is one, else the master.
+    Player* GetLeader();
 };
 
 class FollowFormation : public Formation

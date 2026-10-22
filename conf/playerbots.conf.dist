@@ -533,6 +533,14 @@ Playerbots.DropObsoleteQuests = 1
 # Auto add dungeon/raid strategies when entering the instance if implemented
 Playerbots.ApplyInstanceStrategies = 1
 
+# A bot tank leads 5-man dungeon runs: the group follows it, and it pulls pack by pack toward the next boss once
+# everyone is alive, healed and has mana. Healers call oom and drink; a player who says "oom", "drinking" or "mana"
+# in party chat is waited for until their mana is back (80-90%), and "ready" lifts the wait. How the tank marks,
+# asks for crowd control, pulls around corners and paces the run depends on its hidden skill. A player who tanks
+# leads instead. Needs ApplyInstanceStrategies.
+# Default: 0 (disabled)
+Playerbots.DungeonLead.Enabled = 0
+
 # Enable auto avoid aoe strategy
 # Default: 1 (enabled)
 Playerbots.AutoAvoidAoe = 1
