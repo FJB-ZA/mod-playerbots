@@ -7,6 +7,8 @@
 #ifndef PLAYERBOTS_LIVING_PROFESSION_ACTIONS_H
 #define PLAYERBOTS_LIVING_PROFESSION_ACTIONS_H
 
+#include <unordered_map>
+
 #include "MovementActions.h"
 #include "NonCombatStrategy.h"
 #include "Trainer.h"
@@ -22,6 +24,7 @@ bool IsProfessionRecipe(Player* player, SpellInfo const* spell);
 bool NeedsProduct(Player* player, SpellInfo const* spell);
 bool HasReagents(Player* player, SpellInfo const* spell);
 // Wrath enchanting scrolls: a trader casts an enchant on vellum to make a scroll it can sell.
+bool MakesScrolls(Player* player);
 bool WantsScroll(Player* player, SpellInfo const* spell);
 bool VellumFits(ItemTemplate const* vellum, SpellInfo const* spell);
 Item* ScrollVellum(Player* player, SpellInfo const* spell);
@@ -38,6 +41,10 @@ struct LivingTrainingTrip
 {
     bool go = false;
     WorldLocation destination;
+    uint32 entry = 0;
+    // Trainers reached that had nothing to teach (dead, hostile, or out of reach indoors), by entry, with
+    // when; skipped for LivingWorld::FailedTrainerMemoryMs.
+    std::unordered_map<uint32, uint32> failed;
 };
 
 struct LivingCraftPlan

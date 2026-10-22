@@ -1298,7 +1298,8 @@ bool NewRpgBaseAction::CheckRpgStatusAvailable(NewRpgStatus status)
                 return false;
 
             // A living-world gatherer short of a recipe input may head for another zone's nodes.
-            return sGatherNodeMgr.HasUsableNodes(bot) || LivingProfessions::ReagentRouteNode(bot, {});
+            return sGatherNodeMgr.HasUsableNodes(bot) ||
+                   (LivingWorldMgr::instance().IsEnabled(bot) && AI_VALUE(bool, "living reagent route"));
         }
         case RPG_TRAVEL_FLIGHT:
         {

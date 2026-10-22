@@ -443,6 +443,8 @@ GatherNodeSpawn const* LivingProfessions::ReagentRouteNode(Player* bot,
     return sGatherNodeMgr.GetRouteNode(bot, visited, LivingWorld::MaxReagentRoute, yieldsWanted);
 }
 
+bool LivingReagentRouteValue::Calculate() { return LivingProfessions::ReagentRouteNode(bot, {}) != nullptr; }
+
 bool LivingProfessions::FieldReservedItem(PlayerbotAI* ai, ObjectGuid item)
 {
     if (!ai || !LivingWorldMgr::instance().IsEnabled(ai->GetBot()) || item.IsEmpty())

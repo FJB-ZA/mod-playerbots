@@ -5,6 +5,7 @@
  */
 
 #include "EnemyPlayerValue.h"
+#include "BattlegroundEY.h"
 #include "BattlegroundSA.h"
 #include "CombatManager.h"
 #include "LivingBondMgr.h"
@@ -143,7 +144,7 @@ Unit* EnemyPlayerValue::Calculate()
             Player* enemy = dynamic_cast<Player*>(botAI->GetUnit(gTarget));
             if (!enemy || enemy == pVictim || killedRecently(enemy))
                 continue;
-            if (enemy->HasAura(enemyFlag))
+            if (enemy->HasAura(enemyFlag) || enemy->HasAura(BG_EY_NETHERSTORM_FLAG_SPELL))
             {
                 healer = nullptr;
                 break;

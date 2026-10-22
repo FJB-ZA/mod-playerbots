@@ -109,10 +109,15 @@ bool NeedsProduct(Player* player, SpellInfo const* spell)
 }
 
 // Scrolls give no skill-ups, so only traders make them, as stock to sell (the same cap as crafted goods).
+bool MakesScrolls(Player* player)
+{
+    return LivingWorld::Expansion(sPlayerbotAIConfig.RandomBotMaxLevel) >= 2 &&
+           LivingWorldMgr::instance().GetProfile(player).motivation == LivingWorld::Motivation::Trader;
+}
+
 bool WantsScroll(Player* player, SpellInfo const* spell)
 {
-    if (LivingWorld::Expansion(sPlayerbotAIConfig.RandomBotMaxLevel) < 2 ||
-        LivingWorldMgr::instance().GetProfile(player).motivation != LivingWorld::Motivation::Trader)
+    if (!MakesScrolls(player))
         return false;
     for (auto const& effect : spell->GetEffects())
         if (effect.IsEffect(SPELL_EFFECT_ENCHANT_ITEM) && effect.ItemType)
@@ -194,6 +199,9 @@ LivingTrainingPlan LivingTrainingValue::Calculate()
 LivingTrainingTrip LivingTrainingTripValue::Calculate()
 {
     LivingTrainingTrip trip;
+    for (auto const& [entry, when] : value.failed)
+        if (GetMSTimeDiffToNow(when) < LivingWorld::FailedTrainerMemoryMs)
+            trip.failed.emplace(entry, when);
     if (!CanWork(botAI) || AI_VALUE(LivingTrainingPlan, "living training").spell)
         return trip;
     // Many spawns share one trainer's lesson list, so each list is checked once.
@@ -201,7 +209,7 @@ LivingTrainingTrip LivingTrainingTripValue::Calculate()
     auto const teachesNow = [&](uint32 entry)
     {
         Trainer::Trainer* trainer = sObjectMgr->GetTrainer(entry);
-        if (!trainer)
+        if (!trainer || trip.failed.count(entry))
             return false;
         auto [it, added] = teaches.try_emplace(trainer, false);
         if (added)
@@ -218,6 +226,7 @@ LivingTrainingTrip LivingTrainingTripValue::Calculate()
         return trip;
     trip.go = LivingWorld::WorthTrainingTrip(bot->GetExactDist(trainer.loc));
     trip.destination = trainer.loc;
+    trip.entry = trainer.entry;
     return trip;
 }
 

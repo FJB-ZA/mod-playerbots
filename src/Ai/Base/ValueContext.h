@@ -115,6 +115,7 @@ public:
         creators["living processing"] = &ValueContext::living_processing;
         creators["living field plan"] = &ValueContext::living_field_plan;
         creators["living field state"] = &ValueContext::living_field_state;
+        creators["living reagent route"] = &ValueContext::living_reagent_route;
         creators["living gear hunt"] = &ValueContext::living_gear_hunt;
         creators["living market trip"] = &ValueContext::living_market_trip;
         creators["living training trip"] = &ValueContext::living_training_trip;
@@ -360,6 +361,7 @@ private:
     static UntypedValue* living_processing(PlayerbotAI* botAI) { return new LivingProcessingValue(botAI); }
     static UntypedValue* living_field_plan(PlayerbotAI* botAI) { return new LivingFieldPlanValue(botAI); }
     static UntypedValue* living_field_state(PlayerbotAI* botAI) { return new LivingFieldStateValue(botAI); }
+    static UntypedValue* living_reagent_route(PlayerbotAI* botAI) { return new LivingReagentRouteValue(botAI); }
     static UntypedValue* living_gear_hunt(PlayerbotAI* botAI) { return new LivingGearHuntValue(botAI); }
     static UntypedValue* living_market_trip(PlayerbotAI* botAI) { return new LivingMarketTripValue(botAI); }
     static UntypedValue* living_training_trip(PlayerbotAI* botAI) { return new LivingTrainingTripValue(botAI); }

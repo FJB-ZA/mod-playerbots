@@ -40,6 +40,8 @@ inline uint32_t ProfessionCap(uint32_t levelCap) { return 300 + 75 * Expansion(l
 inline constexpr float TrainerReach = 40.0f;
 inline constexpr float MaxTrainingTrip = 3000.0f;
 constexpr bool WorthTrainingTrip(float distance) { return distance > TrainerReach && distance <= MaxTrainingTrip; }
+// How long a trainer that had nothing to teach on arrival is left out of training trips.
+inline constexpr uint32_t FailedTrainerMemoryMs = 30 * 60 * 1000;
 
 // Recipes carry no expansion tag, so use the skill they require: vanilla recipes need under 300
 // (300 is the first Outland tier, e.g. Smelt Fel Iron), TBC tops out at Master (375).

@@ -42,9 +42,32 @@ std::vector<Item*> BagItems(Player* player)
     return items;
 }
 
+namespace
+{
+uint64 VendorUnitPrice(ItemTemplate const* item)
+{
+    return std::max<uint64>(item->SellPrice, item->BuyPrice / std::max<uint32>(1, item->BuyCount));
+}
+
+// Vendor-sold vellums, looked up once.
+std::vector<ItemTemplate const*> const& Vellums()
+{
+    static std::vector<ItemTemplate const*> const vellums = []
+    {
+        std::vector<ItemTemplate const*> found;
+        for (auto const& [entry, item] : *sObjectMgr->GetItemTemplateStore())
+            if ((item.IsArmorVellum() || item.IsWeaponVellum()) && item.BuyPrice)
+                found.push_back(&item);
+        return found;
+    }();
+    return vellums;
+}
+}  // namespace
+
 Stock ProfessionStock(Player* player)
 {
     Stock stock;
+    bool const scrolls = MakesScrolls(player);
     for (auto const& [id, learned] : player->GetSpellMap())
     {
         if (!learned || learned->State == PLAYERSPELL_REMOVED || !learned->Active)
@@ -63,18 +86,37 @@ Stock ProfessionStock(Player* player)
                 continue;
             uint32 const count = spell->ReagentCount[index];
             stock.reserve[entry] = std::max(stock.reserve[entry], std::max(count, item->GetMaxStackSize()));
-            uint64 const unit = std::max<uint64>(item->SellPrice, item->BuyPrice / std::max<uint32>(1, item->BuyCount));
-            cost = std::min<uint64>(LivingWorld::MoneyLimit, cost + unit * count);
+            cost = std::min<uint64>(LivingWorld::MoneyLimit, cost + VendorUnitPrice(item) * count);
         }
         for (uint32 tool : spell->Totem)
             if (tool)
                 stock.reserve[tool] = std::max<uint32>(1, stock.reserve[tool]);
         for (auto const& effect : spell->GetEffects())
         {
-            if ((!effect.IsEffect(SPELL_EFFECT_CREATE_ITEM) && !effect.IsEffect(SPELL_EFFECT_CREATE_ITEM_2)) ||
-                !effect.ItemType)
+            if (!effect.ItemType)
                 continue;
-            uint32 const unitCost = static_cast<uint32>(cost / std::max<int32>(1, effect.CalcValue()));
+            uint32 unitCost = 0;
+            if (scrolls && effect.IsEffect(SPELL_EFFECT_ENCHANT_ITEM))
+            {
+                // A scroll costs the enchant's reagents plus the cheapest vellum that holds it; the vellums that
+                // do are kept for it, not sold.
+                uint64 vellumCost = 0;
+                for (ItemTemplate const* vellum : Vellums())
+                {
+                    if (!VellumFits(vellum, spell))
+                        continue;
+                    stock.reserve[vellum->ItemId] = std::max<uint32>(1, stock.reserve[vellum->ItemId]);
+                    uint64 const price = VendorUnitPrice(vellum);
+                    vellumCost = vellumCost ? std::min(vellumCost, price) : price;
+                }
+                if (!vellumCost)
+                    continue;
+                unitCost = static_cast<uint32>(std::min<uint64>(LivingWorld::MoneyLimit, cost + vellumCost));
+            }
+            else if (effect.IsEffect(SPELL_EFFECT_CREATE_ITEM) || effect.IsEffect(SPELL_EFFECT_CREATE_ITEM_2))
+                unitCost = static_cast<uint32>(cost / std::max<int32>(1, effect.CalcValue()));
+            else
+                continue;
             auto [it, inserted] = stock.costs.emplace(effect.ItemType, unitCost);
             if (!inserted)
                 it->second = std::min(it->second, unitCost);

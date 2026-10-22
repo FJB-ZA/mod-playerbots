@@ -52,6 +52,15 @@ public:
     LivingFieldPlan Calculate() override;
 };
 
+// Whether ReagentRouteNode finds a node: the search measures every node on the map, so the RPG status check
+// reads this cached answer.
+class LivingReagentRouteValue : public BoolCalculatedValue
+{
+public:
+    LivingReagentRouteValue(PlayerbotAI* ai) : BoolCalculatedValue(ai, "living reagent route", 60000) {}
+    bool Calculate() override;
+};
+
 class LivingFieldStateValue : public ManualSetValue<LivingFieldState>
 {
 public:
