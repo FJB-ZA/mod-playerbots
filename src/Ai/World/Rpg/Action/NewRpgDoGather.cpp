@@ -8,6 +8,7 @@
 
 #include "GameObject.h"
 #include "GatherNodeMgr.h"
+#include "LivingFieldActions.h"
 #include "LootObjectStack.h"
 #include "NewRpgInfo.h"
 #include "ObjectDefines.h"
@@ -143,6 +144,8 @@ bool NewRpgDoGatherAction::Execute(Event /*event*/)
         GatherNodeSpawn const* node = sGatherNodeMgr.GetNearestLiveNode(bot, data.visited, nodeSwitchDistance);
         if (!node)
             node = sGatherNodeMgr.GetNextNode(bot, data.visited);
+        if (!node)
+            node = LivingProfessions::ReagentRouteNode(bot, data.visited);
         if (!node)
         {
             // nothing (left) to gather in this zone

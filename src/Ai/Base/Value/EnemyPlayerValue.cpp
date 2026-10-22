@@ -5,6 +5,7 @@
  */
 
 #include "EnemyPlayerValue.h"
+#include "BattlegroundEY.h"
 #include "BattlegroundSA.h"
 #include "CombatManager.h"
 #include "LivingBondMgr.h"
@@ -65,6 +66,13 @@ Unit* EnemyPlayerValue::Calculate()
                LivingBondMgr::instance().AttitudeOf(bot->GetGUID().GetCounter(), unit->GetGUID().GetCounter()) ==
                    LivingWorld::Attitude::Rival;
     };
+    // No corpse camping: someone this bot killed in world PvP within the gank window is left alone unless
+    // they fight back (step 1 below, which goes by the combat the other side started).
+    auto const killedRecently = [&](Unit const* unit)
+    {
+        return grudges &&
+               LivingBondMgr::instance().KilledRecently(bot->GetGUID().GetCounter(), unit->GetGUID().GetCounter());
+    };
 
     // 1. Check units we are currently in PvP combat with.
     std::vector<Unit*> targets;
@@ -119,10 +127,35 @@ Unit* EnemyPlayerValue::Calculate()
         for (auto const& gTarget : players)
         {
             Player* rival = dynamic_cast<Player*>(botAI->GetUnit(gTarget));
-            if (rival && rival != pVictim && isRival(rival) && bot->IsWithinDist(rival, maxAggroDistance) &&
+            if (rival && rival != pVictim && isRival(rival) && !killedRecently(rival) &&
+                bot->IsWithinDist(rival, maxAggroDistance) &&
                 bot->IsWithinLOSInMap(rival) && fabs(bot->GetPositionZ() - rival->GetPositionZ()) < 30.0f)
                 return rival;
         }
+    // Living-world divers go for the backline in battlegrounds: an enemy healer in reach comes before nearer
+    // targets, unless the enemy flag carrier is about.
+    if (grudges && bot->InBattleground() && !controllingVehicle && !controllingCannon && !passenger &&
+        LivingWorldMgr::instance().GetProfile(bot).temperament == LivingWorld::Temperament::Diver)
+    {
+        uint32 const enemyFlag = bot->GetTeamId() == TEAM_HORDE ? 23333 : 23335;
+        Player* healer = nullptr;
+        for (auto const& gTarget : players)
+        {
+            Player* enemy = dynamic_cast<Player*>(botAI->GetUnit(gTarget));
+            if (!enemy || enemy == pVictim || killedRecently(enemy))
+                continue;
+            if (enemy->HasAura(enemyFlag) || enemy->HasAura(BG_EY_NETHERSTORM_FLAG_SPELL))
+            {
+                healer = nullptr;
+                break;
+            }
+            if (!healer && PlayerbotAI::IsHeal(enemy) && bot->IsWithinDist(enemy, maxAggroDistance) &&
+                bot->IsWithinLOSInMap(enemy) && fabs(bot->GetPositionZ() - enemy->GetPositionZ()) < 30.0f)
+                healer = enemy;
+        }
+        if (healer)
+            return healer;
+    }
     for (auto const& gTarget : players)
     {
         Unit* pUnit = botAI->GetUnit(gTarget);
@@ -133,7 +166,7 @@ Unit* EnemyPlayerValue::Calculate()
         if (!pTarget)
             continue;
 
-        if (pTarget == pVictim)
+        if (pTarget == pVictim || killedRecently(pTarget))
             continue;
 
         if (bot->GetTeamId() == TEAM_HORDE)

@@ -22,6 +22,8 @@
 #include "Mail.h"
 #include "PlayerbotWorldThreadProcessor.h"
 #include "Playerbots.h"
+#include "StringConvert.h"
+#include "Tokenize.h"
 #include "TravelMgr.h"
 
 namespace LivingProfessions
@@ -40,9 +42,32 @@ std::vector<Item*> BagItems(Player* player)
     return items;
 }
 
+namespace
+{
+uint64 VendorUnitPrice(ItemTemplate const* item)
+{
+    return std::max<uint64>(item->SellPrice, item->BuyPrice / std::max<uint32>(1, item->BuyCount));
+}
+
+// Vendor-sold vellums, looked up once.
+std::vector<ItemTemplate const*> const& Vellums()
+{
+    static std::vector<ItemTemplate const*> const vellums = []
+    {
+        std::vector<ItemTemplate const*> found;
+        for (auto const& [entry, item] : *sObjectMgr->GetItemTemplateStore())
+            if ((item.IsArmorVellum() || item.IsWeaponVellum()) && item.BuyPrice)
+                found.push_back(&item);
+        return found;
+    }();
+    return vellums;
+}
+}  // namespace
+
 Stock ProfessionStock(Player* player)
 {
     Stock stock;
+    bool const scrolls = MakesScrolls(player);
     for (auto const& [id, learned] : player->GetSpellMap())
     {
         if (!learned || learned->State == PLAYERSPELL_REMOVED || !learned->Active)
@@ -61,18 +86,37 @@ Stock ProfessionStock(Player* player)
                 continue;
             uint32 const count = spell->ReagentCount[index];
             stock.reserve[entry] = std::max(stock.reserve[entry], std::max(count, item->GetMaxStackSize()));
-            uint64 const unit = std::max<uint64>(item->SellPrice, item->BuyPrice / std::max<uint32>(1, item->BuyCount));
-            cost = std::min<uint64>(LivingWorld::MoneyLimit, cost + unit * count);
+            cost = std::min<uint64>(LivingWorld::MoneyLimit, cost + VendorUnitPrice(item) * count);
         }
         for (uint32 tool : spell->Totem)
             if (tool)
                 stock.reserve[tool] = std::max<uint32>(1, stock.reserve[tool]);
         for (auto const& effect : spell->GetEffects())
         {
-            if ((!effect.IsEffect(SPELL_EFFECT_CREATE_ITEM) && !effect.IsEffect(SPELL_EFFECT_CREATE_ITEM_2)) ||
-                !effect.ItemType)
+            if (!effect.ItemType)
                 continue;
-            uint32 const unitCost = static_cast<uint32>(cost / std::max<int32>(1, effect.CalcValue()));
+            uint32 unitCost = 0;
+            if (scrolls && effect.IsEffect(SPELL_EFFECT_ENCHANT_ITEM))
+            {
+                // A scroll costs the enchant's reagents plus the cheapest vellum that holds it; the vellums that
+                // do are kept for it, not sold.
+                uint64 vellumCost = 0;
+                for (ItemTemplate const* vellum : Vellums())
+                {
+                    if (!VellumFits(vellum, spell))
+                        continue;
+                    stock.reserve[vellum->ItemId] = std::max<uint32>(1, stock.reserve[vellum->ItemId]);
+                    uint64 const price = VendorUnitPrice(vellum);
+                    vellumCost = vellumCost ? std::min(vellumCost, price) : price;
+                }
+                if (!vellumCost)
+                    continue;
+                unitCost = static_cast<uint32>(std::min<uint64>(LivingWorld::MoneyLimit, cost + vellumCost));
+            }
+            else if (effect.IsEffect(SPELL_EFFECT_CREATE_ITEM) || effect.IsEffect(SPELL_EFFECT_CREATE_ITEM_2))
+                unitCost = static_cast<uint32>(cost / std::max<int32>(1, effect.CalcValue()));
+            else
+                continue;
             auto [it, inserted] = stock.costs.emplace(effect.ItemType, unitCost);
             if (!inserted)
                 it->second = std::min(it->second, unitCost);
@@ -127,6 +171,36 @@ bool FlipScanDue(Player* player)
     auto const it = ledger.lastScan.find(player->GetGUID().GetCounter());
     return it == ledger.lastScan.end() ||
            GameTime::GetGameTime().count() - it->second >= LivingWorld::FlipCooldownSeconds;
+}
+
+// Per trader and item, the share of the going rate it asks (see LivingWorld::AfterExpiry). Read and
+// updated only by world-thread operations, like the market snapshot.
+std::unordered_map<uint64, uint32>& Demand()
+{
+    static std::unordered_map<uint64, uint32> demand;
+    return demand;
+}
+
+uint64 DemandKey(ObjectGuid bot, uint32 entry) { return (uint64(bot.GetCounter()) << 32) | entry; }
+
+uint32 DemandPct(ObjectGuid bot, uint32 entry)
+{
+    auto const it = Demand().find(DemandKey(bot, entry));
+    return it == Demand().end() ? 100 : it->second;
+}
+
+// Auction mail subjects read "item:0:response:auction:count". Called once per mail, as it is deleted.
+void RecordAuctionOutcome(ObjectGuid bot, Mail const* mail)
+{
+    if (mail->messageType != MAIL_AUCTION)
+        return;
+    std::vector<std::string_view> const fields = Acore::Tokenize(mail->subject, ':', false);
+    Optional<uint32> const entry = fields.size() > 2 ? Acore::StringTo<uint32>(fields[0]) : Optional<uint32>();
+    Optional<uint32> const response = fields.size() > 2 ? Acore::StringTo<uint32>(fields[2]) : Optional<uint32>();
+    if (!entry || !response || (*response != AUCTION_EXPIRED && *response != AUCTION_SUCCESSFUL))
+        return;
+    uint32& pct = Demand().try_emplace(DemandKey(bot, *entry), 100).first->second;
+    pct = *response == AUCTION_EXPIRED ? LivingWorld::AfterExpiry(pct) : LivingWorld::AfterSale(pct);
 }
 
 bool IsLivingMail(Mail const* mail)
@@ -269,8 +343,107 @@ LivingEconomyPlan ToolPlan(Player* player, Offers const& offers)
     return best;
 }
 
+// The spell a recipe item teaches, or 0 for any other item.
+uint32 TaughtSpell(ItemTemplate const* item)
+{
+    if (item->Class != ITEM_CLASS_RECIPE)
+        return 0;
+    for (auto const& spell : item->Spells)
+        if (spell.SpellTrigger == ITEM_SPELLTRIGGER_LEARN_SPELL_ID && spell.SpellId > 0)
+            return uint32(spell.SpellId);
+    return 0;
+}
+
+// The cheapest nearby recipe for one of the bot's own professions that the era allows, that it can learn
+// now and that still gives skill-ups, so new recipes keep levelling the profession.
+LivingEconomyPlan RecipePlan(Player* player, Offers const& offers)
+{
+    LivingEconomyPlan best;
+    uint32 cheapest = UINT32_MAX;
+    for (auto const& [entry, offer] : offers)
+    {
+        auto const* item = sObjectMgr->GetItemTemplate(entry);
+        uint32 const taught = item ? TaughtSpell(item) : 0;
+        if (!taught || offer.price >= cheapest || player->HasSpell(taught) || player->HasItemCount(entry, 1, true) ||
+            !LivingWorld::RecipeWithinEra(item->RequiredSkillRank, sPlayerbotAIConfig.RandomBotMaxLevel) ||
+            player->CanUseItem(item) != EQUIP_ERR_OK || !ItemUsageValue::SpellGivesSkillUp(taught, player) ||
+            !LivingWorld::CanAffordTraining(player->GetMoney(), offer.price, player->GetLevel()))
+            continue;
+        best = {offer.vendor, {}, entry, offer.slot, 1, taught, LivingSupplyKind::Recipe};
+        cheapest = offer.price;
+    }
+    return best;
+}
+
+// A recipe the bot may learn now: one of its professions, within the era, not yet known.
+bool Learnable(Player* player, Item* item)
+{
+    ItemTemplate const* proto = item ? item->GetTemplate() : nullptr;
+    uint32 const taught = proto ? TaughtSpell(proto) : 0;
+    return taught && !player->HasSpell(taught) && player->CanUseItem(proto) == EQUIP_ERR_OK &&
+           LivingWorld::RecipeWithinEra(proto->RequiredSkillRank, sPlayerbotAIConfig.RandomBotMaxLevel);
+}
+
+Item* OwnedRecipe(Player* player)
+{
+    for (Item* item : BagItems(player))
+        if (Learnable(player, item))
+            return item;
+    return nullptr;
+}
+
+// Learns a recipe by using it, as a player would.
+void Learn(Player* player, Item* recipe)
+{
+    SpellCastTargets targets;
+    targets.SetUnitTarget(player);
+    player->CastItemUseSpell(recipe, targets, 1, 0);
+}
+
+// A bought recipe is learned at once; looted ones and failed learns are picked up by "living learn recipe".
+void LearnOwnedRecipe(Player* player)
+{
+    if (Item* recipe = OwnedRecipe(player))
+        Learn(player, recipe);
+}
+
+// A trader that could make a scroll right now but has no vellum for it buys the cheapest fitting one nearby.
+LivingEconomyPlan VellumPlan(Player* player, Offers const& offers)
+{
+    LivingEconomyPlan best;
+    uint32 cheapest = UINT32_MAX;
+    for (auto const& [id, learned] : player->GetSpellMap())
+    {
+        if (!learned || learned->State == PLAYERSPELL_REMOVED || !learned->Active)
+            continue;
+        auto const* spell = sSpellMgr->GetSpellInfo(id);
+        if (!spell || !LivingProfessions::WantsScroll(player, spell) ||
+            !LivingProfessions::IsProfessionRecipe(player, spell) || !LivingProfessions::HasReagents(player, spell) ||
+            LivingProfessions::ScrollVellum(player, spell))
+            continue;
+        for (auto const& [entry, offer] : offers)
+        {
+            auto const* item = sObjectMgr->GetItemTemplate(entry);
+            if (!item || offer.price >= cheapest || !LivingProfessions::VellumFits(item, spell) ||
+                !LivingWorld::CanAffordTraining(player->GetMoney(), offer.price, player->GetLevel()))
+                continue;
+            best = {offer.vendor, {}, entry, offer.slot, 1, id, LivingSupplyKind::Vellum};
+            cheapest = offer.price;
+        }
+    }
+    return best;
+}
+
 bool StillNeedsSupply(Player* player, LivingEconomyPlan const& plan, ItemTemplate const* item)
 {
+    if (plan.supplyKind == LivingSupplyKind::Vellum)
+    {
+        auto const* spell = sSpellMgr->GetSpellInfo(plan.recipe);
+        return spell && player->HasSpell(plan.recipe) && LivingProfessions::WantsScroll(player, spell) &&
+               !LivingProfessions::ScrollVellum(player, spell) && LivingProfessions::VellumFits(item, spell);
+    }
+    if (plan.supplyKind == LivingSupplyKind::Recipe)
+        return !player->HasSpell(plan.recipe) && !player->HasItemCount(plan.entry, 1, true);
     if (plan.supplyKind == LivingSupplyKind::FishingPole)
         return player->HasSkill(SKILL_FISHING) && !HasFishingPole(player);
     auto const* recipe = sSpellMgr->GetSpellInfo(plan.recipe);
@@ -293,6 +466,12 @@ LivingEconomyPlan SupplyPlan(PlayerbotAI* ai)
     auto const tool = ToolPlan(player, offers);
     if (!tool.target.IsEmpty())
         return tool;
+    auto const recipe = RecipePlan(player, offers);
+    if (!recipe.target.IsEmpty())
+        return recipe;
+    auto const vellum = VellumPlan(player, offers);
+    if (!vellum.target.IsEmpty())
+        return vellum;
     LivingEconomyPlan best;
     uint32 bestScore = 0;
     for (auto const& [id, learned] : player->GetSpellMap())
@@ -460,7 +639,7 @@ public:
             paid ? LivingWorld::FlipResalePrice(paid, PeerPrice(market, product, _bot))
                  : LivingWorld::AuctionUnitPrice(item->GetTemplate()->SellPrice,
                                                  cost == stock.costs.end() ? 0 : cost->second,
-                                                 PeerPrice(market, product, _bot), count);
+                                                 PeerPrice(market, product, _bot), count, DemandPct(_bot, product));
         if (price && uint64(price) * count > LivingWorld::MoneyLimit)
             return false;
         if (!price)
@@ -612,6 +791,7 @@ public:
             }
             if (LivingWorld::CanDeleteLivingMail(IsLivingMail(mail), mail->money, mail->items.size(), mail->COD))
             {
+                RecordAuctionOutcome(_bot, mail);
                 WorldPacket packet(CMSG_MAIL_DELETE);
                 packet << _mailbox << id << uint32(mail->mailTemplateId);
                 player->GetSession()->HandleMailDelete(packet);
@@ -710,6 +890,31 @@ LivingMarketTrip LivingMarketTripValue::Calculate()
     return trip;
 }
 
+ObjectGuid LivingRecipeValue::Calculate()
+{
+    if (!LivingProfessions::CanWork(botAI))
+        return ObjectGuid::Empty;
+    Item* recipe = OwnedRecipe(bot);
+    return recipe ? recipe->GetGUID() : ObjectGuid::Empty;
+}
+
+bool LivingLearnRecipeAction::isUseful()
+{
+    return LivingProfessions::CanWork(botAI) && !bot->IsNonMeleeSpellCast(false);
+}
+bool LivingLearnRecipeAction::isPossible() { return !AI_VALUE(ObjectGuid, "living recipe").IsEmpty(); }
+
+bool LivingLearnRecipeAction::Execute(Event /*event*/)
+{
+    auto* value = context->GetValue<ObjectGuid>("living recipe");
+    Item* recipe = bot->GetItemByGuid(value->Get());
+    value->Set(ObjectGuid::Empty);
+    if (!Learnable(bot, recipe))
+        return false;
+    Learn(bot, recipe);
+    return true;
+}
+
 bool LivingEconomyAction::isUseful() { return LivingProfessions::CanWork(botAI); }
 bool LivingEconomyAction::isPossible() { return !AI_VALUE(LivingEconomyPlan, getName()).target.IsEmpty(); }
 
@@ -760,5 +965,8 @@ bool LivingEconomyAction::Execute(Event /*event*/)
     // This plan uses the NPC's ordinary inventory, not a previous custom gossip vendor.
     bot->GetSession()->SetCurrentVendor(0);
     bot->BuyItemFromVendorSlot(plan.target, plan.slot, plan.entry, static_cast<uint8>(bundles), NULL_BAG, NULL_SLOT);
-    return bot->GetItemCount(plan.entry, false) > owned;
+    if (bot->GetItemCount(plan.entry, false) <= owned)
+        return false;
+    LearnOwnedRecipe(bot);
+    return true;
 }

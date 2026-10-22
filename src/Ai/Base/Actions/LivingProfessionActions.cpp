@@ -7,11 +7,13 @@
 #include "LivingProfessionActions.h"
 
 #include "ItemUsageValue.h"
+#include "LivingEconomyActions.h"
 #include "LivingProfessionPolicy.h"
 #include "LivingWorldMgr.h"
 #include "PlayerbotFactory.h"
 #include "Playerbots.h"
 #include "Trainer.h"
+#include "TravelMgr.h"
 
 namespace LivingProfessions
 {
@@ -43,11 +45,12 @@ bool WithinEra(Trainer::Spell const& lesson)
     return true;
 }
 
-bool CanTrain(Player* player, Creature* npc, Trainer::Trainer* trainer, Trainer::Spell const& lesson)
+// The lesson rules that don't depend on the trainer NPC in front of the bot. `discount` is the NPC's
+// reputation discount, or 1 when the bot is only deciding whether a trip there is worth it.
+bool CanTrainFrom(Player* player, Trainer::Trainer* trainer, Trainer::Spell const& lesson, float discount)
 {
-    if (!npc || !npc->IsAlive() || npc->IsHostileTo(player) || !trainer ||
-        trainer->GetTrainerType() != Trainer::Type::Tradeskill || !trainer->IsTrainerValidForPlayer(player) ||
-        !trainer->CanTeachSpell(player, &lesson) || !WithinEra(lesson))
+    if (!trainer || trainer->GetTrainerType() != Trainer::Type::Tradeskill ||
+        !trainer->IsTrainerValidForPlayer(player) || !trainer->CanTeachSpell(player, &lesson) || !WithinEra(lesson))
         return false;
     uint32 const era = sPlayerbotAIConfig.RandomBotMaxLevel;
     uint32 const skill = PlayerbotFactory::GetTrainerSpellTradeSkill(&lesson);
@@ -56,8 +59,14 @@ bool CanTrain(Player* player, Creature* npc, Trainer::Trainer* trainer, Trainer:
         known[i] = player->HasSkill(LivingWorld::Professions[i].skill);
     if (!LivingWorld::WantsProfession(player->GetGUID().GetCounter(), skill, era, known))
         return false;
-    uint32 const cost = static_cast<uint32>(lesson.MoneyCost * player->GetReputationPriceDiscount(npc));
+    uint32 const cost = static_cast<uint32>(lesson.MoneyCost * discount);
     return LivingWorld::CanAffordTraining(player->GetMoney(), cost, player->GetLevel());
+}
+
+bool CanTrain(Player* player, Creature* npc, Trainer::Trainer* trainer, Trainer::Spell const& lesson)
+{
+    return npc && npc->IsAlive() && !npc->IsHostileTo(player) &&
+           CanTrainFrom(player, trainer, lesson, player->GetReputationPriceDiscount(npc));
 }
 
 bool HasReagents(Player* player, SpellInfo const* spell)
@@ -97,6 +106,47 @@ bool NeedsProduct(Player* player, SpellInfo const* spell)
             return false;
     }
     return creates;
+}
+
+// Scrolls give no skill-ups, so only traders make them, as stock to sell (the same cap as crafted goods).
+bool MakesScrolls(Player* player)
+{
+    return LivingWorld::Expansion(sPlayerbotAIConfig.RandomBotMaxLevel) >= 2 &&
+           LivingWorldMgr::instance().GetProfile(player).motivation == LivingWorld::Motivation::Trader;
+}
+
+bool WantsScroll(Player* player, SpellInfo const* spell)
+{
+    if (!MakesScrolls(player))
+        return false;
+    for (auto const& effect : spell->GetEffects())
+        if (effect.IsEffect(SPELL_EFFECT_ENCHANT_ITEM) && effect.ItemType)
+            if (auto const* scroll = sObjectMgr->GetItemTemplate(effect.ItemType))
+                return player->GetItemCount(scroll->ItemId, true) < uint64(scroll->GetMaxStackSize()) * 4;
+    return false;
+}
+
+// The core's own rules for an enchant on vellum: armour or weapon vellum by the enchant's item class, and a
+// vellum whose level holds the enchant's.
+bool VellumFits(ItemTemplate const* vellum, SpellInfo const* spell)
+{
+    bool const kind = (spell->EquippedItemClass == ITEM_CLASS_ARMOR && vellum->IsArmorVellum()) ||
+                      (spell->EquippedItemClass == ITEM_CLASS_WEAPON && vellum->IsWeaponVellum());
+    uint32 const level = vellum->RequiredLevel ? vellum->RequiredLevel : vellum->ItemLevel;
+    return kind && (spell->HasAttribute(SPELL_ATTR2_ALLOW_LOW_LEVEL_BUFF) || level >= spell->BaseLevel);
+}
+
+// The lowest owned vellum that holds the enchant, when the trader wants that scroll.
+Item* ScrollVellum(Player* player, SpellInfo const* spell)
+{
+    if (!WantsScroll(player, spell))
+        return nullptr;
+    Item* best = nullptr;
+    for (Item* item : BagItems(player))
+        if (VellumFits(item->GetTemplate(), spell) &&
+            (!best || item->GetTemplate()->ItemLevel < best->GetTemplate()->ItemLevel))
+            best = item;
+    return best;
 }
 
 Item* EnchantTarget(Player* player, SpellInfo const* spell)
@@ -146,6 +196,40 @@ LivingTrainingPlan LivingTrainingValue::Calculate()
     return result;
 }
 
+LivingTrainingTrip LivingTrainingTripValue::Calculate()
+{
+    LivingTrainingTrip trip;
+    for (auto const& [entry, when] : value.failed)
+        if (GetMSTimeDiffToNow(when) < LivingWorld::FailedTrainerMemoryMs)
+            trip.failed.emplace(entry, when);
+    if (!CanWork(botAI) || AI_VALUE(LivingTrainingPlan, "living training").spell)
+        return trip;
+    // Many spawns share one trainer's lesson list, so each list is checked once.
+    std::unordered_map<Trainer::Trainer*, bool> teaches;
+    auto const teachesNow = [&](uint32 entry)
+    {
+        Trainer::Trainer* trainer = sObjectMgr->GetTrainer(entry);
+        if (!trainer || trip.failed.count(entry))
+            return false;
+        auto [it, added] = teaches.try_emplace(trainer, false);
+        if (added)
+            for (auto const& lesson : trainer->GetSpells())
+                if (CanTrainFrom(bot, trainer, lesson, 1.0f))
+                {
+                    it->second = true;
+                    break;
+                }
+        return it->second;
+    };
+    TravelMgr::NpcLocation trainer;
+    if (!sTravelMgr.SelectProfessionTrainerByMap(bot, teachesNow, trainer))
+        return trip;
+    trip.go = LivingWorld::WorthTrainingTrip(bot->GetExactDist(trainer.loc));
+    trip.destination = trainer.loc;
+    trip.entry = trainer.entry;
+    return trip;
+}
+
 LivingCraftPlan LivingCraftValue::Calculate()
 {
     if (!CanWork(botAI))
@@ -160,15 +244,21 @@ LivingCraftPlan LivingCraftValue::Calculate()
         if (!spell || !IsProfessionRecipe(bot, spell) || !HasReagents(bot, spell))
             continue;
         Item* target = nullptr;
+        bool scroll = false;
         if (!NeedsProduct(bot, spell))
         {
             target = EnchantTarget(bot, spell);
+            if (!target)
+            {
+                target = ScrollVellum(bot, spell);
+                scroll = target != nullptr;
+            }
             if (!target)
                 continue;
         }
         if (!botAI->CanCastSpell(id, bot, true, target))
             continue;
-        uint32 const score = (ItemUsageValue::SpellGivesSkillUp(id, bot) ? 100000U : 0U) +
+        uint32 const score = (!scroll && ItemUsageValue::SpellGivesSkillUp(id, bot) ? 100000U : 0U) +
                              LivingWorld::Mix(bot->GetGUID().GetCounter() ^ id) % 10000U + 1;
         if (score > best)
         {
@@ -222,7 +312,8 @@ bool LivingCraftAction::Execute(Event /*event*/)
     auto const* spell = sSpellMgr->GetSpellInfo(plan.spell);
     Item* target = plan.item.IsEmpty() ? nullptr : bot->GetItemByGuid(plan.item);
     if (!spell || !HasReagents(bot, spell) || (!plan.item.IsEmpty() && !target) ||
-        (target ? EnchantTarget(bot, spell) != target : !NeedsProduct(bot, spell)))
+        (target ? EnchantTarget(bot, spell) != target && ScrollVellum(bot, spell) != target
+                : !NeedsProduct(bot, spell)))
         return false;
     return botAI->CastSpell(plan.spell, bot, target);
 }
@@ -234,6 +325,7 @@ void LivingProfessionStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
         "often", {NextAction("living train", ACTION_NORMAL + 2.0f), NextAction("living craft", ACTION_NORMAL + 1.0f)}));
     triggers.push_back(new TriggerNode(
         "often",
-        {NextAction("living supplies", ACTION_NORMAL + 1.5f), NextAction("living processing", ACTION_NORMAL + 0.5f),
-         NextAction("living auction", ACTION_NORMAL + 1.0f), NextAction("living mail", ACTION_NORMAL + 2.5f)}));
+        {NextAction("living learn recipe", ACTION_NORMAL + 3.0f), NextAction("living supplies", ACTION_NORMAL + 1.5f),
+         NextAction("living processing", ACTION_NORMAL + 0.5f), NextAction("living auction", ACTION_NORMAL + 1.0f),
+         NextAction("living mail", ACTION_NORMAL + 2.5f)}));
 }

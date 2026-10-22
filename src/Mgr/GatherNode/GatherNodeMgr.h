@@ -7,6 +7,7 @@
 #ifndef PLAYERBOT_GATHERNODEMGR_H
 #define PLAYERBOT_GATHERNODEMGR_H
 
+#include <functional>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -66,6 +67,11 @@ public:
                                               float radius);
 
     std::vector<GatherNodeSpawn> const* GetZoneNodes(uint32 mapId, uint32 zoneId) const;
+
+    // Nearest node on the bot's map but outside its zone, within `maxDistance`, that it can harvest and that
+    // `wanted` accepts, skipping `visited`. For routes to another zone; nullptr when there is none.
+    GatherNodeSpawn const* GetRouteNode(Player* bot, std::unordered_set<ObjectGuid::LowType> const& visited,
+                                        float maxDistance, std::function<bool(GatherNodeSpawn const&)> const& wanted);
 
 private:
     bool IsUsable(PlayerbotAI* botAI, Player* bot, GatherNodeSpawn const& node);

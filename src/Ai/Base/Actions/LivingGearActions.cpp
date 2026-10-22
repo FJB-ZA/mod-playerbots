@@ -7,6 +7,7 @@
 #include "LivingGearActions.h"
 
 #include "DBCStores.h"
+#include "LivingFieldPolicy.h"
 #include "LivingGearPolicy.h"
 #include "LivingWorldMgr.h"
 #include "Playerbots.h"
@@ -99,6 +100,35 @@ bool SelectHuntPos(Player* bot, WorldPosition& out)
     out = grounds[urand(0, grounds.size() - 1)];
     LOG_DEBUG("playerbots", "[Living gear] {} hunts {} wanted drop(s) at map {} ({:.0f}, {:.0f})", bot->GetName(),
               hunt.upgrades, out.GetMapId(), out.GetPositionX(), out.GetPositionY());
+    return true;
+}
+
+bool SelectSkinningHuntPos(Player* bot, WorldPosition& out)
+{
+    if (!LivingWorldMgr::instance().IsEnabled(bot) || !bot->HasSkill(SKILL_SKINNING))
+        return false;
+    uint32 const skill = bot->GetPureSkillValue(SKILL_SKINNING);
+    if (skill >= bot->GetPureMaxSkillValue(SKILL_SKINNING) ||
+        urand(1, 100) > LivingWorld::SkinningHuntChance(LivingWorldMgr::instance().GetProfile(bot).motivation))
+        return false;
+
+    std::vector<WorldLocation> grounds;
+    for (auto const& [entry, level] : sTravelMgr.GetSkinningHuntEntries())
+    {
+        // Lower creatures are fine (a lagging skinner catches up on them); higher ones are not safe.
+        if (level > bot->GetLevel() + 2 || !LivingWorld::SkinningTeaches(skill, level))
+            continue;
+        if (auto const* locs = sTravelMgr.GetSkinningHuntLocs(entry))
+            for (WorldLocation const& loc : *locs)
+                if (loc.GetMapId() == bot->GetMapId() && bot->GetExactDist(loc) <= LivingWorld::GearHuntDistance)
+                    grounds.push_back(loc);
+    }
+    if (grounds.empty())
+        return false;
+
+    out = grounds[urand(0, grounds.size() - 1)];
+    LOG_DEBUG("playerbots", "[Living skinning] {} (skill {}) hunts at map {} ({:.0f}, {:.0f})", bot->GetName(), skill,
+              out.GetMapId(), out.GetPositionX(), out.GetPositionY());
     return true;
 }
 

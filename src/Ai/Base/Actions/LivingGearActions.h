@@ -34,6 +34,9 @@ namespace LivingGear
 {
 // A grind position at one of the bot's wishlist hunting grounds, or false if it has none.
 bool SelectHuntPos(Player* bot, WorldPosition& out);
+// Sometimes, for a skinner whose skill can still rise: a grind position among skinnable creatures near its level
+// that still teach it. False otherwise.
+bool SelectSkinningHuntPos(Player* bot, WorldPosition& out);
 // Narrows a gear hunter's Dungeon Finder list (LFG dungeon ids) to dungeons whose bosses drop
 // upgrades for it. Leaves the list alone for other bots or when no dungeon has one.
 void FilterDungeons(PlayerbotAI* ai, std::set<uint32>& dungeons);

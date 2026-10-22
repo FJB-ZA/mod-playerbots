@@ -14,6 +14,8 @@
 #include "IVMapMgr.h"
 #include "LivingEconomyActions.h"
 #include "LivingEconomyPolicy.h"
+#include "LivingProfessionActions.h"
+#include "LivingProfessionPolicy.h"
 #include "LivingTransmogActions.h"
 #include "MotionMaster.h"
 #include "MoveSpline.h"
@@ -427,6 +429,23 @@ bool NewRpgWanderNpcAction::Execute(Event /*event*/)
         if (warpweaver && MoveWorldObjectTo(look.warpweaver))
             return true;
         LivingTransmog::EndTrip(botAI);
+    }
+
+    // A bot with a lesson it can afford but no trainer for it nearby walks to the nearest one on its map.
+    auto* tripValue = botAI->GetAiObjectContext()->GetValue<LivingTrainingTrip>("living training trip");
+    LivingTrainingTrip lesson = tripValue->Get();
+    if (lesson.go && bot->GetExactDist(lesson.destination) > LivingWorld::TrainerReach && MoveFarTo(lesson.destination))
+        return true;
+    if (lesson.go && bot->GetExactDist(lesson.destination) <= LivingWorld::TrainerReach)
+    {
+        // Arrived: "living train" takes it from here. A trainer that can't teach after all is left out of later
+        // trips for a while, so the bot isn't sent back to it.
+        auto* plan = botAI->GetAiObjectContext()->GetValue<LivingTrainingPlan>("living training");
+        plan->Reset();
+        if (!plan->Get().spell)
+            lesson.failed[lesson.entry] = getMSTime();
+        lesson.go = false;
+        tripValue->Set(lesson);
     }
 
     NewRpgInfo& info = botAI->rpgInfo;

@@ -21,6 +21,7 @@
 #include "Playerbots.h"
 #include "RaceMgr.h"
 #include "Talentspec.h"
+#include "Trainer.h"
 #include "TransportMgr.h"
 #include "TravelNode.h"
 #include "VMapFactory.h"
@@ -4526,6 +4527,33 @@ bool TravelMgr::SelectAuctioneerByMap(Player* bot, NpcLocation& outAuctioneer)
     return found;
 }
 
+bool TravelMgr::SelectProfessionTrainerByMap(Player* bot, std::function<bool(uint32)> const& teaches,
+                                             NpcLocation& outTrainer)
+{
+    bool const alliance = bot->GetTeamId() == TEAM_ALLIANCE;
+    float best = 0.0f;
+    bool found = false;
+    for (Auctioneer const& trainer : professionTrainers)
+    {
+        if (trainer.npc.loc.GetMapId() != bot->GetMapId() || !(alliance ? trainer.forAlliance : trainer.forHorde))
+            continue;
+        float const distance = bot->GetExactDist(trainer.npc.loc);
+        if ((!found || distance < best) && teaches(trainer.npc.entry))
+        {
+            outTrainer = trainer.npc;
+            best = distance;
+            found = true;
+        }
+    }
+    return found;
+}
+
+std::vector<WorldLocation> const* TravelMgr::GetSkinningHuntLocs(uint32 entry) const
+{
+    auto const it = skinningHuntLocs.find(entry);
+    return it == skinningHuntLocs.end() ? nullptr : &it->second;
+}
+
 std::vector<uint32> const& TravelMgr::GetGearHuntEntries(uint8 level) const
 {
     static std::vector<uint32> const none;
@@ -4757,6 +4785,19 @@ void TravelMgr::PrepareDestinationCache()
 
         uint32 areaId = area->zone ? area->zone : area->ID;
 
+        // === PROFESSION TRAINERS === (living-world bots travel to these when no trainer nearby can teach them)
+        if (creatureTemplate->npcflag & UNIT_NPC_FLAG_TRAINER_PROFESSION)
+        {
+            Trainer::Trainer* trainer = sObjectMgr->GetTrainer(templateEntry);
+            FactionTemplateEntry const* factionEntry = sFactionTemplateStore.LookupEntry(creatureTemplate->faction);
+            if (trainer && trainer->GetTrainerType() == Trainer::Type::Tradeskill && factionEntry)
+                professionTrainers.push_back(
+                    {{WorldLocation(mapId, x + cos(orient) * 3.0f, y + sin(orient) * 3.0f, z + 0.5f, orient + M_PI),
+                      templateEntry},
+                     !(factionEntry->hostileMask & 2),
+                     !(factionEntry->hostileMask & 4)});
+        }
+
         // CREATURES
         if (creatureTemplate->npcflag == 0 &&
             creatureTemplate->lootid != 0 &&
@@ -4951,6 +4992,20 @@ void TravelMgr::PrepareDestinationCache()
                     ++dropSources[itemId];
                 }
     }
+
+    // Skinning index, from the same grind clusters before they are narrowed to gear drops.
+    for (auto const& [entry, locs] : gearHuntLocs)
+    {
+        CreatureTemplate const* creatureTemplate = sObjectMgr->GetCreatureTemplate(entry);
+        if (creatureTemplate && creatureTemplate->SkinLootId &&
+            creatureTemplate->GetRequiredLootSkill() == SKILL_SKINNING)
+        {
+            skinningHuntEntries.emplace_back(entry,
+                                             uint8((creatureTemplate->minlevel + creatureTemplate->maxlevel + 1) / 2));
+            skinningHuntLocs[entry] = locs;
+        }
+    }
+    LOG_INFO("playerbots", "Skinning hunts: {} open-world creature types can be skinned", skinningHuntEntries.size());
 
     uint32 gearHuntEntries = 0;
     for (auto it = gearHuntLocs.begin(); it != gearHuntLocs.end();)

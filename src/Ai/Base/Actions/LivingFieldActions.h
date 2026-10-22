@@ -7,6 +7,8 @@
 #ifndef PLAYERBOTS_LIVING_FIELD_ACTIONS_H
 #define PLAYERBOTS_LIVING_FIELD_ACTIONS_H
 
+#include <unordered_set>
+
 #include "MovementActions.h"
 #include "Strategy.h"
 #include "TravelMgr.h"
@@ -33,16 +35,30 @@ struct LivingFieldState
     ObjectGuid pole;
 };
 
+struct GatherNodeSpawn;
+
 namespace LivingProfessions
 {
 bool FieldReservedItem(PlayerbotAI* ai, ObjectGuid item);
-}
+// Cross-zone reagent route: for a living-world bot short of a recipe input, the nearest herb or ore node on its
+// map in another zone (within LivingWorld::MaxReagentRoute) that yields it. nullptr otherwise.
+GatherNodeSpawn const* ReagentRouteNode(Player* bot, std::unordered_set<ObjectGuid::LowType> const& visited);
+}  // namespace LivingProfessions
 
 class LivingFieldPlanValue : public CalculatedValue<LivingFieldPlan>
 {
 public:
     LivingFieldPlanValue(PlayerbotAI* ai) : CalculatedValue(ai, "living field plan", 60000) {}
     LivingFieldPlan Calculate() override;
+};
+
+// Whether ReagentRouteNode finds a node: the search measures every node on the map, so the RPG status check
+// reads this cached answer.
+class LivingReagentRouteValue : public BoolCalculatedValue
+{
+public:
+    LivingReagentRouteValue(PlayerbotAI* ai) : BoolCalculatedValue(ai, "living reagent route", 60000) {}
+    bool Calculate() override;
 };
 
 class LivingFieldStateValue : public ManualSetValue<LivingFieldState>

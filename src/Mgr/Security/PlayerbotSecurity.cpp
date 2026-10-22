@@ -96,6 +96,9 @@ PlayerbotSecurityLevel PlayerbotSecurity::LevelFor(Player* from, DenyReason* rea
             trusted = LivingWorld::TrustsLikeGuildmate(attitude);
         }
         bool const guildmate = bot->GetGuildId() && bot->GetGuildId() == from->GetGuildId();
+        // A real player's invite to a higher bot is a request to mentor: the core scales the bot down to them.
+        bool const mentor =
+            sPlayerbotAIConfig.MentorInvites && IsRealPlayer(from) && bot->GetLevel() > from->GetLevel();
 
         if (sPlayerbotAIConfig.GroupInvitationPermission <= 0)
         {
@@ -110,7 +113,7 @@ PlayerbotSecurityLevel PlayerbotSecurity::LevelFor(Player* from, DenyReason* rea
             int32 levelDiff = int32(bot->GetLevel()) - int32(from->GetLevel());
             if (levelDiff > 5)
             {
-                if (!guildmate && !trusted)
+                if (!guildmate && !trusted && !mentor)
                 {
                     if (reason)
                         *reason = PLAYERBOT_DENY_LOW_LEVEL;
@@ -123,7 +126,7 @@ PlayerbotSecurityLevel PlayerbotSecurity::LevelFor(Player* from, DenyReason* rea
         int32 botGS = static_cast<int32>(botAI->GetEquipGearScore(bot));
         int32 fromGS = static_cast<int32>(botAI->GetEquipGearScore(from));
 
-        if (sPlayerbotAIConfig.GearScoreCheck && !trusted && botGS && bot->GetLevel() > 15 && botGS > fromGS)
+        if (sPlayerbotAIConfig.GearScoreCheck && !trusted && !mentor && botGS && bot->GetLevel() > 15 && botGS > fromGS)
         {
             uint32 diffPct = uint32(100 * (botGS - fromGS) / botGS);
             uint32 reqPct = uint32(12 * sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL) / from->GetLevel());

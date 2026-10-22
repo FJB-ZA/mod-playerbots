@@ -115,10 +115,13 @@ public:
         creators["living processing"] = &ValueContext::living_processing;
         creators["living field plan"] = &ValueContext::living_field_plan;
         creators["living field state"] = &ValueContext::living_field_state;
+        creators["living reagent route"] = &ValueContext::living_reagent_route;
         creators["living gear hunt"] = &ValueContext::living_gear_hunt;
         creators["living market trip"] = &ValueContext::living_market_trip;
+        creators["living training trip"] = &ValueContext::living_training_trip;
         creators["living transmog trip"] = &ValueContext::living_transmog_trip;
         creators["living supplies"] = &ValueContext::living_supplies;
+        creators["living recipe"] = &ValueContext::living_recipe;
         creators["living auction"] = &ValueContext::living_auction;
         creators["living mail"] = &ValueContext::living_mail;
         creators["active spell"] = &ValueContext::active_spell;
@@ -358,9 +361,12 @@ private:
     static UntypedValue* living_processing(PlayerbotAI* botAI) { return new LivingProcessingValue(botAI); }
     static UntypedValue* living_field_plan(PlayerbotAI* botAI) { return new LivingFieldPlanValue(botAI); }
     static UntypedValue* living_field_state(PlayerbotAI* botAI) { return new LivingFieldStateValue(botAI); }
+    static UntypedValue* living_reagent_route(PlayerbotAI* botAI) { return new LivingReagentRouteValue(botAI); }
     static UntypedValue* living_gear_hunt(PlayerbotAI* botAI) { return new LivingGearHuntValue(botAI); }
     static UntypedValue* living_market_trip(PlayerbotAI* botAI) { return new LivingMarketTripValue(botAI); }
+    static UntypedValue* living_training_trip(PlayerbotAI* botAI) { return new LivingTrainingTripValue(botAI); }
     static UntypedValue* living_transmog_trip(PlayerbotAI* botAI) { return new LivingTransmogTripValue(botAI); }
+    static UntypedValue* living_recipe(PlayerbotAI* botAI) { return new LivingRecipeValue(botAI); }
     static UntypedValue* living_supplies(PlayerbotAI* botAI)
     {
         return new LivingEconomyValue(botAI, "living supplies", LivingEconomyJob::Supplies);

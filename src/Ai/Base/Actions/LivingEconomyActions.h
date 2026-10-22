@@ -34,7 +34,9 @@ enum class LivingSupplyKind
 {
     Reagent,
     Tool,
-    FishingPole
+    FishingPole,
+    Recipe,
+    Vellum
 };
 
 struct LivingEconomyPlan
@@ -76,6 +78,23 @@ class LivingMarketTripValue : public CalculatedValue<LivingMarketTrip>
 public:
     LivingMarketTripValue(PlayerbotAI* botAI) : CalculatedValue(botAI, "living market trip", 60000) {}
     LivingMarketTrip Calculate() override;
+};
+
+// A recipe in the bags the bot can learn now (looted, or bought earlier when the learn failed).
+class LivingRecipeValue : public CalculatedValue<ObjectGuid>
+{
+public:
+    LivingRecipeValue(PlayerbotAI* botAI) : CalculatedValue(botAI, "living recipe", 60000) {}
+    ObjectGuid Calculate() override;
+};
+
+class LivingLearnRecipeAction : public Action
+{
+public:
+    LivingLearnRecipeAction(PlayerbotAI* botAI) : Action(botAI, "living learn recipe") {}
+    bool isUseful() override;
+    bool isPossible() override;
+    bool Execute(Event event) override;
 };
 
 class LivingEconomyAction : public MovementAction

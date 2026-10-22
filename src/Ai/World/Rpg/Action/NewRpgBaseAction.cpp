@@ -15,6 +15,7 @@
 #include "GossipDef.h"
 #include "GridTerrainData.h"
 #include "IVMapMgr.h"
+#include "LivingFieldActions.h"
 #include "LivingGearActions.h"
 #include "LivingGearPolicy.h"
 #include "LivingWorldMgr.h"
@@ -982,6 +983,9 @@ WorldPosition NewRpgBaseAction::SelectRandomGrindPos(Player* bot)
     WorldPosition hunt{};
     if (urand(1, 100) <= LivingWorld::GearHuntChance && LivingGear::SelectHuntPos(bot, hunt))
         return hunt;
+    // Skinners who can still learn often grind among beasts worth skinning.
+    if (LivingGear::SelectSkinningHuntPos(bot, hunt))
+        return hunt;
 
     std::vector<WorldLocation> const& locs = sTravelMgr.GetLocsPerLevelCache(bot->GetLevel());
     float hiRange = 500.0f;
@@ -1293,7 +1297,9 @@ bool NewRpgBaseAction::CheckRpgStatusAvailable(NewRpgStatus status)
             if (AI_VALUE(uint8, "bag space") > 80)
                 return false;
 
-            return sGatherNodeMgr.HasUsableNodes(bot);
+            // A living-world gatherer short of a recipe input may head for another zone's nodes.
+            return sGatherNodeMgr.HasUsableNodes(bot) ||
+                   (LivingWorldMgr::instance().IsEnabled(bot) && AI_VALUE(bool, "living reagent route"));
         }
         case RPG_TRAVEL_FLIGHT:
         {

@@ -420,6 +420,31 @@ void LivingFieldStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
                                                       NextAction("living restore weapons", ACTION_HIGH + 1.0f)}));
 }
 
+GatherNodeSpawn const* LivingProfessions::ReagentRouteNode(Player* bot,
+                                                           std::unordered_set<ObjectGuid::LowType> const& visited)
+{
+    if (!LivingWorldMgr::instance().IsEnabled(bot) ||
+        bot->GetMap()->GetEntry()->Expansion() > LivingWorld::Expansion(sPlayerbotAIConfig.RandomBotMaxLevel))
+        return nullptr;
+    auto const stock = LivingProfessions::ProfessionStock(bot);
+    if (stock.reserve.empty())
+        return nullptr;
+    // Recipe deficits only (no skill practice: that is what the bot's own zone is for). One check per loot table.
+    std::unordered_map<uint32, bool> wanted;
+    auto const yieldsWanted = [&](GatherNodeSpawn const& node)
+    {
+        if (node.reqSkillValue > LivingWorld::ProfessionCap(sPlayerbotAIConfig.RandomBotMaxLevel))
+            return false;
+        auto [it, added] = wanted.try_emplace(node.lootId, false);
+        if (added)
+            it->second = Wanted(bot, Outputs(LootTemplates_Gameobject, node.lootId), stock, false).item != 0;
+        return it->second;
+    };
+    return sGatherNodeMgr.GetRouteNode(bot, visited, LivingWorld::MaxReagentRoute, yieldsWanted);
+}
+
+bool LivingReagentRouteValue::Calculate() { return LivingProfessions::ReagentRouteNode(bot, {}) != nullptr; }
+
 bool LivingProfessions::FieldReservedItem(PlayerbotAI* ai, ObjectGuid item)
 {
     if (!ai || !LivingWorldMgr::instance().IsEnabled(ai->GetBot()) || item.IsEmpty())

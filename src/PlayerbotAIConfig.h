@@ -114,6 +114,7 @@ public:
     uint32 LivingArenaMaxRatingAbove = 150;
     uint32 LivingArenaMaxGearScoreAbove = 5;
     uint32 LivingArenaPartnerSkill = 85;
+    bool MentorInvites = false;
     bool DisabledWithoutRealPlayer;
     bool EnableICCBuffs;
     bool AllowAccountBots, AllowGuildBots, AllowTrustedAccountBots;

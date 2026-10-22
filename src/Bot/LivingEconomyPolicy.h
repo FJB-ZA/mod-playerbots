@@ -56,12 +56,20 @@ inline uint32_t PurchaseBundles(uint32_t owned, uint32_t needed, uint32_t bundle
     return static_cast<uint32_t>(std::min<uint64_t>(255, (uint64_t(needed - owned) + bundleSize - 1) / bundleSize));
 }
 
-inline uint32_t AuctionUnitPrice(uint32_t vendor, uint32_t materialCost, uint32_t market, uint32_t count)
+// Demand memory per trader and item, as the percentage of the going rate it asks: an auction that expired
+// unsold lowers it by 10 (down to 70), a sale raises it by 5 (up to 100). The floor below still holds.
+inline constexpr uint32_t DemandFloorPct = 70;
+constexpr uint32_t AfterExpiry(uint32_t pct) { return pct >= DemandFloorPct + 10 ? pct - 10 : DemandFloorPct; }
+constexpr uint32_t AfterSale(uint32_t pct) { return pct + 5 < 100 ? pct + 5 : 100; }
+
+inline uint32_t AuctionUnitPrice(uint32_t vendor, uint32_t materialCost, uint32_t market, uint32_t count,
+                                 uint32_t demandPct = 100)
 {
     if (!count)
         return 0;
     uint64_t const floor = std::max<uint64_t>({1, uint64_t(vendor) * 2, uint64_t(materialCost) * 2});
-    uint64_t const desired = market ? std::clamp<uint64_t>(uint64_t(market) * 99 / 100, floor, floor * 10) : floor;
+    uint64_t const asked = uint64_t(market) * 99 / 100 * std::min<uint32_t>(demandPct, 100) / 100;
+    uint64_t const desired = market ? std::clamp<uint64_t>(asked, floor, floor * 10) : floor;
     return desired <= MoneyLimit / count ? static_cast<uint32_t>(desired) : 0;
 }
 

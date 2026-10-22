@@ -780,6 +780,7 @@ bool PlayerbotAIConfig::Initialize()
     LivingArenaMaxGearScoreAbove = sConfigMgr->GetOption<uint32>("Playerbots.LivingArena.MaxGearScoreAbovePct", 5);
     LivingArenaPartnerSkill =
         std::min<uint32>(sConfigMgr->GetOption<uint32>("Playerbots.LivingArena.PartnerSkill", 85), 100);
+    MentorInvites = sConfigMgr->GetOption<bool>("Playerbots.MentorInvites", false);
     RandomPlayerbotFactory::CreateRandomBots();
     if (World::IsStopped())
     {
