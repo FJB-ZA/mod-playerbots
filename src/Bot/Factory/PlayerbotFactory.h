@@ -195,6 +195,7 @@ private:
     void ClearSkills();
     void InitTalents(uint32 specNo);
     void InitTalentsByTemplate(uint32 specNo);
+    bool PathTreeOpen() const;
     void InitQuests(std::list<uint32>& questMap, bool withRewardItem = true);
     void ClearInventory();
     void ClearAllItems();

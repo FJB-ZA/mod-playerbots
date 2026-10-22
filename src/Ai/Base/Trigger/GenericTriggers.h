@@ -460,6 +460,15 @@ public:
     bool IsActive() override;
 };
 
+// A random bot holds free talent points and has spent none, as after a reset; opt-in by AutoTalentsOnFreePoints.
+class NoTalentsSpentTrigger : public Trigger
+{
+public:
+    NoTalentsSpentTrigger(PlayerbotAI* botAI) : Trigger(botAI, "no talents spent", 5 * IN_MILLISECONDS) {}
+
+    bool IsActive() override;
+};
+
 class RandomTrigger : public Trigger
 {
 public:

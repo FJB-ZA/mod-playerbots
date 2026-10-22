@@ -1439,6 +1439,11 @@ Playerbots.AutoLearnTrainerSpells = 1
 # Default: 1 (enabled)
 Playerbots.AutoPickTalents = 1
 
+# Randombots with free talent points and none spent pick talents at once (needs AutoPickTalents), such as
+# after a talent reset or after the core moves them onto a sub-class path
+# Default: 0 (disabled)
+Playerbots.AutoTalentsOnFreePoints = 0
+
 # Spells every randombot will learn automatically and every altbot will learn with maintenance
 # Default: 54197 (Cold Weather Flying)
 Playerbots.RandomBotSpellIds = "54197"
@@ -1911,6 +1916,11 @@ Playerbots.PremadeSpecName.1.5 = prot pvp
 Playerbots.PremadeSpecGlyph.1.5 = 43425,43397,43415,43396,49084,45792
 Playerbots.PremadeSpecLink.1.5.60 = --250031220223012520332113321
 Playerbots.PremadeSpecLink.1.5.80 = 0502300123-3-250031220223012521332113321
+# The Gladiator sub-class path's tree is a fourth page; a bot takes this spec only while its slot follows the path.
+Playerbots.PremadeSpecName.1.6 = gladiator
+Playerbots.PremadeSpecGlyph.1.6 = 43418,43395,43414,43396,49084,43425
+Playerbots.PremadeSpecLink.1.6.60 = ---5350202012203110321021012202103121
+Playerbots.PremadeSpecLink.1.6.80 = --250301225-5350202012203110321021012202103121
 
 #
 #
@@ -2304,6 +2314,9 @@ Playerbots.RandomClassSpecIndex.1.4 = 4
 # prot pvp
 Playerbots.RandomClassSpecProb.1.5 = 0
 Playerbots.RandomClassSpecIndex.1.5 = 5
+# gladiator: never rolled; a bot on the Gladiator path takes it, the core picks those bots
+Playerbots.RandomClassSpecProb.1.6 = 0
+Playerbots.RandomClassSpecIndex.1.6 = 6
 
 #
 #

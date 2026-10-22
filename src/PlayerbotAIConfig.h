@@ -17,6 +17,8 @@
 #include <unordered_map>
 #include <vector>
 
+struct TalentEntry;
+
 enum class BotCheatMask : uint32
 {
     none = 0,
@@ -313,6 +315,10 @@ public:
     std::vector<std::vector<uint32>> ParsedHunterPetLinkOrder[3][21];
     uint32 RandomClassSpecProb[MAX_CLASSES][MAX_SPECNO];
     uint32 RandomClassSpecIndex[MAX_CLASSES][MAX_SPECNO];
+    // Whether the premade spec a roll picks spends points on a sub-class path's tree (page 3)
+    bool RandomClassSpecUsesPathTree[MAX_CLASSES][MAX_SPECNO] = {};
+    // The first talent of the class's path tree, asked of the core to see whether the tree is open; null when none
+    TalentEntry const* PathTreeTalent[MAX_CLASSES] = {};
 
     std::string CommandPrefix, CommandSeparator;
     std::string RandomBotAccountPrefix;
@@ -407,6 +413,7 @@ public:
     bool DropObsoleteQuests;
     bool AllowLearnTrainerSpells;
     bool AutoPickTalents;
+    bool AutoTalentsOnFreePoints;
     bool AutoUpgradeEquip;
     int32 HunterWolfPet;
     int32 DefaultPetStance;
@@ -500,6 +507,8 @@ public:
 
     static std::vector<std::vector<uint32>> ParseTempTalentsOrder(uint32 cls, std::string temp_talents_order);
     static std::vector<std::vector<uint32>> ParseTempPetTalentsOrder(uint32 spec, std::string temp_talents_order);
+    bool SpecUsesPathTree(uint32 cls, uint32 specIndex) const;
+    static TalentEntry const* FindPathTreeTalent(uint32 cls);
 
     bool RestrictHealerDPS = false;
     std::vector<uint32> RestrictedHealerDPSMaps;
