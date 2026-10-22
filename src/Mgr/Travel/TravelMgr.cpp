@@ -4548,6 +4548,12 @@ bool TravelMgr::SelectProfessionTrainerByMap(Player* bot, std::function<bool(uin
     return found;
 }
 
+std::vector<WorldLocation> const* TravelMgr::GetSkinningHuntLocs(uint32 entry) const
+{
+    auto const it = skinningHuntLocs.find(entry);
+    return it == skinningHuntLocs.end() ? nullptr : &it->second;
+}
+
 std::vector<uint32> const& TravelMgr::GetGearHuntEntries(uint8 level) const
 {
     static std::vector<uint32> const none;
@@ -4986,6 +4992,20 @@ void TravelMgr::PrepareDestinationCache()
                     ++dropSources[itemId];
                 }
     }
+
+    // Skinning index, from the same grind clusters before they are narrowed to gear drops.
+    for (auto const& [entry, locs] : gearHuntLocs)
+    {
+        CreatureTemplate const* creatureTemplate = sObjectMgr->GetCreatureTemplate(entry);
+        if (creatureTemplate && creatureTemplate->SkinLootId &&
+            creatureTemplate->GetRequiredLootSkill() == SKILL_SKINNING)
+        {
+            skinningHuntEntries.emplace_back(entry,
+                                             uint8((creatureTemplate->minlevel + creatureTemplate->maxlevel + 1) / 2));
+            skinningHuntLocs[entry] = locs;
+        }
+    }
+    LOG_INFO("playerbots", "Skinning hunts: {} open-world creature types can be skinned", skinningHuntEntries.size());
 
     uint32 gearHuntEntries = 0;
     for (auto it = gearHuntLocs.begin(); it != gearHuntLocs.end();)

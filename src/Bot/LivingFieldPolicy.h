@@ -23,6 +23,25 @@ inline bool FieldWorkWindow(uint32_t guid, uint64_t seconds, Motivation motivati
 }
 
 inline uint32_t MaterialDeficit(uint32_t owned, uint32_t target) { return owned < target ? target - owned : 0; }
+
+// Skinning hunts: the skill a creature of a level asks for (the core's own formula). Skinning it still teaches
+// until 100 points above that; a hunt goes where it teaches best, up to 50 above.
+constexpr uint32_t SkinningRequirement(uint32_t creatureLevel)
+{
+    return creatureLevel < 10 ? 0 : creatureLevel < 20 ? (creatureLevel - 10) * 10 : creatureLevel * 5;
+}
+
+constexpr bool SkinningTeaches(uint32_t skill, uint32_t creatureLevel)
+{
+    uint32_t const required = SkinningRequirement(creatureLevel);
+    return skill >= required && skill < required + 50;
+}
+
+// How often a skinner with skill to learn grinds among skinnable beasts, by motivation.
+inline uint32_t SkinningHuntChance(Motivation motivation)
+{
+    return motivation == Motivation::Profession || motivation == Motivation::Trader ? 60U : 30U;
+}
 }  // namespace LivingWorld
 
 #endif
