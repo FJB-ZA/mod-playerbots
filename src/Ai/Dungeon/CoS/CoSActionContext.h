@@ -16,11 +16,15 @@ class WotlkDungeonCoSActionContext : public NamedObjectContext<Action>
     public:
         WotlkDungeonCoSActionContext() {
             creators["explode ghoul spread"] = &WotlkDungeonCoSActionContext::explode_ghoul_spread;
+            creators["attack ghoul minion"] = &WotlkDungeonCoSActionContext::attack_ghoul_minion;
             creators["epoch stack"] = &WotlkDungeonCoSActionContext::epoch_stack;
+            creators["mark infinite corruptor"] = &WotlkDungeonCoSActionContext::mark_infinite_corruptor;
         }
     private:
         static Action* explode_ghoul_spread(PlayerbotAI* botAI) { return new ExplodeGhoulSpreadAction(botAI); }
+        static Action* attack_ghoul_minion(PlayerbotAI* botAI) { return new AttackGhoulMinionAction(botAI); }
         static Action* epoch_stack(PlayerbotAI* botAI) { return new EpochStackAction(botAI); }
+        static Action* mark_infinite_corruptor(PlayerbotAI* botAI) { return new MarkInfiniteCorruptorAction(botAI); }
 };
 
 #endif

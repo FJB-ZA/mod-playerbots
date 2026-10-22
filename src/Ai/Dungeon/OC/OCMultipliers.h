@@ -10,14 +10,6 @@
 #include "Multiplier.h"
 #include "Unit.h"
 
-const float uromCoords[4][4] =
-{   // Platform coordinates
-    {1177.47f, 937.722f, 527.405f, 2.21657f},
-    {968.66f, 1042.53f, 527.32f, 0.077f},
-    {1164.02f, 1170.85f, 527.321f, 3.66f},
-    {1118.31f, 1080.377f, 508.361f, 4.25f}      // Inner ring, actual boss fight
-};
-
 class MountingDrakeMultiplier : public Multiplier
 {
     public:
@@ -43,8 +35,6 @@ class UromMultiplier : public Multiplier
 
     public:
         float GetValue(Action* action) override;
-    protected:
-        uint8 GetPhaseByCurrentPosition(Unit* boss);
 };
 
 class EregosMultiplier : public Multiplier

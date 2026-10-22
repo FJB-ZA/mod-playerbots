@@ -50,13 +50,6 @@ public:
     bool IsActive() override;
 };
 
-// class AnubarakImpaleTrigger : public Trigger
-// {
-// public:
-//     AnubarakImpaleTrigger(PlayerbotAI* botAI) : Trigger(botAI, "anub'arak impale") {}
-//     bool IsActive() override;
-// };
-
 class AnubarakPoundTrigger : public Trigger
 {
 public:

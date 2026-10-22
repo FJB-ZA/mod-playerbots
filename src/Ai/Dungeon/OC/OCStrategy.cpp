@@ -24,11 +24,6 @@ void WotlkDungeonOccStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode("drake combat",
         { NextAction("occ drake attack", ACTION_NORMAL + 5) }));
 
-    // Varos Cloudstrider
-    // Seems to be no way to identify the marked cores, may need to hook boss AI..
-    // triggers.push_back(new TriggerNode("varos cloudstrider",
-    //     { NextAction("avoid energize cores", ACTION_RAID + 5) }));
-
     // Mage-Lord Urom
     triggers.push_back(new TriggerNode("arcane explosion",
         { NextAction("avoid arcane explosion", ACTION_MOVE + 5) }));

@@ -260,6 +260,9 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
         bot->GetSession()->IsLoggingOut() || bot->IsDuringRemoveFromWorld())
         return;
 
+    // Before the fall reset below: landing reads the take-off height for fall damage
+    MovementPlanner::UpdateAirborne(this);
+
     // Bots send no movement opcodes, so m_lastFallZ stays frozen and Player::IsFalling() (a Z test
     // against it) blocks LFG teleports. Unit::IsFalling() is the flag test, so real falls keep theirs.
     if (!bot->Unit::IsFalling())
@@ -6147,6 +6150,9 @@ bool PlayerbotAI::CanMove()
     // states are set when handling certain aura effects. We don't check against
     // UNIT_STATE_ROOT here, because this state is used by vehicles.
     if (bot->HasUnitState(UNIT_STATE_LOST_CONTROL))
+        return false;
+
+    if (movePlan.airborne)
         return false;
 
     // Death state (w/o spirit release) and Spirit of Redemption aura (priest)

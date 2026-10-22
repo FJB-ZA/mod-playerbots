@@ -9,6 +9,7 @@
 #include "Group.h"
 #include "ItemUsageValue.h"
 #include "LootAction.h"
+#include "LootRollPolicy.h"
 #include "ObjectMgr.h"
 #include "PlayerbotAIConfig.h"
 #include "Playerbots.h"
@@ -92,6 +93,9 @@ bool LootRollAction::Execute(Event /*event*/)
         }
         else if (vote == GREED && !sPlayerbotAIConfig.LootGreedRollLevel)
             vote = PASS;
+
+        bool ninja = LootRoll::IsNinja(bot->GetGUID().GetCounter(), sPlayerbotAIConfig.LootRollNinjaPercent);
+        vote = static_cast<RollVote>(LootRoll::Choose(static_cast<LootRoll::Vote>(vote), ninja));
 
         switch (group->GetLootMethod())
         {

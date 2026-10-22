@@ -46,8 +46,10 @@ enum PitOfSaronIDs
     SPELL_THROW_SARONITE                = 68788,
     SPELL_THUNDERING_STOMP              = 68771,
     SPELL_FORGE_BLADE                   = 68774,
+    SPELL_FORGE_BLADE_HC                = 70334,
     SPELL_FORGE_MACE                    = 68785,
-    GO_SARONITE_ROCK                    = 196485,
+    SPELL_FORGE_MACE_HC                 = 70335,
+    GO_SARONITE_ROCK                   = 196485,
 };
 
 // Toxic Waste pools and Icy Blast patches within reach of the searcher

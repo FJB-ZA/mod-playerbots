@@ -24,6 +24,8 @@ public:
             &TbcDungeonMechanarTriggerContext::sepethrea_trail;
         creators["sepethrea focus boss"] =
             &TbcDungeonMechanarTriggerContext::sepethrea_focus_boss;
+        creators["capacitus polarity shift"] =
+            &TbcDungeonMechanarTriggerContext::capacitus_polarity_shift;
     }
 
 private:
@@ -31,6 +33,7 @@ private:
     static Trigger* sepethrea_avoid_flame(PlayerbotAI* botAI) { return new SepethreaAvoidFlameTrigger(botAI); }
     static Trigger* sepethrea_trail(PlayerbotAI* botAI) { return new SepethreaTrailTrigger(botAI); }
     static Trigger* sepethrea_focus_boss(PlayerbotAI* botAI) { return new SepethreaFocusBossTrigger(botAI); }
+    static Trigger* capacitus_polarity_shift(PlayerbotAI* botAI) { return new CapacitusPolarityShiftTrigger(botAI); }
 };
 
 #endif

@@ -31,7 +31,7 @@ public:
 protected:
     bool Calculate() override
     {
-        return MechanarFlames::GetNearestFlame(bot, MechanarFlames::INFERNO_AVOID_RANGE) != nullptr;
+        return MechanarFlames::GetNearestFlame(bot, Mechanar::InfernoAvoidRange) != nullptr;
     }
 };
 

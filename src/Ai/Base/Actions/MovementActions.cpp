@@ -15,6 +15,7 @@
 #include "MotionMaster.h"
 #include "MoveSplineInitArgs.h"
 #include "MovementGenerator.h"
+#include "MovementPlanner.h"
 #include "ObjectDefines.h"
 #include "ObjectGuid.h"
 #include "PathGenerator.h"
@@ -174,6 +175,18 @@ bool MovementAction::MoveTo(uint32 mapId, float x, float y, float z, bool /*idle
     {
         return false;
     }
+
+    MovePlan plan = MovementPlanner::Plan(botAI, x, y, z);
+    if (plan.kind == MovePlanKind::Jump)
+        return MovementPlanner::Jump(botAI, plan);
+    if (plan.kind == MovePlanKind::WalkToTakeoff)
+    {
+        x = plan.point.x;
+        y = plan.point.y;
+        z = plan.point.z;
+        exact_waypoint = true;
+    }
+
     if (IsDuplicateMove(x, y, z))
     {
         return false;
@@ -755,6 +768,13 @@ bool MovementAction::MoveTo(WorldObject* target, float distance, MovementPriorit
     if (!IsMovingAllowed(target))
         return false;
 
+    // A straight-line step toward a target across a gap lands in the gap, so plan against the target itself
+    if (!bot->IsWithinDistInMap(target, distance) &&
+        MovementPlanner::Plan(botAI, target->GetPositionX(), target->GetPositionY(), target->GetPositionZ()).kind !=
+            MovePlanKind::Walk)
+        return MoveTo(target->GetMapId(), target->GetPositionX(), target->GetPositionY(), target->GetPositionZ(), false,
+                      false, false, false, priority);
+
     float bx = bot->GetPositionX();
     float by = bot->GetPositionY();
     float bz = bot->GetPositionZ();
@@ -828,6 +848,12 @@ bool MovementAction::ReachCombatTo(Unit* target, float distance)
     int typeOk = PATHFIND_NORMAL | PATHFIND_INCOMPLETE | PATHFIND_SHORTCUT;
     if (!(type & typeOk))
         return false;
+
+    // The end of an incomplete path is on the bot's side of a gap; the planner needs the target to jump to it
+    if ((type & PATHFIND_INCOMPLETE) && MovementPlanner::Plan(botAI, tx, ty, tz).kind != MovePlanKind::Walk)
+        return MoveTo(target->GetMapId(), tx, ty, tz, false, false, false, false, MovementPriority::MOVEMENT_COMBAT,
+                      true);
+
     float shortenTo = distance;
 
     // Avoid walking too far when moving towards each other
@@ -1087,7 +1113,7 @@ bool MovementAction::Follow(Unit* target, float distance, float angle)
 {
     UpdateMovementState();
 
-    if (!target)
+    if (!target || botAI->movePlan.airborne)
         return false;
 
     if (!bot->InBattleground() && ServerFacade::instance().IsDistanceLessOrEqualThan(ServerFacade::instance().GetDistance2d(bot, target),
@@ -1241,6 +1267,12 @@ bool MovementAction::Follow(Unit* target, float distance, float angle)
     // AI_VALUE(LastMovement&, "last movement").Set(target);
     ClearIdleState();
 
+    // The core follow generator stops at a gap; the planner walks to the take-off and jumps instead.
+    // Checked before the already-following early out, or a follower stalled at a gap never jumps.
+    if (MovementPlanner::Plan(botAI, target->GetPositionX(), target->GetPositionY(), target->GetPositionZ()).kind !=
+        MovePlanKind::Walk)
+        return MoveTo(target->GetMapId(), target->GetPositionX(), target->GetPositionY(), target->GetPositionZ());
+
     if (bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == FOLLOW_MOTION_TYPE)
     {
         Unit* currentTarget = ServerFacade::instance().GetChaseTarget(bot);
@@ -1274,6 +1306,13 @@ bool MovementAction::ChaseTo(WorldObject* obj, float distance)
     }
 
     UpdateMovementState();
+
+    // The core chase generator stops at a gap; the planner walks to the take-off and jumps instead
+    if (!bot->IsWithinDistInMap(obj, distance) &&
+        MovementPlanner::Plan(botAI, obj->GetPositionX(), obj->GetPositionY(), obj->GetPositionZ()).kind !=
+            MovePlanKind::Walk)
+        return MoveTo(obj->GetMapId(), obj->GetPositionX(), obj->GetPositionY(), obj->GetPositionZ(), false, false,
+                      false, false, MovementPriority::MOVEMENT_COMBAT);
 
     if (!bot->IsStandState())
         bot->SetStandState(UNIT_STAND_STATE_STAND);

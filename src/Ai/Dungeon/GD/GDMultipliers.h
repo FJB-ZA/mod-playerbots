@@ -27,4 +27,13 @@ class GaldarahMultiplier : public Multiplier
         float GetValue(Action* action) override;
 };
 
+class EckMultiplier : public Multiplier
+{
+    public:
+        EckMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "eck the ferocious") {}
+
+    public:
+        float GetValue(Action* action) override;
+};
+
 #endif

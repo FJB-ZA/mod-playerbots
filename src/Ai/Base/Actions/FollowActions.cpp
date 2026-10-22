@@ -10,6 +10,7 @@
 #include "LastMovementValue.h"
 #include "Map.h"
 #include "MotionMaster.h"
+#include "MovementPlanner.h"
 #include "PlayerbotAI.h"
 #include "Playerbots.h"
 #include "ServerFacade.h"
@@ -98,6 +99,9 @@ namespace
 
 bool FollowAction::Execute(Event /*event*/)
 {
+    if (CatchUpToLeader())
+        return true;
+
     Formation* formation = AI_VALUE(Formation*, "formation");
     std::string const target = formation->GetTargetName();
 
@@ -288,6 +292,36 @@ bool FollowAction::isUseful()
         return ServerFacade::instance().IsDistanceGreaterThan(distance, sPlayerbotAIConfig.FishingDistanceFromMaster);
 
     return ServerFacade::instance().IsDistanceGreaterThan(distance, formation->GetMaxDistance());
+}
+
+bool FollowAction::CatchUpToLeader()
+{
+    Unit* leader = botAI->GetMaster();
+    if (!leader)
+        leader = AI_VALUE(Unit*, "group leader");
+    if (!leader || leader == bot || !bot->IsAlive())
+        return false;
+
+    BotMove::CatchUpMoment moment;
+    moment.enabled = sPlayerbotAIConfig.CatchUpTeleport;
+    moment.inInstance = bot->GetMap()->IsDungeon();
+    moment.sameMap = leader->GetMap() == bot->GetMap();
+    moment.leaderAlive = leader->IsAlive();
+    moment.onVehicle = bot->GetVehicle() != nullptr;
+    moment.stuckMs = MovementPlanner::StuckFor(botAI);
+    moment.distance = bot->GetExactDist(leader);
+
+    BotMove::CatchUpLimits limits;
+    limits.stuckMs = sPlayerbotAIConfig.CatchUpTeleportStuckTime;
+    limits.minDistance = sPlayerbotAIConfig.CatchUpTeleportDistance;
+    if (!BotMove::ShouldCatchUp(moment, limits))
+        return false;
+
+    bot->StopMoving();
+    bot->GetMotionMaster()->Clear();
+    bot->NearTeleportTo(leader->GetPositionX(), leader->GetPositionY(), leader->GetPositionZ(), bot->GetOrientation());
+    MovementPlanner::Reset(botAI);
+    return true;
 }
 
 bool FollowAction::CanDeadFollow(Unit* target)

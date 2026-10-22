@@ -79,8 +79,7 @@ bool PoSAvoidGroundHazardAction::Execute(Event /*event*/)
     if (!inHazard && !dragBoss)
         return false;
 
-    // Melee step out on the side nearest the boss; the tank pulls the boss clear so he leaves the patch too;
-    // if nothing is clear take the spot under the fewest patches rather than standing still
+    // Melee exit beside the boss and the tank drags him clear; with no clear spot, take the fewest patches
     bool stayNearBoss = PlayerbotAI::IsMelee(bot) && !PlayerbotAI::IsTank(bot);
     float clearance = PitOfSaron::HazardClearance(dragBoss, boss->GetCombatReach());
     float bestScore = std::numeric_limits<float>::max();

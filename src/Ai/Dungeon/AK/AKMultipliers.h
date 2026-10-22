@@ -36,4 +36,13 @@ class ForgottenOneMultiplier : public Multiplier
         float GetValue(Action* action) override;
 };
 
+class AmanitarMultiplier : public Multiplier
+{
+    public:
+        AmanitarMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "amanitar") {}
+
+    public:
+        float GetValue(Action* action) override;
+};
+
 #endif

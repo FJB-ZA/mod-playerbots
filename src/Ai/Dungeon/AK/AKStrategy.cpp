@@ -29,8 +29,9 @@ void WotlkDungeonOKStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
         { NextAction("avoid shadow crash", ACTION_MOVE + 5) }));
     // Volazj is not implemented properly in AC, insanity phase does nothing.
 
-    // Amanitar (Heroic Only)
-    // TODO: once I get to heroics
+    // Amanitar (heroic only)
+    triggers.push_back(new TriggerNode("amanitar mini",
+        { NextAction("amanitar potent fungus", ACTION_RAID + 5) }));
 }
 
 void WotlkDungeonOKStrategy::InitMultipliers(std::vector<Multiplier*>& multipliers)
@@ -38,4 +39,5 @@ void WotlkDungeonOKStrategy::InitMultipliers(std::vector<Multiplier*>& multiplie
     multipliers.push_back(new ElderNadoxMultiplier(botAI));
     multipliers.push_back(new JedogaShadowseekerMultiplier(botAI));
     multipliers.push_back(new ForgottenOneMultiplier(botAI));
+    multipliers.push_back(new AmanitarMultiplier(botAI));
 }

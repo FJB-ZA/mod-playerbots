@@ -27,9 +27,16 @@ uint32 PermafrostStacks(Unit* unit)
 bool IsGarfrostForging(Unit* boss)
 {
     Creature* creature = boss->ToCreature();
-    return (creature && creature->GetReactState() == REACT_PASSIVE) ||
-           boss->FindCurrentSpellBySpellId(SPELL_THUNDERING_STOMP) ||
-           boss->FindCurrentSpellBySpellId(SPELL_FORGE_BLADE) || boss->FindCurrentSpellBySpellId(SPELL_FORGE_MACE);
+    if ((creature && creature->GetReactState() == REACT_PASSIVE) ||
+        boss->FindCurrentSpellBySpellId(SPELL_THUNDERING_STOMP))
+        return true;
+
+    // The forge cast carries the heroic id there, and he is already aggressive again while it runs
+    for (uint32 spell : {uint32(SPELL_FORGE_BLADE), uint32(SPELL_FORGE_BLADE_HC), uint32(SPELL_FORGE_MACE),
+                         uint32(SPELL_FORGE_MACE_HC)})
+        if (boss->FindCurrentSpellBySpellId(spell))
+            return true;
+    return false;
 }
 
 bool IsShieldedFromGarfrost(Unit* boss, Unit* unit)
@@ -51,7 +58,7 @@ PitOfSaron::Cover CoverNeed(Player* bot, Unit* boss)
     PitOfSaron::Role role = PlayerbotAI::IsTank(bot)     ? PitOfSaron::Role::Tank
                             : PlayerbotAI::IsRanged(bot) ? PitOfSaron::Role::Ranged
                                                          : PitOfSaron::Role::Melee;
-    return PitOfSaron::CoverNeed(role, PermafrostStacks(bot), IsGarfrostForging(boss));
+    return PitOfSaron::CoverNeed(role, PermafrostStacks(bot), IsGarfrostForging(boss), bot->GetMap()->IsHeroic());
 }
 
 bool GetSaroniteLanding(Unit* boss, Position& landing)

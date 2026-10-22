@@ -21,9 +21,13 @@ enum HallsOfStoneIDs
     // Sjonnir The Ironshaper
     SPELL_LIGHTNING_RING_N          = 50840,
     SPELL_LIGHTNING_RING_H          = 59848,
+    // Below 20% he casts this shorter ring every 11 seconds instead
+    SPELL_LIGHTNING_RING_5S_N       = 51849,
+    SPELL_LIGHTNING_RING_5S_H       = 59861,
 };
 
 #define SPELL_LIGHTNING_RING        DUNGEON_MODE(bot, SPELL_LIGHTNING_RING_N, SPELL_LIGHTNING_RING_H)
+#define SPELL_LIGHTNING_RING_5S     DUNGEON_MODE(bot, SPELL_LIGHTNING_RING_5S_N, SPELL_LIGHTNING_RING_5S_H)
 
 class KrystallusGroundSlamTrigger : public Trigger
 {

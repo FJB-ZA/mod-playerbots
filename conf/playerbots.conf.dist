@@ -355,6 +355,11 @@ Playerbots.LootRollRecipe = 0
 # Default: 0 (disabled)
 Playerbots.LootRollDisenchant = 0
 
+# Percent of bots with a ninja streak: they roll NEED on every item, even ones that don't help them.
+# The same bots stay ninjas (picked from the character), so a group learns who they are.
+# Default: 0 (no ninjas)
+Playerbots.LootRoll.NinjaPercent = 0
+
 # A list of GameObject GUIDs that bots will not interact with.
 # List of default GUIDs:
 # QuestItems:
@@ -392,6 +397,30 @@ Playerbots.DisableMoveSplinePath = 0
 # Max search time for movement (higher for better movement on slopes)
 # Default: 3
 Playerbots.MaxMovementSearchTime = 3
+
+# Movement planner: bots jump gaps and drop off ledges the navmesh cannot cross, and take the jumps
+# their group leader made instead of walking a long way round. Bots jump the way a player's client does
+# (other players see the real jump animation) and take fall damage on landing.
+# Cost: moves under 5 yards cost nothing. A moving bot usually adds about one path search per second; when its path
+# stops short of the goal or detours far around, one plan can take up to 7 path searches and 4 line-of-sight checks,
+# and a bot chasing a moving goal can re-plan up to 4 times a second. Mode 2 pays this for every bot, so measure it.
+# Default: 0 - off
+#          1 - in dungeons and raids
+#          2 - everywhere
+Playerbots.MovementPlanner = 0
+
+# Most fall damage (percent of max health) a bot accepts to take a drop, and it always keeps 25% health in hand.
+# A leader who died from a fall is only followed off it while the group is in combat with the leader dead (a wipe).
+# Default: 50 (about a 41 yard drop)
+Playerbots.MovementPlanner.MaxFallDamage = 50
+
+# Last resort when a follower cannot walk or jump to its leader: in a dungeon or raid, a bot that has made
+# no progress for StuckTime ms while more than Distance yards away teleports to the leader.
+# Needs Playerbots.MovementPlanner (stuck time is measured by the planner).
+# Default: 0 - off
+Playerbots.CatchUpTeleport = 0
+Playerbots.CatchUpTeleport.StuckTime = 8000
+Playerbots.CatchUpTeleport.Distance = 30
 
 # Action expiration time
 Playerbots.ExpireActionTime = 5000

@@ -17,7 +17,11 @@ enum UtgardePinnacleIDs
     // Skadi the Ruthless
     SPELL_FREEZING_CLOUD_N          = 47579,
     SPELL_FREEZING_CLOUD_H          = 60020,
-    SPELL_FREEZING_CLOUD_BREATH     = 47592,
+    SPELL_FREEZING_CLOUD_BREATH_R   = 47592,
+    SPELL_FREEZING_CLOUD_BREATH_L   = 47590,
+    // The core instance script's data ids for the Skadi encounter state and Grauf
+    DATA_SKADI_THE_RUTHLESS         = 2,
+    DATA_GRAUF                      = 4,
     NPC_BREATH_TRIGGER              = 28351,
     SPELL_SKADI_WHIRLWIND_N         = 50228,
     SPELL_SKADI_WHIRLWIND_H         = 59322,

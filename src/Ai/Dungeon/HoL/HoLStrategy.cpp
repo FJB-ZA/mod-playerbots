@@ -12,7 +12,7 @@ void WotlkDungeonHoLStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     // General Bjarngrim
     triggers.push_back(new TriggerNode("stormforged lieutenant",
         { NextAction("bjarngrim target", ACTION_RAID + 5) }));
-    triggers.push_back(new TriggerNode("whirlwind",
+    triggers.push_back(new TriggerNode("bjarngrim whirlwind",
         { NextAction("avoid whirlwind", ACTION_RAID + 4) }));
 
     // Volkhan

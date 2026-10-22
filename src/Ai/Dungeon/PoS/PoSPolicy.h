@@ -178,8 +178,8 @@ constexpr bool BrandStopsCast(bool positive, bool heal, bool mayHeal) { return !
 
 // Forgemaster Garfrost
 
-// Melee DPS duck behind a boulder at this many Permafrost stacks; ticks every 2 s, gone 3 s after the last one
-constexpr uint32_t MeleeHideStacks = 8;
+// Melee DPS duck behind a boulder at +80% Permafrost: 10% a stack, 20% on heroic (70336); gone 3 s after the last tick
+constexpr uint32_t MeleeHideStacks(bool heroic) { return heroic ? 4 : 8; }
 // Throw Saronite lands with a 6 yd impact
 constexpr float SaroniteAvoidRadius = 7.5f;
 constexpr int SaroniteDirections = 16;
@@ -204,14 +204,14 @@ enum class Cover : uint8_t
     WhileShielded  // stay hidden until the stacks are gone, but do not go looking for a boulder
 };
 
-constexpr Cover CoverNeed(Role role, uint32_t stacks, bool forging)
+constexpr Cover CoverNeed(Role role, uint32_t stacks, bool forging, bool heroic)
 {
     // Stomp, leap to the anvil, forge: he is passive and untanked for these seconds
     if (forging)
         return stacks > 0 || role != Role::Tank ? Cover::Yes : Cover::No;
     if (role == Role::Tank)
         return Cover::No;
-    if (role == Role::Ranged || stacks >= MeleeHideStacks)
+    if (role == Role::Ranged || stacks >= MeleeHideStacks(heroic))
         return Cover::Yes;
     return stacks > 0 ? Cover::WhileShielded : Cover::No;
 }

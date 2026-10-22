@@ -9,6 +9,7 @@
 
 #include "Define.h"
 #include "ObjectGuid.h"
+#include "UBPolicy.h"
 
 class AiObjectContext;
 class Creature;
@@ -24,28 +25,6 @@ constexpr uint32 NPC_UNDERBAT = 17724;
 constexpr uint32 SPELL_FOUL_SPORES = 31673;
 constexpr uint32 SPELL_GROW        = 31698;
 constexpr uint32 SPELL_SPORE_CLOUD = 34168;
-
-constexpr float SPORE_CLOUD_RADIUS_FALLBACK = 8.0f;
-constexpr float FOUL_SPORES_RADIUS_FALLBACK = 20.0f;
-
-constexpr float SPORE_CLOUD_MARGIN = 1.5f;
-constexpr float FOUL_SPORES_MARGIN = 2.0f;
-
-constexpr uint8 GROW_STACKS_DANGER = 8;
-
-constexpr float MUSHROOM_SCAN_RANGE = 40.0f;
-
-constexpr float UNDERBAT_LASH_RANGE = 5.0f;
-constexpr float UNDERBAT_LASH_MARGIN = 1.5f;
-constexpr float UNDERBAT_SAFE_ARC = 2.6f;
-constexpr uint32 UNDERBAT_REPOSITION_COOLDOWN = 750;
-
-constexpr float UNDERBAT_RALLY_TOLERANCE = 3.0f;
-constexpr float UNDERBAT_RALLY_MAX_RANGE = 20.0f;
-
-constexpr uint32 MUSHROOM_SCAN_INTERVAL = 1000;
-constexpr uint8 MUSHROOM_IDLE_SCAN_SKIPS = 9;
-constexpr uint32 MUSHROOM_LINGER_TIME = 30000;
 
 float MaxEffectRadius(uint32 spellId, float fallback);
 
