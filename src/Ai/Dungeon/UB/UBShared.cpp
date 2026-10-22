@@ -18,26 +18,15 @@
 
 namespace
 {
-float PointSegmentDist2d(float px, float py, float ax, float ay, float bx, float by)
-{
-    float const dx = bx - ax;
-    float const dy = by - ay;
-    float const len2 = dx * dx + dy * dy;
-    float t = (len2 < 1e-6f) ? 0.0f : ((px - ax) * dx + (py - ay) * dy) / len2;
-    t = std::max(0.0f, std::min(1.0f, t));
-    return std::hypot(px - (ax + t * dx), py - (ay + t * dy));
-}
-
 bool IsMushroomDangerous(Creature* mushroom)
 {
-    if (!mushroom || !mushroom->IsAlive())
+    if (!mushroom)
         return false;
 
-    if (mushroom->HasAura(UnderbogHungarfen::SPELL_SPORE_CLOUD))
-        return true;
-
+    // Spore Cloud is a persistent area aura: the mushroom owns the cloud but never carries the aura itself
+    bool const sporeCloud = mushroom->GetDynObject(UnderbogHungarfen::SPELL_SPORE_CLOUD) != nullptr;
     Aura* grow = mushroom->GetAura(UnderbogHungarfen::SPELL_GROW);
-    return grow && grow->GetStackAmount() >= UnderbogHungarfen::GROW_STACKS_DANGER;
+    return Underbog::MushroomDangerous(mushroom->IsAlive(), sporeCloud, grow ? grow->GetStackAmount() : 0);
 }
 }
 
@@ -63,7 +52,7 @@ Unit* HungarfenTarget(AiObjectContext* context)
 
 ObjectGuid FindHungarfenGuid(Player* bot)
 {
-    Creature* hungarfen = bot->FindNearestCreature(NPC_HUNGARFEN, MUSHROOM_SCAN_RANGE, false);
+    Creature* hungarfen = bot->FindNearestCreature(NPC_HUNGARFEN, Underbog::MushroomScanRange, false);
     return hungarfen ? hungarfen->GetGUID() : ObjectGuid::Empty;
 }
 
@@ -75,14 +64,14 @@ bool HungarfenGone(Player* bot, ObjectGuid guid)
 
 float MushroomDangerRange(Player* bot)
 {
-    return MaxEffectRadius(SPELL_SPORE_CLOUD, SPORE_CLOUD_RADIUS_FALLBACK) + bot->GetCombatReach() +
-           SPORE_CLOUD_MARGIN;
+    return Underbog::MushroomDangerRange(MaxEffectRadius(SPELL_SPORE_CLOUD, Underbog::SporeCloudRadiusFallback),
+                                         bot->GetCombatReach());
 }
 
 GuidVector FindMushroomGuids(Player* bot)
 {
     std::list<Creature*> mushrooms;
-    bot->GetCreatureListWithEntryInGrid(mushrooms, NPC_UNDERBOG_MUSHROOM, MUSHROOM_SCAN_RANGE);
+    bot->GetCreatureListWithEntryInGrid(mushrooms, NPC_UNDERBOG_MUSHROOM, Underbog::MushroomScanRange);
 
     GuidVector guids;
     for (Creature* mushroom : mushrooms)
@@ -143,7 +132,7 @@ Creature* GetNearestUnderbatInLashRange(Player* bot, GuidVector const& attackers
         if (!bat || !bat->IsAlive() || bat->GetEntry() != NPC_UNDERBAT)
             continue;
 
-        if (!bat->IsWithinCombatRange(bot, UNDERBAT_LASH_RANGE + UNDERBAT_LASH_MARGIN))
+        if (!bat->IsWithinCombatRange(bot, Underbog::UnderbatLashWindow()))
             continue;
 
         float const dist = bot->GetDistance2d(bat);
@@ -173,10 +162,10 @@ Creature* GetLashingUnderbat(Player* bot, GuidVector const& attackers)
         if (!bat || !bat->IsAlive() || bat->GetEntry() != NPC_UNDERBAT)
             continue;
 
-        if (!bat->IsWithinCombatRange(bot, UNDERBAT_LASH_RANGE + UNDERBAT_LASH_MARGIN))
+        if (!bat->IsWithinCombatRange(bot, Underbog::UnderbatLashWindow()))
             continue;
 
-        if (bat->HasInArc(UNDERBAT_SAFE_ARC, bot))
+        if (bat->HasInArc(Underbog::UnderbatSafeArc, bot))
             continue;
 
         float const dist = bot->GetDistance2d(bat);
@@ -208,7 +197,7 @@ Unit* UnderbatRallyUnit(Player* bot, GuidVector const& attackers)
             if (!PlayerbotAI::IsTank(member))
                 continue;
 
-            if (bot->GetExactDist(member) > UNDERBAT_RALLY_MAX_RANGE)
+            if (bot->GetExactDist(member) > Underbog::UnderbatRallyMaxRange)
                 continue;
 
             return member;
@@ -216,7 +205,7 @@ Unit* UnderbatRallyUnit(Player* bot, GuidVector const& attackers)
     }
 
     Unit* victim = bat->GetVictim();
-    if (victim && victim != bot && bot->GetExactDist(victim) <= UNDERBAT_RALLY_MAX_RANGE)
+    if (victim && victim != bot && bot->GetExactDist(victim) <= Underbog::UnderbatRallyMaxRange)
         return victim;
 
     return nullptr;
@@ -232,12 +221,11 @@ bool SpotClearOfUnderbats(Player* bot, GuidVector const& attackers, float x, flo
         if (!bat || !bat->IsAlive() || bat->GetEntry() != NPC_UNDERBAT)
             continue;
 
-        float const window =
-            UNDERBAT_LASH_RANGE + UNDERBAT_LASH_MARGIN + bat->GetCombatReach() + bot->GetCombatReach();
+        float const window = Underbog::UnderbatLashWindow() + bat->GetCombatReach() + bot->GetCombatReach();
         if (bat->GetExactDist(x, y, z) > window)
             continue;
 
-        if (!bat->HasInArc(UNDERBAT_SAFE_ARC, &spot))
+        if (!bat->HasInArc(Underbog::UnderbatSafeArc, &spot))
             return false;
     }
 
@@ -256,12 +244,10 @@ bool RetreatPathUnsafe(Player* bot, GuidVector const& mushrooms, float destX, fl
         if (!mushroom || !mushroom->IsAlive())
             continue;
 
-        if (mushroom->GetExactDist2d(destX, destY) < dangerRange)
-            return true;
-
-        if (IsMushroomDangerous(mushroom) &&
-            PointSegmentDist2d(mushroom->GetPositionX(), mushroom->GetPositionY(), startX, startY, destX, destY) <
-                dangerRange)
+        float const pathDistance = Underbog::PointSegmentDistance(mushroom->GetPositionX(), mushroom->GetPositionY(),
+                                                                  startX, startY, destX, destY);
+        if (Underbog::RetreatCrossesMushroom(IsMushroomDangerous(mushroom), mushroom->GetExactDist2d(destX, destY),
+                                             pathDistance, dangerRange))
             return true;
     }
 

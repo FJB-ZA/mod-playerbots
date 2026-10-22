@@ -8,7 +8,6 @@
 #define PLAYERBOTS_RAMPSHARED_H
 
 #include "Common.h"
-#include "Position.h"
 
 namespace RampShared
 {
@@ -20,10 +19,6 @@ enum class RampSpells : uint32
 };
 
 inline constexpr uint32 RAMP_MAP_ID = 543;
-
-inline Position const VAZRUDEN_TANK_POSITION = { -1407.405f, 1744.521f, 81.075f };
-
-inline constexpr float OMOR_TREACHERY_AURA_SAFE_DISTANCE = 20.0f;
 
 }
 

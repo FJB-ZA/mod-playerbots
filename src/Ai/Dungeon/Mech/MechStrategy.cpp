@@ -21,10 +21,14 @@ void TbcDungeonMechanarStrategy::InitTriggers(std::vector<TriggerNode*>& trigger
 
     triggers.push_back(new TriggerNode("sepethrea focus boss", {
         NextAction("sepethrea focus boss", ACTION_RAID + 2) }));
+
+    triggers.push_back(new TriggerNode("capacitus polarity shift", {
+        NextAction("capacitus polarity spot", ACTION_EMERGENCY + 1) }));
 }
 
 void TbcDungeonMechanarStrategy::InitMultipliers(std::vector<Multiplier*>& multipliers)
 {
     multipliers.push_back(new SepethreaKiteFlameMultiplier(botAI));
     multipliers.push_back(new SepethreaFocusBossMultiplier(botAI));
+    multipliers.push_back(new CapacitusPolarityMultiplier(botAI));
 }

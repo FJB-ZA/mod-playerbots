@@ -91,6 +91,11 @@ bool PlayerbotAIConfig::Initialize()
     MaxWaitForMove = sConfigMgr->GetOption<int32>("Playerbots.MaxWaitForMove", 5000);
     DisableMoveSplinePath = sConfigMgr->GetOption<int32>("Playerbots.DisableMoveSplinePath", 0);
     MaxMovementSearchTime = sConfigMgr->GetOption<int32>("Playerbots.MaxMovementSearchTime", 3);
+    MovementPlanner = sConfigMgr->GetOption<uint32>("Playerbots.MovementPlanner", 0);
+    MovementPlannerMaxFallDamage = sConfigMgr->GetOption<float>("Playerbots.MovementPlanner.MaxFallDamage", 50.0f);
+    CatchUpTeleport = sConfigMgr->GetOption<bool>("Playerbots.CatchUpTeleport", false);
+    CatchUpTeleportStuckTime = sConfigMgr->GetOption<uint32>("Playerbots.CatchUpTeleport.StuckTime", 8000);
+    CatchUpTeleportDistance = sConfigMgr->GetOption<float>("Playerbots.CatchUpTeleport.Distance", 30.0f);
     ExpireActionTime = sConfigMgr->GetOption<int32>("Playerbots.ExpireActionTime", 5000);
     DispelAuraDuration = sConfigMgr->GetOption<int32>("Playerbots.DispelAuraDuration", 700);
     ReactDelay = sConfigMgr->GetOption<int32>("Playerbots.ReactDelay", 100);
@@ -393,12 +398,14 @@ bool PlayerbotAIConfig::Initialize()
     RandomBotAutoJoinAVBrackets = sConfigMgr->GetOption<std::string>("Playerbots.RandomBotAutoJoinAVBrackets", "3");
     RandomBotAutoJoinEYBrackets = sConfigMgr->GetOption<std::string>("Playerbots.RandomBotAutoJoinEYBrackets", "2");
     RandomBotAutoJoinICBrackets = sConfigMgr->GetOption<std::string>("Playerbots.RandomBotAutoJoinICBrackets", "1");
+    RandomBotAutoJoinSABrackets = sConfigMgr->GetOption<std::string>("Playerbots.RandomBotAutoJoinSABrackets", "1");
 
     RandomBotAutoJoinBGWSCount = sConfigMgr->GetOption<int32>("Playerbots.RandomBotAutoJoinBGWSCount", 1);
     RandomBotAutoJoinBGABCount = sConfigMgr->GetOption<int32>("Playerbots.RandomBotAutoJoinBGABCount", 1);
     RandomBotAutoJoinBGAVCount = sConfigMgr->GetOption<int32>("Playerbots.RandomBotAutoJoinBGAVCount", 0);
     RandomBotAutoJoinBGEYCount = sConfigMgr->GetOption<int32>("Playerbots.RandomBotAutoJoinBGEYCount", 1);
     RandomBotAutoJoinBGICCount = sConfigMgr->GetOption<int32>("Playerbots.RandomBotAutoJoinBGICCount", 0);
+    RandomBotAutoJoinBGSACount = sConfigMgr->GetOption<int32>("Playerbots.RandomBotAutoJoinBGSACount", 0);
 
     RandomBotAutoJoinBGRatedArena2v2Count =
         sConfigMgr->GetOption<int32>("Playerbots.RandomBotAutoJoinBGRatedArena2v2Count", 0);
@@ -714,6 +721,7 @@ bool PlayerbotAIConfig::Initialize()
     LootRollRecipe = sConfigMgr->GetOption<bool>("Playerbots.LootRollRecipe", false);
     LootRollDisenchant = sConfigMgr->GetOption<bool>("Playerbots.LootRollDisenchant", false);
     LootGreedRollLevel = sConfigMgr->GetOption<bool>("Playerbots.LootGreedRollLevel", false);
+    LootRollNinjaPercent = std::min(sConfigMgr->GetOption<uint32>("Playerbots.LootRoll.NinjaPercent", 0), 100u);
     AutoPickReward = sConfigMgr->GetOption<std::string>("Playerbots.AutoPickReward", "yes");
     AutoEquipUpgradeLoot = sConfigMgr->GetOption<bool>("Playerbots.AutoEquipUpgradeLoot", true);
     EquipUpgradeThreshold = sConfigMgr->GetOption<float>("Playerbots.EquipUpgradeThreshold", 1.1f);
@@ -759,6 +767,17 @@ bool PlayerbotAIConfig::Initialize()
     SelfBotLevel = sConfigMgr->GetOption<int32>("Playerbots.SelfBotLevel", 1);
 
     LivingWorldEnabled = sConfigMgr->GetOption<bool>("Playerbots.LivingWorld.Enabled", false);
+    LivingArenaEnabled = sConfigMgr->GetOption<bool>("Playerbots.LivingArena.Enabled", false);
+    LivingArenaSeason = sConfigMgr->GetOption<uint32>("Playerbots.LivingArena.Season", 0);
+    // mod-individual-progression's era seasons, the fallback when Playerbots.LivingArena.Season is 0.
+    IndividualProgressionTbcArenaSeason =
+        sConfigMgr->GetOption<uint32>("IndividualProgression.TBC.ArenaSeason", 1, false);
+    IndividualProgressionWotlkArenaSeason =
+        sConfigMgr->GetOption<uint32>("IndividualProgression.WotLK.ArenaSeason", 5, false);
+    LivingArenaMaxRatingAbove = sConfigMgr->GetOption<uint32>("Playerbots.LivingArena.MaxRatingAbove", 150);
+    LivingArenaMaxGearScoreAbove = sConfigMgr->GetOption<uint32>("Playerbots.LivingArena.MaxGearScoreAbovePct", 5);
+    LivingArenaPartnerSkill =
+        std::min<uint32>(sConfigMgr->GetOption<uint32>("Playerbots.LivingArena.PartnerSkill", 85), 100);
     MentorInvites = sConfigMgr->GetOption<bool>("Playerbots.MentorInvites", false);
     RandomPlayerbotFactory::CreateRandomBots();
     if (World::IsStopped())

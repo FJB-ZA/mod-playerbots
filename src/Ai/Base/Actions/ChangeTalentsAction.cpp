@@ -41,16 +41,10 @@ bool ChangeTalentsAction::Execute(Event event)
                 out << "Active first talent";
                 botAI->ResetStrategies();
             }
-            else if (param.find("switch 2") != std::string::npos)
+            else
             {
-                if (bot->GetSpecsCount() == 1 && bot->GetLevel() >= sWorld->getIntConfig(CONFIG_MIN_DUALSPEC_LEVEL))
-                {
-                    bot->CastSpell(bot, 63680, true, nullptr, nullptr, bot->GetGUID());
-                    bot->CastSpell(bot, 63624, true, nullptr, nullptr, bot->GetGUID());
-                }
-                bot->ActivateSpec(1);
-                out << "Active second talent";
-                botAI->ResetStrategies();
+                // solo-wow: spec slots. Bots keep to slot 1 (talent group 0); players buy the other slots.
+                out << "I only use one spec slot.";
             }
         }
         else if (param.find("autopick") != std::string::npos)
@@ -98,7 +92,7 @@ bool ChangeTalentsAction::Execute(Event event)
 std::string ChangeTalentsAction::TalentsHelp()
 {
     std::ostringstream out;
-    out << "Talents usage: talents switch <1/2>, talents autopick, talents spec list, "
+    out << "Talents usage: talents switch 1, talents autopick, talents spec list, "
            "talents spec <specName>, talents apply <link>.";
     return out.str();
 }

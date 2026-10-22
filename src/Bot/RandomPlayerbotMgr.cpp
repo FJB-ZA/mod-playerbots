@@ -1000,9 +1000,14 @@ void RandomPlayerbotMgr::CheckBgQueue()
             BattlegroundBracketId bracketId = pvpDiff->GetBracketId();
             BattlegroundData[queueTypeId][bracketId].minLevel = pvpDiff->minLevel;
             BattlegroundData[queueTypeId][bracketId].maxLevel = pvpDiff->maxLevel;
-            BattlegroundData[queueTypeId][bracketId].playerGearScoreSum +=
-                PlayerbotAI::GetMixedGearScore(player, false, false);
+            uint32 const playerGearScore = PlayerbotAI::GetMixedGearScore(player, false, false);
+            BattlegroundData[queueTypeId][bracketId].playerGearScoreSum += playerGearScore;
             BattlegroundData[queueTypeId][bracketId].playerGearScoreCount++;
+            if (teamId == TEAM_ALLIANCE || teamId == TEAM_HORDE)
+            {
+                BattlegroundData[queueTypeId][bracketId].teamGearScoreSum[teamId] += playerGearScore;
+                BattlegroundData[queueTypeId][bracketId].teamGearScoreCount[teamId]++;
+            }
 
             // Arena logic
             bool isRated = false;
@@ -1175,12 +1180,14 @@ void RandomPlayerbotMgr::CheckBgQueue()
         uint32 randomBotAutoJoinBGRatedArena5v5Count = sPlayerbotAIConfig.RandomBotAutoJoinBGRatedArena5v5Count;
 
         uint32 randomBotAutoJoinBGICCount = sPlayerbotAIConfig.RandomBotAutoJoinBGICCount;
+        uint32 randomBotAutoJoinBGSACount = sPlayerbotAIConfig.RandomBotAutoJoinBGSACount;
         uint32 randomBotAutoJoinBGEYCount = sPlayerbotAIConfig.RandomBotAutoJoinBGEYCount;
         uint32 randomBotAutoJoinBGAVCount = sPlayerbotAIConfig.RandomBotAutoJoinBGAVCount;
         uint32 randomBotAutoJoinBGABCount = sPlayerbotAIConfig.RandomBotAutoJoinBGABCount;
         uint32 randomBotAutoJoinBGWSCount = sPlayerbotAIConfig.RandomBotAutoJoinBGWSCount;
 
         std::vector<uint32> icBrackets = parseBrackets(sPlayerbotAIConfig.RandomBotAutoJoinICBrackets);
+        std::vector<uint32> saBrackets = parseBrackets(sPlayerbotAIConfig.RandomBotAutoJoinSABrackets);
         std::vector<uint32> eyBrackets = parseBrackets(sPlayerbotAIConfig.RandomBotAutoJoinEYBrackets);
         std::vector<uint32> avBrackets = parseBrackets(sPlayerbotAIConfig.RandomBotAutoJoinAVBrackets);
         std::vector<uint32> abBrackets = parseBrackets(sPlayerbotAIConfig.RandomBotAutoJoinABBrackets);
@@ -1217,6 +1224,7 @@ void RandomPlayerbotMgr::CheckBgQueue()
 
         // Update battleground instance counts
         updateBGInstanceCount(BATTLEGROUND_QUEUE_IC, icBrackets, randomBotAutoJoinBGICCount);
+        updateBGInstanceCount(BATTLEGROUND_QUEUE_SA, saBrackets, randomBotAutoJoinBGSACount);
         updateBGInstanceCount(BATTLEGROUND_QUEUE_EY, eyBrackets, randomBotAutoJoinBGEYCount);
         updateBGInstanceCount(BATTLEGROUND_QUEUE_AV, avBrackets, randomBotAutoJoinBGAVCount);
         updateBGInstanceCount(BATTLEGROUND_QUEUE_AB, abBrackets, randomBotAutoJoinBGABCount);

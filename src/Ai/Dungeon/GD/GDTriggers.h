@@ -26,6 +26,9 @@ enum GundrakIDs
     // Gal'darah
     SPELL_WHIRLING_SLASH_N          = 55250,
     SPELL_WHIRLING_SLASH_H          = 59824,
+
+    // Eck the Ferocious (heroic only), same id on both modes
+    SPELL_ECK_SPIT                  = 55814,
 };
 
 #define SPELL_POISON_NOVA           DUNGEON_MODE(bot, SPELL_POISON_NOVA_N, SPELL_POISON_NOVA_H)
@@ -33,9 +36,6 @@ enum GundrakIDs
 
 namespace GundrakSladran
 {
-constexpr float STACK_LEASH_YD = 10.0f;
-constexpr float STACK_CLOSE_TO_YD = 5.0f;
-constexpr float TANK_PICKUP_YD = 12.0f;
 constexpr uint32 SNAKE_WRAP_SCAN_INTERVAL = 200;
 
 bool IsAdd(Unit* unit);
@@ -77,6 +77,13 @@ class GaldarahWhirlingSlashTrigger : public Trigger
 {
 public:
     GaldarahWhirlingSlashTrigger(PlayerbotAI* botAI) : Trigger(botAI, "gal'darah whirling slash") {}
+    bool IsActive() override;
+};
+
+class EckSpitTrigger : public Trigger
+{
+public:
+    EckSpitTrigger(PlayerbotAI* botAI) : Trigger(botAI, "eck spit") {}
     bool IsActive() override;
 };
 

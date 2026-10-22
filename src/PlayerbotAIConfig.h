@@ -106,6 +106,13 @@ public:
 
     bool Enabled;
     bool LivingWorldEnabled = false;
+    bool LivingArenaEnabled = false;
+    uint32 LivingArenaSeason = 0;
+    uint32 IndividualProgressionTbcArenaSeason = 1;
+    uint32 IndividualProgressionWotlkArenaSeason = 5;
+    uint32 LivingArenaMaxRatingAbove = 150;
+    uint32 LivingArenaMaxGearScoreAbove = 5;
+    uint32 LivingArenaPartnerSkill = 85;
     bool MentorInvites = false;
     bool DisabledWithoutRealPlayer;
     bool EnableICCBuffs;
@@ -114,6 +121,11 @@ public:
     uint32 GlobalCoolDown, ReactDelay, MaxWaitForMove, DisableMoveSplinePath, MaxMovementSearchTime, ExpireActionTime,
         DispelAuraDuration, PassiveDelay, RepeatDelay, ErrorDelay, RpgDelay, SitDelay, ReturnDelay, LootDelay;
     bool DynamicReactDelay;
+    uint32 MovementPlanner;
+    float MovementPlannerMaxFallDamage;
+    bool CatchUpTeleport;
+    uint32 CatchUpTeleportStuckTime;
+    float CatchUpTeleportDistance;
     float SightDistance, SpellDistance, ReactDistance, GrindDistance, LootDistance, ShootDistance, FleeDistance,
         TooCloseDistance, MeleeDistance, FollowDistance, WhisperDistance, ContactDistance, AoeRadius, RpgDistance,
         TargetPosRecalcDistance, FarDistance, HealDistance, AggroDistance;
@@ -257,12 +269,14 @@ public:
     bool RandomBotAutoJoinBG;
 
     std::string RandomBotAutoJoinICBrackets;
+    std::string RandomBotAutoJoinSABrackets;
     std::string RandomBotAutoJoinEYBrackets;
     std::string RandomBotAutoJoinAVBrackets;
     std::string RandomBotAutoJoinABBrackets;
     std::string RandomBotAutoJoinWSBrackets;
 
     uint32 RandomBotAutoJoinBGICCount;
+    uint32 RandomBotAutoJoinBGSACount;
     uint32 RandomBotAutoJoinBGEYCount;
     uint32 RandomBotAutoJoinBGAVCount;
     uint32 RandomBotAutoJoinBGABCount;
@@ -381,6 +395,7 @@ public:
     bool LootGreedRollLevel;
     bool LootRollRecipe;
     bool LootRollDisenchant;
+    uint32 LootRollNinjaPercent;
     std::string AutoPickReward;
     bool AutoEquipUpgradeLoot;
     float EquipUpgradeThreshold;

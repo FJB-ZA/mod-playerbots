@@ -5,6 +5,7 @@
  */
 
 #include "EnemyPlayerValue.h"
+#include "BattlegroundSA.h"
 #include "CombatManager.h"
 #include "LivingBondMgr.h"
 #include "LivingWorldMgr.h"
@@ -95,6 +96,18 @@ Unit* EnemyPlayerValue::Calculate()
                   });
 
         return *targets.begin();
+    }
+
+    // Strand of the Ancients: defenders on foot break a driven demolisher before its escort
+    if (Battleground* bg = bot->GetBattleground();
+        bg && bg->GetBgTypeID(true) == BATTLEGROUND_SA && !bot->GetVehicle())
+    {
+        std::list<Creature*> demolishers;
+        bot->GetCreatureListWithEntryInGrid(demolishers, NPC_DEMOLISHER_SA, 30.0f);
+        for (Creature* demolisher : demolishers)
+            if (demolisher->IsAlive() && demolisher->GetVehicleKit() && demolisher->GetVehicleKit()->IsVehicleInUse() &&
+                bot->IsValidAttackTarget(demolisher) && bot->IsWithinLOSInMap(demolisher))
+                return demolisher;
     }
 
     // 2. Find enemy player in range.
@@ -216,6 +229,9 @@ float EnemyPlayerValue::GetMaxAttackDistance()
         if (botAI->IsInVehicle(false, true))
             return 120.0f;
     }
+
+    if (bgType == BATTLEGROUND_SA && botAI->IsInVehicle(false, true))
+        return 80.0f;
 
     return 40.0f;
 }

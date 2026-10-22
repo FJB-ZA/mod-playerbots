@@ -14,8 +14,6 @@
 #include "PlayerbotAI.h"
 #include "Playerbots.h"
 
-const Position NOVOS_PARTY_POSITION = Position(-378.852f, -760.349f, 28.587f);
-
 class CorpseExplodeSpreadAction : public MovementAction
 {
 public:
@@ -46,28 +44,12 @@ public:
     // bool isUseful() override;
 };
 
-class CastSlayingStrikeAction : public CastMeleeSpellAction
+// Not a CastSpellAction: the Tharon'ja multiplier blocks every one of those in skeleton form
+class TharonjaSkeletonAction : public Action
 {
 public:
-    CastSlayingStrikeAction(PlayerbotAI* botAI) : CastMeleeSpellAction(botAI, "slaying strike") {}
-};
-
-class CastTauntAction : public CastSpellAction
-{
-public:
-    CastTauntAction(PlayerbotAI* botAI) : CastSpellAction(botAI, "taunt") {}
-};
-
-class CastBoneArmorAction : public CastSpellAction
-{
-public:
-    CastBoneArmorAction(PlayerbotAI* botAI) : CastSpellAction(botAI, "bone armor") {}
-};
-
-class CastTouchOfLifeAction : public CastSpellAction
-{
-public:
-    CastTouchOfLifeAction(PlayerbotAI* botAI) : CastSpellAction(botAI, "touch of life") {}
+    TharonjaSkeletonAction(PlayerbotAI* botAI) : Action(botAI, "tharonja skeleton") {}
+    bool Execute(Event event) override;
 };
 
 #endif

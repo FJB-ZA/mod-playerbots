@@ -20,6 +20,7 @@ class WotlkDungeonGDActionContext : public NamedObjectContext<Action>
             creators["slad'ran stack on tank"] = &WotlkDungeonGDActionContext::sladran_stack_on_tank;
             creators["slad'ran tank hold"] = &WotlkDungeonGDActionContext::sladran_tank_hold;
             creators["avoid whirling slash"] = &WotlkDungeonGDActionContext::avoid_whirling_slash;
+            creators["dodge eck spit"] = &WotlkDungeonGDActionContext::dodge_eck_spit;
         }
     private:
         static Action* avoid_poison_nova(PlayerbotAI* botAI) { return new AvoidPoisonNovaAction(botAI); }
@@ -27,6 +28,7 @@ class WotlkDungeonGDActionContext : public NamedObjectContext<Action>
         static Action* sladran_stack_on_tank(PlayerbotAI* botAI) { return new SladranStackOnTankAction(botAI); }
         static Action* sladran_tank_hold(PlayerbotAI* botAI) { return new SladranTankHoldAction(botAI); }
         static Action* avoid_whirling_slash(PlayerbotAI* botAI) { return new AvoidWhirlingSlashAction(botAI); }
+        static Action* dodge_eck_spit(PlayerbotAI* botAI) { return new DodgeEckSpitAction(botAI); }
 };
 
 #endif

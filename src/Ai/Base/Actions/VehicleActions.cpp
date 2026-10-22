@@ -6,6 +6,7 @@
 
 #include "VehicleActions.h"
 #include "BattlegroundIC.h"
+#include "BattlegroundSA.h"
 #include "ItemVisitors.h"
 #include "ObjectDefines.h"
 #include "Playerbots.h"
@@ -40,6 +41,15 @@ bool EnterVehicleAction::Execute(Event event)
         return false;
     }
 
+    // once the enemy keep is open in Isle of Conquest the fight moves inside, on foot
+    if (Battleground* bg = bot->GetBattleground(); bg && bg->GetBgTypeID(true) == BATTLEGROUND_IC)
+    {
+        uint32 const enemyDoor =
+            bot->GetTeamId() == TEAM_HORDE ? BG_IC_GO_DOODAD_PORTCULLISACTIVE02 : BG_IC_GO_HORDE_KEEP_PORTCULLIS;
+        if (GameObject* door = bg->GetBGObject(enemyDoor); door && door->getLootState() == GO_ACTIVATED)
+            return false;
+    }
+
     GuidVector npcs = AI_VALUE(GuidVector, "nearest vehicles");
     for (GuidVector::iterator i = npcs.begin(); i != npcs.end(); i++)
     {
@@ -54,6 +64,17 @@ bool EnterVehicleAction::Execute(Event event)
         // dont let them in catapult they cant use them at all
         if (NPC_KEEP_CANNON == vehicleBase->GetEntry() || NPC_CATAPULT == vehicleBase->GetEntry())
             continue;
+
+        // Strand of the Ancients: the gunner roles man the cannons, and demolishers are done once the relic is open
+        if (Battleground* bg = bot->GetBattleground(); bg && bg->GetBgTypeID(true) == BATTLEGROUND_SA)
+        {
+            if (vehicleBase->GetEntry() == NPC_ANTI_PERSONNAL_CANNON && AI_VALUE(uint32, "bg role") >= 3)
+                continue;
+            GameObject* ancient = bg->GetBGObject(BG_SA_ANCIENT_GATE);
+            if (vehicleBase->GetEntry() == NPC_DEMOLISHER_SA && ancient &&
+                ancient->GetDestructibleState() == GO_DESTRUCTIBLE_DESTROYED)
+                continue;
+        }
 
         if (!vehicleBase->IsFriendlyTo(bot))
             continue;

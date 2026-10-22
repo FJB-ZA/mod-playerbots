@@ -23,4 +23,11 @@ public:
     float GetValue(Action* action) override;
 };
 
+class CapacitusPolarityMultiplier : public Multiplier
+{
+public:
+    CapacitusPolarityMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "capacitus polarity") {}
+    float GetValue(Action* action) override;
+};
+
 #endif

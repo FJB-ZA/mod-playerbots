@@ -68,14 +68,6 @@ const std::vector<uint32> DRAKE_ITEMS = {ITEM_AMBER_ESSENCE, ITEM_EMERALD_ESSENC
 const std::vector<uint32> DRAKE_SPELLS = {SPELL_AMBER_ESSENCE, SPELL_EMERALD_ESSENCE, SPELL_RUBY_ESSENCE};
 const uint32 OCULUS_MAP_ID = 578;
 
-// const float uromCoords[4][4] =
-// {
-//     {1177.47f, 937.722f, 527.405f, 2.21657f},
-//     {968.66f, 1042.53f, 527.32f, 0.077f},
-//     {1164.02f, 1170.85f, 527.321f, 3.66f},
-//     {1118.31f, 1080.377f, 508.361f, 4.25f}      // Inner ring, actual boss fight
-// };
-
 class DrakosUnstableSphereTrigger : public Trigger
 {
 public:

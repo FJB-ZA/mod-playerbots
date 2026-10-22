@@ -20,6 +20,7 @@
 #include "GatherNodeMgr.h"
 #include "GlobalScript.h"
 #include "GuildTaskMgr.h"
+#include "LivingArenaMgr.h"
 #include "LivingBondMgr.h"
 #include "LivingWorldMgr.h"
 #include "PlayerScript.h"
@@ -250,6 +251,7 @@ public:
 
         if (botAI != nullptr)
         {
+            LivingArenaMgr::instance().CheckJuke(player, botAI);
             botAI->UpdateAI(diff);
         }
 
@@ -563,6 +565,7 @@ public:
         sRandomPlayerbotMgr.UpdateSessions();  // Per-bot packet queues, world thread only
         PlayerbotWorldThreadProcessor::instance().Update(diff);
         sRandomPlayerbotMgr.UpdateAI(diff);  // World thread only
+        LivingArenaMgr::instance().Update(diff);
     }
 
     // Runs before the sessions are kicked on server shutdown
@@ -605,14 +608,28 @@ public:
                 data.allianceStrategy = urand(0, EY_STRATEGY_MAX - 1);
                 data.hordeStrategy = urand(0, EY_STRATEGY_MAX - 1);
                 break;
+            case BATTLEGROUND_SA:
+                data.allianceStrategy = urand(0, SA_STRATEGY_MAX - 1);
+                data.hordeStrategy = urand(0, SA_STRATEGY_MAX - 1);
+                break;
             default:
                 break;
         }
 
+        BGTactics::RollTiers(bg, data);
+        LOG_INFO("playerbots", "BG {} instance {}: alliance strategy {} tier {}, horde strategy {} tier {}",
+                 uint32(bgType), bg->GetInstanceID(), data.allianceStrategy, data.allianceTier, data.hordeStrategy,
+                 data.hordeTier);
+
+        std::lock_guard<std::mutex> guard(bgStrategiesLock);
         bgStrategies[bg->GetInstanceID()] = data;
     }
 
-    void OnBattlegroundEnd(Battleground* bg, TeamId /*winnerTeam*/) override { bgStrategies.erase(bg->GetInstanceID()); }
+    void OnBattlegroundEnd(Battleground* bg, TeamId /*winnerTeam*/) override
+    {
+        std::lock_guard<std::mutex> guard(bgStrategiesLock);
+        bgStrategies.erase(bg->GetInstanceID());
+    }
 };
 
 // Workaround for missing InitEnabledHooksIfNeeded for new BattlefieldScript in ScriptMgr
@@ -632,6 +649,7 @@ void AddSC_IcecrownBotScripts();
 void AddSC_RubySanctumBotScripts();
 void AddSC_randombot_level_mgr();
 void AddLivingBondScripts();
+void AddPlayerbotsMovementScripts();
 
 void AddPlayerbotsScripts()
 {
@@ -645,6 +663,7 @@ void AddPlayerbotsScripts()
     new PlayerbotsGlobalScript();
     new PlayerbotsWorldScript();
     new PlayerBotsBGScript();
+    AddLivingArenaScripts();
     AddPlayerbotsSecureLoginScripts();
     AddPlayerbotsSelfBotAfkScripts();
     AddPlayerbotsCommandscripts();
@@ -657,4 +676,5 @@ void AddPlayerbotsScripts()
     AddSC_RubySanctumBotScripts();
     AddSC_randombot_level_mgr();
     AddLivingBondScripts();
+    AddPlayerbotsMovementScripts();
 }

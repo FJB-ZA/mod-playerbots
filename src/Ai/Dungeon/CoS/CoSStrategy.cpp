@@ -15,6 +15,8 @@ void WotlkDungeonCoSStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     // Salramm the Fleshcrafter
     triggers.push_back(new TriggerNode("explode ghoul",
         { NextAction("explode ghoul spread", ACTION_MOVE + 5) }));
+    triggers.push_back(new TriggerNode("salramm ghoul",
+        { NextAction("attack ghoul minion", ACTION_RAID + 2) }));
 
     // Chrono-Lord Epoch
     // Not sure if this actually works, I think I've seen him charge melee characters..?
@@ -23,7 +25,9 @@ void WotlkDungeonCoSStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 
     // Mal'Ganis
 
-    // Infinite Corruptor (Heroic only)
+    // Infinite Corruptor (heroic only)
+    triggers.push_back(new TriggerNode("infinite corruptor",
+        { NextAction("mark infinite corruptor", ACTION_RAID + 2) }));
 }
 
 void WotlkDungeonCoSStrategy::InitMultipliers(std::vector<Multiplier*>& multipliers)

@@ -29,6 +29,7 @@
 #include "GuildStrategy.h"
 #include "KiteStrategy.h"
 #include "LfgStrategy.h"
+#include "LivingArenaActions.h"
 #include "LivingFieldActions.h"
 #include "LivingProfessionActions.h"
 #include "LootNonCombatStrategy.h"
@@ -112,6 +113,7 @@ public:
         creators["arathi"] = &StrategyContext::arathi;
         creators["eye"] = &StrategyContext::eye;
         creators["isle"] = &StrategyContext::isle;
+        creators["strand"] = &StrategyContext::strand;
         creators["arena"] = &StrategyContext::arena;
         creators["mount"] = &StrategyContext::mount;
         creators["rtsc"] = &StrategyContext::rtsc;
@@ -122,6 +124,7 @@ public:
         creators["debug spell"] = &StrategyContext::debug_spell;
         creators["debug quest"] = &StrategyContext::debug_quest;
         creators["maintenance"] = &StrategyContext::maintenance;
+        creators["living arena"] = &StrategyContext::living_arena;
         creators["living professions"] = &StrategyContext::living_professions;
         creators["living fieldwork"] = &StrategyContext::living_fieldwork;
         creators["group"] = &StrategyContext::group;
@@ -140,6 +143,7 @@ public:
     }
 
 private:
+    static Strategy* living_arena(PlayerbotAI* botAI) { return new LivingArenaStrategy(botAI); }
     static Strategy* living_professions(PlayerbotAI* botAI) { return new LivingProfessionStrategy(botAI); }
     static Strategy* living_fieldwork(PlayerbotAI* botAI) { return new LivingFieldStrategy(botAI); }
     static Strategy* behind(PlayerbotAI* botAI) { return new SetBehindCombatStrategy(botAI); }
@@ -192,6 +196,7 @@ private:
     static Strategy* arathi(PlayerbotAI* botAI) { return new ArathiStrategy(botAI); }
     static Strategy* eye(PlayerbotAI* botAI) { return new EyeStrategy(botAI); }
     static Strategy* isle(PlayerbotAI* botAI) { return new IsleStrategy(botAI); }
+    static Strategy* strand(PlayerbotAI* botAI) { return new StrandStrategy(botAI); }
     static Strategy* arena(PlayerbotAI* botAI) { return new ArenaStrategy(botAI); }
     static Strategy* rtsc(PlayerbotAI* botAI) { return new RTSCStrategy(botAI); }
     static Strategy* attack_tagged(PlayerbotAI* botAI) { return new AttackTaggedStrategy(botAI); }

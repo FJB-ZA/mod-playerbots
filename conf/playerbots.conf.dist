@@ -11,6 +11,22 @@
 # Requires the living_profiles DB update.
 Playerbots.LivingWorld.Enabled = 0
 
+# Arena seasons for living-world bots at the era's arena level (70 in TBC, 80 in Wrath). Needs LivingWorld.Enabled.
+# Teams form from PvP-minded bots in real compositions with PvP talent specs and start at the season's base rating.
+# Bot teams play each other in real rated games (RandomBotAutoJoinBGRatedArena*Count at a time) and buy season
+# gear from mod-individual-progression's season vendors with the honor, arena points and personal rating they earn.
+# Each bot has a hidden skill that decides how closely it follows the team playbook.
+# A human's rated opponent is a bot team at most MaxRatingAbove MMR higher with gear at most
+# MaxGearScoreAbovePct percent better; skirmish bots obey the same gear cap.
+# Season 0 follows IndividualProgression.TBC/WotLK.ArenaSeason. A new season resets bot team ratings, not gear.
+# PartnerSkill is the playbook skill of non-random bots on a human's team (random-bot partners keep their own).
+# Requires the living_arena DB update. The Dalaran arena partner broker needs the living_arena_broker world update.
+Playerbots.LivingArena.Enabled = 0
+Playerbots.LivingArena.Season = 0
+Playerbots.LivingArena.MaxRatingAbove = 150
+Playerbots.LivingArena.MaxGearScoreAbovePct = 5
+Playerbots.LivingArena.PartnerSkill = 85
+
 # Random bots well above a real player's level accept that player's group invite instead of refusing it
 # for the level or gear-score gap, and fight at the player's level through the core's mentor mode.
 # Needs the solo-wow core fork with MentorMode.Enable = 1 (its default) in worldserver.conf.
@@ -344,6 +360,11 @@ Playerbots.LootRollRecipe = 0
 # Default: 0 (disabled)
 Playerbots.LootRollDisenchant = 0
 
+# Percent of bots with a ninja streak: they roll NEED on every item, even ones that don't help them.
+# The same bots stay ninjas (picked from the character), so a group learns who they are.
+# Default: 0 (no ninjas)
+Playerbots.LootRoll.NinjaPercent = 0
+
 # A list of GameObject GUIDs that bots will not interact with.
 # List of default GUIDs:
 # QuestItems:
@@ -381,6 +402,30 @@ Playerbots.DisableMoveSplinePath = 0
 # Max search time for movement (higher for better movement on slopes)
 # Default: 3
 Playerbots.MaxMovementSearchTime = 3
+
+# Movement planner: bots jump gaps and drop off ledges the navmesh cannot cross, and take the jumps
+# their group leader made instead of walking a long way round. Bots jump the way a player's client does
+# (other players see the real jump animation) and take fall damage on landing.
+# Cost: moves under 5 yards cost nothing. A moving bot usually adds about one path search per second; when its path
+# stops short of the goal or detours far around, one plan can take up to 7 path searches and 4 line-of-sight checks,
+# and a bot chasing a moving goal can re-plan up to 4 times a second. Mode 2 pays this for every bot, so measure it.
+# Default: 0 - off
+#          1 - in dungeons and raids
+#          2 - everywhere
+Playerbots.MovementPlanner = 0
+
+# Most fall damage (percent of max health) a bot accepts to take a drop, and it always keeps 25% health in hand.
+# A leader who died from a fall is only followed off it while the group is in combat with the leader dead (a wipe).
+# Default: 50 (about a 41 yard drop)
+Playerbots.MovementPlanner.MaxFallDamage = 50
+
+# Last resort when a follower cannot walk or jump to its leader: in a dungeon or raid, a bot that has made
+# no progress for StuckTime ms while more than Distance yards away teleports to the leader.
+# Needs Playerbots.MovementPlanner (stuck time is measured by the planner).
+# Default: 0 - off
+Playerbots.CatchUpTeleport = 0
+Playerbots.CatchUpTeleport.StuckTime = 8000
+Playerbots.CatchUpTeleport.Distance = 30
 
 # Action expiration time
 Playerbots.ExpireActionTime = 5000
@@ -1676,6 +1721,7 @@ Playerbots.RandomBotAutoJoinBG = 0
 #   - Alterac Valley   (AV): 0=51-60, 1=61-70, 2=71-79, 3=80                                        (Default: 3)
 #   - Eye of the Storm (EY): 0=61-69, 1=70-79, 2=80                                                 (Default: 2)
 #   - Isle of Conquest (IC): 0=71-79, 1=80                                                          (Default: 1)
+#   - Strand of the Ancients (SA): 0=71-79, 1=80                                                    (Default: 1)
 # - Multiple BG brackets can be specified as a comma-separated list (e.g., "0,2,5"). Not applicable for Rated Arena.
 #   - Rated Arena:           0=10-14, 1=15-19, 2=20-24, ..., 13=75-79, 14=80-84                     (Default: 14)
 #
@@ -1693,11 +1739,13 @@ Playerbots.RandomBotAutoJoinBG = 0
 # Playerbots.RandomBotAutoJoinAVBrackets = 0,1,2,3
 # Playerbots.RandomBotAutoJoinEYBrackets = 0,1,2
 # Playerbots.RandomBotAutoJoinICBrackets = 0,1
+# Playerbots.RandomBotAutoJoinSABrackets = 0,1
 Playerbots.RandomBotAutoJoinWSBrackets = 7
 Playerbots.RandomBotAutoJoinABBrackets = 6
 Playerbots.RandomBotAutoJoinAVBrackets = 3
 Playerbots.RandomBotAutoJoinEYBrackets = 2
 Playerbots.RandomBotAutoJoinICBrackets = 1
+Playerbots.RandomBotAutoJoinSABrackets = 1
 
 # Battlegrounds battles count (per bracket):
 Playerbots.RandomBotAutoJoinBGWSCount = 1
@@ -1705,6 +1753,7 @@ Playerbots.RandomBotAutoJoinBGABCount = 1
 Playerbots.RandomBotAutoJoinBGAVCount = 0
 Playerbots.RandomBotAutoJoinBGEYCount = 1
 Playerbots.RandomBotAutoJoinBGICCount = 0
+Playerbots.RandomBotAutoJoinBGSACount = 0
 
 # Arena bracket (single bracket only):
 # Custom code changes are required for lower-level arena brackets to function properly.

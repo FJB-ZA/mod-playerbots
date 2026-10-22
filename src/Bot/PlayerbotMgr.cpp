@@ -157,7 +157,9 @@ void PlayerbotHolder::AddPlayerBot(ObjectGuid playerGuid, uint32 masterAccountId
     }
 
     // With the living world on, bot sessions follow the era so bots cannot enter later expansions' maps.
-    uint8 const expansion = sPlayerbotAIConfig.LivingWorldEnabled
+    // A GM's bots follow the GM, who ignores the era (test parties in Northrend dungeons and arenas).
+    bool const gmMaster = masterSession && masterSession->GetSecurity() >= SEC_GAMEMASTER;
+    uint8 const expansion = sPlayerbotAIConfig.LivingWorldEnabled && !gmMaster
                                 ? LivingWorld::EraExpansion(sPlayerbotAIConfig.RandomBotMaxLevel)
                                 : uint8(EXPANSION_WRATH_OF_THE_LICH_KING);
     WorldSession* botSession =
@@ -322,6 +324,14 @@ void PlayerbotHolder::HandleBotPackets(WorldSession* session)
             continue;
         }
         opHandle->Call(session, *packet);
+        // the core refuses a port without a reply: record where the accept left the bot
+        if (opcode == CMSG_BATTLEFIELD_PORT && session->GetPlayer())
+        {
+            Player* bot = session->GetPlayer();
+            LOG_DEBUG("playerbots", "Bot {} port result: bg {} far teleport {} queued {} map {} expansion {}",
+                      bot->GetName(), bot->GetBattlegroundId(), bot->IsBeingTeleportedFar(),
+                      bot->InBattlegroundQueue(), bot->GetMapId(), session->Expansion());
+        }
     }
 }
 

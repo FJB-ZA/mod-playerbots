@@ -47,4 +47,11 @@ public:
     bool Execute(Event event) override;
 };
 
+class CapacitusPolaritySpotAction : public MovementAction
+{
+public:
+    CapacitusPolaritySpotAction(PlayerbotAI* botAI) : MovementAction(botAI, "capacitus polarity spot") {}
+    bool Execute(Event event) override;
+};
+
 #endif
