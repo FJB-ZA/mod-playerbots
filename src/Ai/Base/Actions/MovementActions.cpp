@@ -1267,17 +1267,18 @@ bool MovementAction::Follow(Unit* target, float distance, float angle)
     // AI_VALUE(LastMovement&, "last movement").Set(target);
     ClearIdleState();
 
+    // The core follow generator stops at a gap; the planner walks to the take-off and jumps instead.
+    // Checked before the already-following early out, or a follower stalled at a gap never jumps.
+    if (MovementPlanner::Plan(botAI, target->GetPositionX(), target->GetPositionY(), target->GetPositionZ()).kind !=
+        MovePlanKind::Walk)
+        return MoveTo(target->GetMapId(), target->GetPositionX(), target->GetPositionY(), target->GetPositionZ());
+
     if (bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == FOLLOW_MOTION_TYPE)
     {
         Unit* currentTarget = ServerFacade::instance().GetChaseTarget(bot);
         if (currentTarget && currentTarget->GetGUID() == target->GetGUID())
             return false;
     }
-
-    // The core follow generator stops at a gap; the planner walks to the take-off and jumps instead
-    if (MovementPlanner::Plan(botAI, target->GetPositionX(), target->GetPositionY(), target->GetPositionZ()).kind !=
-        MovePlanKind::Walk)
-        return MoveTo(target->GetMapId(), target->GetPositionX(), target->GetPositionY(), target->GetPositionZ());
 
     if (bot->GetMotionMaster()->GetCurrentMovementGeneratorType() != FOLLOW_MOTION_TYPE)
         bot->GetMotionMaster()->Clear();

@@ -9,8 +9,10 @@
 #include "CoSActions.h"
 #include "CoSPolicy.h"
 #include "CoSTriggers.h"
+#include "EncounterHelpers.h"
 #include "Group.h"
 #include "Playerbots.h"
+#include "RtiTargetValue.h"
 
 namespace
 {
@@ -49,8 +51,6 @@ bool ExplodeGhoulSpreadAction::Execute(Event /*event*/)
 
 namespace
 {
-constexpr uint8 SkullIcon = 7;
-
 // Nearest Salramm rather than the bot, so every bot in the group picks the same ghoul.
 Unit* GhoulNearestSalramm(PlayerbotAI* botAI, Unit* boss)
 {
@@ -68,7 +68,7 @@ Unit* GhoulNearestSalramm(PlayerbotAI* botAI, Unit* boss)
 
 bool SkullOnLivingGhoul(PlayerbotAI* botAI, Group* group)
 {
-    Unit* marked = botAI->GetUnit(group->GetTargetIcon(SkullIcon));
+    Unit* marked = botAI->GetUnit(group->GetTargetIcon(RtiTargetValue::skullIndex));
     return marked && marked->IsAlive() && marked->GetEntry() == NPC_GHOUL_MINION;
 }
 }  // namespace
@@ -92,7 +92,6 @@ bool AttackGhoulMinionAction::Execute(Event /*event*/)
         return false;
 
     // Skull the ghoul so the whole group switches to it; the next one gets the mark once it dies
-    if (Unit* ghoul = GhoulNearestSalramm(botAI, boss))
-        group->SetTargetIcon(SkullIcon, bot->GetGUID(), ghoul->GetGUID());
+    EncounterHelpers::MarkTargetWithSkull(bot, GhoulNearestSalramm(botAI, boss));
     return false;
 }

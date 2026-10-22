@@ -9,8 +9,10 @@
 #include "CoSActions.h"
 #include "CoSPolicy.h"
 #include "CoSTriggers.h"
+#include "EncounterHelpers.h"
 #include "Group.h"
 #include "Playerbots.h"
+#include "RtiTargetValue.h"
 
 bool InfiniteCorruptorTrigger::IsActive()
 {
@@ -20,14 +22,14 @@ bool InfiniteCorruptorTrigger::IsActive()
     // His pull skips the zone-wide combat, so only bots already fighting him see him here
     Unit* boss = AI_VALUE2(Unit*, "find target", "infinite corruptor");
     Group* group = bot->GetGroup();
-    return boss && group && CullingOfStratholme::CorruptorNeedsSkull(true, group->GetTargetIcon(7) == boss->GetGUID());
+    return boss && group &&
+           CullingOfStratholme::CorruptorNeedsSkull(
+               true, group->GetTargetIcon(RtiTargetValue::skullIndex) == boss->GetGUID());
 }
 
 bool MarkInfiniteCorruptorAction::Execute(Event /*event*/)
 {
-    Unit* boss = AI_VALUE2(Unit*, "find target", "infinite corruptor");
-    Group* group = bot->GetGroup();
-    if (boss && group && group->GetTargetIcon(7) != boss->GetGUID())
-        group->SetTargetIcon(7, bot->GetGUID(), boss->GetGUID());
+    // Marking does not take the bot's action for the tick
+    EncounterHelpers::MarkTargetWithSkull(bot, AI_VALUE2(Unit*, "find target", "infinite corruptor"));
     return false;
 }
