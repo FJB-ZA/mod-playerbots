@@ -11,8 +11,6 @@
 #include "MovementActions.h"
 #include "PositionValue.h"
 
-#include <mutex>
-
 class ChatHandler;
 class Battleground;
 class PlayerbotAI;
@@ -80,10 +78,6 @@ struct BGStrategyData
     uint8 hordeTier = BG_TIER_BASIC;
 };
 
-// Every battleground map thread reads and writes this map: hold bgStrategiesLock
-extern std::unordered_map<uint32, BGStrategyData> bgStrategies;
-extern std::mutex bgStrategiesLock;
-
 struct BattleBotWaypoint
 {
     BattleBotWaypoint(float x_, float y_, float z_, BattleBotWaypointFunc func) : x(x_), y(y_), z(z_), pFunc(func){};
@@ -121,6 +115,8 @@ public:
     uint8 static GetBotStrategyForTeam(Battleground* bg, TeamId teamId);
     uint8 static GetTeamTier(Battleground* bg, TeamId teamId);
     static void RollTiers(Battleground* bg, BGStrategyData& data);
+    static void SetBotStrategies(uint32 instanceId, BGStrategyData const& data);
+    static void ClearBotStrategies(uint32 instanceId);
 
     BGTactics(PlayerbotAI* botAI, std::string const name = "bg tactics") : MovementAction(botAI, name) {}
 
@@ -128,6 +124,8 @@ public:
 
 private:
     static std::string const HandleConsoleCommandPrivate(WorldSession* session, char const* args);
+    // A copy taken under the lock; defaults when the battleground has no entry
+    static BGStrategyData GetBotStrategies(uint32 instanceId);
     bool moveToStart(bool force = false);
     bool selectObjective(bool reset = false);
     bool moveToObjective(bool ignoreDist);
