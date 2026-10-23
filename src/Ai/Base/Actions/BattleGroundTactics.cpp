@@ -32,14 +32,15 @@
 #include "ServerFacade.h"
 #include "Vehicle.h"
 #include <algorithm>
+#include <mutex>
 
 // Per battleground positions, paths and objectives live in src/Ai/Battleground/<Name>Tactics.cpp
 
-std::unordered_map<uint32, BGStrategyData> bgStrategies;
-std::mutex bgStrategiesLock;
-
 namespace
 {
+std::unordered_map<uint32, BGStrategyData> bgStrategies;
+std::mutex bgStrategiesMutex;
+
 bool IsOneWay(BattleBotPath* path)
 {
     return std::find(vPaths_OneWay_WS.begin(), vPaths_OneWay_WS.end(), path) != vPaths_OneWay_WS.end() ||
@@ -208,14 +209,32 @@ std::string const BGTactics::HandleConsoleCommandPrivate(WorldSession* session, 
 }
 
 // Depends on OnBattlegroundStart in playerbots.cpp
+void BGTactics::SetBotStrategies(uint32 instanceId, BGStrategyData const& data)
+{
+    std::lock_guard<std::mutex> lock(bgStrategiesMutex);
+    bgStrategies[instanceId] = data;
+}
+
+void BGTactics::ClearBotStrategies(uint32 instanceId)
+{
+    std::lock_guard<std::mutex> lock(bgStrategiesMutex);
+    bgStrategies.erase(instanceId);
+}
+
+BGStrategyData BGTactics::GetBotStrategies(uint32 instanceId)
+{
+    std::lock_guard<std::mutex> lock(bgStrategiesMutex);
+    auto itr = bgStrategies.find(instanceId);
+    return itr == bgStrategies.end() ? BGStrategyData() : itr->second;
+}
+
 uint8 BGTactics::GetBotStrategyForTeam(Battleground* bg, TeamId teamId)
 {
-    std::lock_guard<std::mutex> guard(bgStrategiesLock);
-    auto itr = bgStrategies.find(bg->GetInstanceID());
-    if (itr == bgStrategies.end())
+    if (!bg)
         return 0;
 
-    return teamId == TEAM_ALLIANCE ? itr->second.allianceStrategy : itr->second.hordeStrategy;
+    BGStrategyData const data = GetBotStrategies(bg->GetInstanceID());
+    return teamId == TEAM_ALLIANCE ? data.allianceStrategy : data.hordeStrategy;
 }
 
 //

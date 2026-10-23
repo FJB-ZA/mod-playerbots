@@ -28,7 +28,7 @@ bool DarkweaverSythBossSummonsElementalsTrigger::IsActive()
            SethekkHalls::MarksElementals(tracker, syth->GetHealthPct() <= EncounterHelpers::BOSS_BURN_HEALTH_PCT);
 }
 
-bool DarkweaverSythMarkElementalsWithSkullAction::Execute(Event /*event*/)
+bool DarkweaverSythMarkElementalsAction::Execute(Event /*event*/)
 {
     static constexpr std::array elementals = {
         "syth frost elemental",
