@@ -4781,7 +4781,8 @@ void PlayerbotFactory::InitGlyphs(bool increment)
         {
             uint32 itemId = sPlayerbotAIConfig.ParsedSpecGlyph[cls][tab][slotIndex];
             ItemTemplate const* proto = sObjectMgr->GetItemTemplate(itemId);
-            if (proto->Class != ITEM_CLASS_GLYPH)
+            // A configured glyph may be a custom item this server's world database doesn't have.
+            if (!proto || proto->Class != ITEM_CLASS_GLYPH)
                 continue;
 
             if ((proto->AllowableClass & bot->getClassMask()) == 0 || (proto->AllowableRace & bot->getRaceMask()) == 0)
