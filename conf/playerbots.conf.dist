@@ -1920,8 +1920,8 @@ Playerbots.PremadeSpecLink.1.5.80 = 0502300123-3-250031220223012521332113321
 Playerbots.PremadeSpecName.1.6 = gladiator
 # Glyphs: Unending Rage, Shield Rush, Shield Charge, Rallying Cry, Mass Reflection, Dragon Roar (solo-wow gladiator-gear.json).
 Playerbots.PremadeSpecGlyph.1.6 = 990181,990187,990180,990188,990189,990182
-Playerbots.PremadeSpecLink.1.6.60 = ---535220201220311032101012202103121
-Playerbots.PremadeSpecLink.1.6.80 = --250301225-535220201220311032101012202103121
+Playerbots.PremadeSpecLink.1.6.60 = ---53502201220101110321011203210301221
+Playerbots.PremadeSpecLink.1.6.80 = --250301225-53502201220101110321011203210301221
 
 #
 #
