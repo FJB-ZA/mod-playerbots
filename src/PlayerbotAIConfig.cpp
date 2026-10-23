@@ -8,6 +8,7 @@
 #include "BisListMgr.h"
 #include "Config.h"
 #include "NewRpgInfo.h"
+#include "PathTalentPolicy.h"
 #include "PlayerbotDungeonRepository.h"
 #include "PlayerbotFactory.h"
 #include "PlayerbotGuildMgr.h"
@@ -551,7 +552,9 @@ bool PlayerbotAIConfig::Initialize()
             os.clear();
             os << "Playerbots.RandomClassSpecIndex." << cls << "." << spec;
             RandomClassSpecIndex[cls][spec] = sConfigMgr->GetOption<uint32>(os.str().c_str(), spec, false);
+            RandomClassSpecUsesPathTree[cls][spec] = SpecUsesPathTree(cls, RandomClassSpecIndex[cls][spec]);
         }
+        PathTreeTalent[cls] = FindPathTreeTalent(cls);
     }
 
     BotCheats.clear();
@@ -732,6 +735,7 @@ bool PlayerbotAIConfig::Initialize()
     DropObsoleteQuests = sConfigMgr->GetOption<bool>("Playerbots.DropObsoleteQuests", true);
     AllowLearnTrainerSpells = sConfigMgr->GetOption<bool>("Playerbots.AllowLearnTrainerSpells", true);
     AutoPickTalents = sConfigMgr->GetOption<bool>("Playerbots.AutoPickTalents", true);
+    AutoTalentsOnFreePoints = sConfigMgr->GetOption<bool>("Playerbots.AutoTalentsOnFreePoints", false);
     AutoUpgradeEquip = sConfigMgr->GetOption<bool>("Playerbots.AutoUpgradeEquip", true);
     HunterWolfPet = sConfigMgr->GetOption<int32>("Playerbots.HunterWolfPet", 0);
     DefaultPetStance = sConfigMgr->GetOption<int32>("Playerbots.DefaultPetStance", 1);
@@ -1165,7 +1169,7 @@ std::vector<std::vector<uint32>> PlayerbotAIConfig::ParseTempTalentsOrder(uint32
     std::vector<std::vector<uint32>> res;
     std::vector<std::string> tab_links = Split(tab_link, "-");
     std::map<uint32, std::vector<TalentEntry const*>> spells;
-    std::vector<std::vector<std::vector<uint32>>> orders(3);
+    std::vector<std::vector<std::vector<uint32>>> orders(MAX_TALENT_TABS);
     for (uint32 i = 0; i < sTalentStore.GetNumRows(); ++i)
     {
         TalentEntry const* talentInfo = sTalentStore.LookupEntry(i);
@@ -1181,7 +1185,7 @@ std::vector<std::vector<uint32>> PlayerbotAIConfig::ParseTempTalentsOrder(uint32
 
         spells[talentTabInfo->tabpage].push_back(talentInfo);
     }
-    for (int tab = 0; tab < 3; tab++)
+    for (int tab = 0; tab < MAX_TALENT_TABS; tab++)
     {
         if (tab_links.size() <= (size_t)tab)
         {
@@ -1209,6 +1213,36 @@ std::vector<std::vector<uint32>> PlayerbotAIConfig::ParseTempTalentsOrder(uint32
         res.insert(res.end(), order.begin(), order.end());
     }
     return res;
+}
+
+bool PlayerbotAIConfig::SpecUsesPathTree(uint32 cls, uint32 specIndex) const
+{
+    if (specIndex >= MAX_SPECNO)
+        return false;
+    for (uint32 level = 0; level < MAX_LEVEL; ++level)
+        for (std::vector<uint32> const& entry : ParsedSpecLinkOrder[cls][specIndex][level])
+            if (entry[0] == PathTalents::PathPage)
+                return true;
+    return false;
+}
+
+TalentEntry const* PlayerbotAIConfig::FindPathTreeTalent(uint32 cls)
+{
+    if (MAX_TALENT_TABS <= PathTalents::PathPage)
+        return nullptr;
+    uint32 const tabId = GetTalentTabPages(cls)[PathTalents::PathPage];
+    if (!tabId)
+        return nullptr;
+    TalentEntry const* first = nullptr;
+    for (uint32 i = 0; i < sTalentStore.GetNumRows(); ++i)
+    {
+        TalentEntry const* talentInfo = sTalentStore.LookupEntry(i);
+        if (!talentInfo || talentInfo->TalentTab != tabId)
+            continue;
+        if (!first || talentInfo->Row < first->Row || (talentInfo->Row == first->Row && talentInfo->Col < first->Col))
+            first = talentInfo;
+    }
+    return first;
 }
 
 std::vector<std::vector<uint32>> PlayerbotAIConfig::ParseTempPetTalentsOrder(uint32 spec, std::string tab_link)
