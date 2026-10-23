@@ -17,9 +17,10 @@
 
 class Player;
 
-// Sub-class paths of the solo-wow core fork (its subclass_* tables). A bot on a path knows mirror spells in place of
-// some class spells, so the AI's class spell names and ids are mapped to the mirrors it knows. Loaded once on the
-// world thread at startup and read-only afterwards.
+// Sub-class paths of the solo-wow core fork (its subclass_* tables; the core puts bots on paths). A path without its
+// own talent tree mirrors class spells, and its bots play the class AI: the class spell names and ids the AI asks for
+// map to the mirrors the bot knows. A path with its own tree has its own strategy (src/Ai/Subclass) instead. Loaded
+// once on the world thread at startup and read-only afterwards.
 class SubclassBotMgr
 {
 public:
@@ -31,7 +32,6 @@ public:
     };
 
     static SubclassBotMgr& instance();
-    // Loads the paths and puts each path's share of random bots of its class on it (spec slot 1 only).
     void Load();
     // The mirror that stands in for the class spell `lowerName` (lowercase) for this bot, or nullptr.
     Alias const* FindAlias(Player* bot, std::wstring const& lowerName) const;
@@ -43,7 +43,6 @@ public:
 
 private:
     void LoadSwaps();
-    void AssignPaths();
 
     std::array<std::unordered_map<std::wstring, std::vector<Alias>>, MAX_CLASSES> _aliases;
     std::unordered_map<uint32, std::vector<uint32>> _mirrors;

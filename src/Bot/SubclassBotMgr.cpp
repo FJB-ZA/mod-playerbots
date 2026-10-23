@@ -7,22 +7,16 @@
 #include "SubclassBotMgr.h"
 
 #include <algorithm>
-#include <unordered_set>
 
 #include "DatabaseEnv.h"
 #include "Log.h"
 #include "Player.h"
-#include "PlayerbotAIConfig.h"
 #include "SpellInfo.h"
 #include "SpellMgr.h"
-#include "StringFormat.h"
-#include "SubclassBotPolicy.h"
 #include "Util.h"
 
 namespace
 {
-constexpr size_t InsertBatch = 500;
-
 bool LowerName(char const* name, std::wstring& lower)
 {
     if (!name || !*name || !Utf8toWStr(name, lower))
@@ -41,17 +35,10 @@ SubclassBotMgr& SubclassBotMgr::instance()
 
 void SubclassBotMgr::Load()
 {
-    if (!sPlayerbotAIConfig.SubclassBots)
-        return;
-
     if (!WorldDatabase.Query("SHOW TABLES LIKE 'subclass_path'"))
-    {
-        LOG_INFO("playerbots", "No sub-class paths in the world database, Playerbots.SubclassBots does nothing");
         return;
-    }
 
     LoadSwaps();
-    AssignPaths();
 }
 
 void SubclassBotMgr::LoadSwaps()
@@ -59,8 +46,8 @@ void SubclassBotMgr::LoadSwaps()
     uint32 aliases = 0;
     uint32 missing = 0;
     QueryResult result = WorldDatabase.Query(
-        "SELECT p.base_class, s.original_spell, s.replacement_spell FROM subclass_spell_swap s "
-        "JOIN subclass_path p ON p.id = s.path_id");
+        "SELECT p.class, s.spell, s.replacement FROM subclass_spell_swap s "
+        "JOIN subclass_path p ON p.id = s.path_id WHERE p.talent_tab = 0");
     if (result)
     {
         do
@@ -99,15 +86,12 @@ void SubclassBotMgr::LoadSwaps()
         } while (result->NextRow());
     }
 
-    if (QueryResult creatures =
-            WorldDatabase.Query("SELECT original_entry, replacement_entry, guardian_entry FROM subclass_creature_swap"))
+    if (QueryResult creatures = WorldDatabase.Query("SELECT entry, replacement FROM subclass_creature_swap"))
     {
         do
         {
             Field* fields = creatures->Fetch();
             _originalCreatures[fields[1].Get<uint32>()] = fields[0].Get<uint32>();
-            if (uint32 const guardian = fields[2].Get<uint32>())
-                _originalCreatures[guardian] = fields[0].Get<uint32>();
         } while (creatures->NextRow());
     }
 
@@ -115,72 +99,6 @@ void SubclassBotMgr::LoadSwaps()
     if (missing)
         LOG_WARN("playerbots", "{} sub-class mirror spells are missing from the spell data, so bots skip them",
                  missing);
-}
-
-void SubclassBotMgr::AssignPaths()
-{
-    if (!CharacterDatabase.Query("SHOW TABLES LIKE 'character_subclass_path'"))
-        return;
-
-    std::array<std::vector<SubclassBots::PathShare>, MAX_CLASSES> shares;
-    std::string classes;
-    if (QueryResult paths = WorldDatabase.Query(
-            "SELECT id, base_class, bot_share_pct FROM subclass_path WHERE bot_share_pct > 0 ORDER BY id"))
-    {
-        do
-        {
-            Field* fields = paths->Fetch();
-            uint8 const classId = fields[1].Get<uint8>();
-            if (classId >= MAX_CLASSES)
-                continue;
-
-            if (shares[classId].empty())
-                classes += (classes.empty() ? "" : ",") + std::to_string(classId);
-            shares[classId].push_back({fields[0].Get<uint8>(), fields[2].Get<uint8>()});
-        } while (paths->NextRow());
-    }
-
-    if (classes.empty())
-        return;
-
-    std::unordered_set<uint32> botAccounts;
-    if (QueryResult accounts = LoginDatabase.Query("SELECT id FROM account WHERE username LIKE '{}%'",
-                                                   sPlayerbotAIConfig.RandomBotAccountPrefix))
-    {
-        do
-        {
-            botAccounts.insert(accounts->Fetch()[0].Get<uint32>());
-        } while (accounts->NextRow());
-    }
-
-    std::vector<std::string> rows;
-    QueryResult characters =
-        CharacterDatabase.Query("SELECT guid, account, class FROM characters WHERE class IN ({})", classes);
-    if (characters)
-    {
-        do
-        {
-            Field* fields = characters->Fetch();
-            uint32 const guid = fields[0].Get<uint32>();
-            if (!botAccounts.count(fields[1].Get<uint32>()))
-                continue;
-
-            if (uint8 const path = SubclassBots::PickPath(guid, shares[fields[2].Get<uint8>()]))
-                rows.push_back(Acore::StringFormat("({}, 0, {})", guid, path));
-        } while (characters->NextRow());
-    }
-
-    // Rows that exist are kept, so a bot stays on the path it has and nothing changes for real players.
-    for (size_t first = 0; first < rows.size(); first += InsertBatch)
-    {
-        std::string values;
-        for (size_t i = first; i < std::min(rows.size(), first + InsertBatch); ++i)
-            values += (values.empty() ? "" : ",") + rows[i];
-        CharacterDatabase.DirectExecute(
-            "INSERT IGNORE INTO character_subclass_path (guid, talent_group, path_id) VALUES " + values);
-    }
-
-    LOG_INFO("playerbots", "{} random bots walk a sub-class path", rows.size());
 }
 
 SubclassBotMgr::Alias const* SubclassBotMgr::FindAlias(Player* bot, std::wstring const& lowerName) const

@@ -38,12 +38,6 @@ Playerbots.LivingTransmog.Enabled = 0
 # Needs the solo-wow core fork with MentorMode.Enable = 1 (its default) in worldserver.conf.
 Playerbots.MentorInvites = 0
 
-# Sub-class paths of the solo-wow core fork (its subclass_path tables; nothing happens without them).
-# Bots on a path use its mirror spells and minions where the AI asks for the class spells and demons.
-# At startup each path's bot_share_pct of the random bots of its class is put on the path (spec slot 1),
-# the same bots on every startup; a bot keeps a path it already has. Bots skip the path's unlock level.
-Playerbots.SubclassBots = 0
-
 # Overview
 # "Randombot": randomly generated bots that log in separately from players and populate the world. Randombots may automatically grind, quest, level up, and upgrade equipment and can be invited to groups and given commands.
 # "AddClass bot": bots from the AddClassAccountPoolSize accounts. They are used for quickly adding a leveled and geared bot of any class to your party. They are recommended for a quick formation of a party.
