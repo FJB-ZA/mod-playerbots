@@ -1733,12 +1733,16 @@ void PlayerbotAI::ApplyInstanceStrategies(uint32 mapId, bool tellMaster)
 
     engines[BOT_STATE_COMBAT]->removeStrategy("dungeon lead");
     engines[BOT_STATE_NON_COMBAT]->removeStrategy("dungeon lead");
+    engines[BOT_STATE_COMBAT]->removeStrategy("mythic plus");
     MapEntry const* mapEntry = sMapStore.LookupEntry(mapId);
     if (sPlayerbotAIConfig.DungeonLeadEnabled && mapEntry && mapEntry->IsNonRaidDungeon())
     {
         engines[BOT_STATE_COMBAT]->addStrategy("dungeon lead");
         engines[BOT_STATE_NON_COMBAT]->addStrategy("dungeon lead");
     }
+    // Mythic+ runs on heroic dungeons; its orbs exist only in a run, so the trigger stays idle anywhere else
+    if (mapEntry && mapEntry->IsNonRaidDungeon())
+        engines[BOT_STATE_COMBAT]->addStrategy("mythic plus");
 
     std::string strategyName;
     switch (mapId)
