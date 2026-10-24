@@ -31,6 +31,7 @@
 #include "LFGMgr.h"
 #include "LivingWorldMgr.h"
 #include "MapMgr.h"
+#include "MythicPlusBotMgr.h"
 #include "NewRpgInfo.h"
 #include "NewRpgStrategy.h"
 #include "ObjectGuid.h"
@@ -1513,7 +1514,8 @@ bool RandomPlayerbotMgr::ProcessBot(Player* bot)
     if (!botAI)
         return false;
 
-    if (bot->InBattleground())
+    // A Mythic+ run's supervisor revives, moves and ungroups its bots
+    if (bot->InBattleground() || MythicPlusBotMgr::instance().InRun(bot))
         return false;
 
      uint32 botId = bot->GetGUID().GetCounter();

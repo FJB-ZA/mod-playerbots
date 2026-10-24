@@ -6,6 +6,7 @@
 
 #include "LeaveGroupAction.h"
 #include "Event.h"
+#include "MythicPlusBotMgr.h"
 #include "PlayerbotAIConfig.h"
 #include "PlayerbotTextMgr.h"
 #include "Playerbots.h"
@@ -110,6 +111,10 @@ bool LeaveFarAwayAction::isUseful()
         return false;
 
     if (!bot->GetGroup())
+        return false;
+
+    // The run's supervisor disbands the group when the key is done
+    if (MythicPlusBotMgr::instance().InRun(bot))
         return false;
 
     Player* groupLeader = botAI->GetGroupLeader();

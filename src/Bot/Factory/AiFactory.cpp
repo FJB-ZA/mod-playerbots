@@ -14,6 +14,7 @@
 #include "Item.h"
 #include "LivingArenaMgr.h"
 #include "MageAiObjectContext.h"
+#include "MythicPlusBotMgr.h"
 #include "PaladinAiObjectContext.h"
 #include "PlayerbotAI.h"
 #include "PlayerbotAIConfig.h"
@@ -610,7 +611,9 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
     if (sPlayerbotAIConfig.AutoSaveMana && PlayerbotAI::IsHeal(player, true))
         nonCombatEngine->addStrategy("save mana", false);
 
-    if ((sRandomPlayerbotMgr.IsRandomBot(player)) && !player->InBattleground())
+    // A bot running a Mythic+ key keeps to the run: no grinding, questing, queues or duels
+    if ((sRandomPlayerbotMgr.IsRandomBot(player)) && !player->InBattleground() &&
+        !MythicPlusBotMgr::instance().InRun(player))
     {
         if (sPlayerbotAIConfig.LivingWorldEnabled)
         {

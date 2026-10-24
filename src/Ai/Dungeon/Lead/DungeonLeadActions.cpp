@@ -16,12 +16,14 @@
 
 #include "AttackersValue.h"
 #include "Creature.h"
+#include "DBCStores.h"
 #include "DungeonLead.h"
 #include "Event.h"
 #include "FollowActions.h"
 #include "Group.h"
 #include "Map.h"
 #include "MarkPolicy.h"
+#include "MythicPlusBotMgr.h"
 #include "ObjectMgr.h"
 #include "PackPolicy.h"
 #include "PathGenerator.h"
@@ -98,7 +100,7 @@ struct BossSpawn
 bool IsLeader(PlayerbotAI* botAI)
 {
     Player* bot = botAI->GetBot();
-    return Enabled() && bot->IsAlive() &&
+    return EnabledFor(bot) && bot->IsAlive() &&
            botAI->GetAiObjectContext()->GetValue<ObjectGuid>("dungeon leader")->Get() == bot->GetGUID();
 }
 
@@ -131,6 +133,39 @@ std::vector<BossSpawn> const& BossSpawns(uint32 mapId)
     return spawns;
 }
 
+// Hostile trash the core's Mythic+ counts as enemy forces: no bosses, triggers, civilians, critters or vendors
+bool IsTrash(CreatureTemplate const* info)
+{
+    uint32 const skipped =
+        CREATURE_FLAG_EXTRA_TRIGGER | CREATURE_FLAG_EXTRA_CIVILIAN | CREATURE_FLAG_EXTRA_DUNGEON_BOSS;
+    if (info->rank == CREATURE_ELITE_WORLDBOSS || info->npcflag || (info->flags_extra & skipped) ||
+        info->type == CREATURE_TYPE_CRITTER || info->type == CREATURE_TYPE_NON_COMBAT_PET ||
+        (info->unit_flags & (UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE)))
+        return false;
+    FactionTemplateEntry const* faction = sFactionTemplateStore.LookupEntry(info->faction);
+    return faction && faction->IsHostileToPlayers();
+}
+
+std::vector<BossSpawn> const& TrashSpawns(uint32 mapId)
+{
+    static std::mutex lock;
+    static std::unordered_map<uint32, std::vector<BossSpawn>> cache;
+    std::lock_guard<std::mutex> guard(lock);
+    if (auto found = cache.find(mapId); found != cache.end())
+        return found->second;
+
+    std::vector<BossSpawn>& spawns = cache[mapId];
+    for (auto const& [spawnId, data] : sObjectMgr->GetAllCreatureData())
+    {
+        if (data.mapid != mapId)
+            continue;
+        CreatureTemplate const* creatureTemplate = sObjectMgr->GetCreatureTemplate(data.id);
+        if (creatureTemplate && IsTrash(creatureTemplate))
+            spawns.push_back({spawnId, Position(data.posX, data.posY, data.posZ, data.orientation), data.spawnMask});
+    }
+    return spawns;
+}
+
 bool BossAlive(Map* map, BossSpawn const& spawn, Position& pos)
 {
     auto const bounds = map->GetCreatureBySpawnIdStore().equal_range(spawn.spawnId);
@@ -146,18 +181,11 @@ bool BossAlive(Map* map, BossSpawn const& spawn, Position& pos)
     return map->GetCreatureRespawnTime(spawn.spawnId) <= time(nullptr);
 }
 
-// The nearest living boss is the next one on the way.
-bool FindGoal(PlayerbotAI* botAI, State& state)
+bool NearestAlive(Player* bot, std::vector<BossSpawn> const& spawns, State& state)
 {
-    if (!Elapsed(state.goalCheckedAt, GOAL_RESCAN_MS))
-        return state.hasGoal;
-    state.goalCheckedAt = getMSTime();
-    state.hasGoal = false;
-
-    Player* bot = botAI->GetBot();
     Map* map = bot->GetMap();
     float best = 0.0f;
-    for (BossSpawn const& spawn : BossSpawns(map->GetId()))
+    for (BossSpawn const& spawn : spawns)
     {
         if (!(spawn.spawnMask & (1 << map->GetSpawnMode())))
             continue;
@@ -173,6 +201,21 @@ bool FindGoal(PlayerbotAI* botAI, State& state)
         }
     }
     return state.hasGoal;
+}
+
+// The nearest living boss is the next one on the way; a bot Mythic+ run then clears trash until its forces are met.
+bool FindGoal(PlayerbotAI* botAI, State& state)
+{
+    if (!Elapsed(state.goalCheckedAt, GOAL_RESCAN_MS))
+        return state.hasGoal;
+    state.goalCheckedAt = getMSTime();
+    state.hasGoal = false;
+
+    Player* bot = botAI->GetBot();
+    uint32 const mapId = bot->GetMapId();
+    if (NearestAlive(bot, BossSpawns(mapId), state))
+        return true;
+    return MythicPlusBotMgr::instance().IsRunGroup(bot->GetGroup()) && NearestAlive(bot, TrashSpawns(mapId), state);
 }
 
 // Hostile mobs nobody is fighting yet, near enough to belong to a pack in scan range.
@@ -649,13 +692,13 @@ bool DungeonLeadTrigger::IsActive() { return IsLeader(botAI); }
 
 bool LeadHealerTrigger::IsActive()
 {
-    return Enabled() && bot->GetGroup() && bot->GetMaxPower(POWER_MANA) > 0 && botAI->IsInNonRaidDungeon() &&
+    return EnabledFor(bot) && bot->GetGroup() && bot->GetMaxPower(POWER_MANA) > 0 && botAI->IsInNonRaidDungeon() &&
            PlayerbotAI::IsHeal(bot);
 }
 
 bool LeadNeedsManaTrigger::IsActive()
 {
-    if (!Enabled() || bot->IsInCombat() || !bot->GetGroup() || bot->GetMaxPower(POWER_MANA) == 0)
+    if (!EnabledFor(bot) || bot->IsInCombat() || !bot->GetGroup() || bot->GetMaxPower(POWER_MANA) == 0)
         return false;
 
     float const mana = bot->GetPowerPct(POWER_MANA);

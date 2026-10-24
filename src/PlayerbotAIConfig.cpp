@@ -474,6 +474,8 @@ bool PlayerbotAIConfig::Initialize()
     RandomBotReactStrategies = sConfigMgr->GetOption<std::string>("Playerbots.RandomBotReactStrategies", "");
     ApplyInstanceStrategies = sConfigMgr->GetOption<bool>("Playerbots.ApplyInstanceStrategies", true);
     DungeonLeadEnabled = sConfigMgr->GetOption<bool>("Playerbots.DungeonLead.Enabled", false);
+    MythicPlusBotRuns = sConfigMgr->GetOption<uint32>("Playerbots.MythicPlus.BotRuns", 0);
+    MythicPlusBotRunInterval = sConfigMgr->GetOption<uint32>("Playerbots.MythicPlus.BotRunInterval", 300);
 
     CommandPrefix = sConfigMgr->GetOption<std::string>("Playerbots.CommandPrefix", "");
     CommandSeparator = sConfigMgr->GetOption<std::string>("Playerbots.CommandSeparator", "\\\\");

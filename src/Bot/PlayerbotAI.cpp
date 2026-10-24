@@ -29,6 +29,7 @@
 #include "MapMgr.h"
 #include "MotionMaster.h"
 #include "MoveSplineInit.h"
+#include "MythicPlusBotMgr.h"
 #include "NewRpgStrategy.h"
 #include "ObjectGuid.h"
 #include "ObjectMgr.h"
@@ -1735,7 +1736,8 @@ void PlayerbotAI::ApplyInstanceStrategies(uint32 mapId, bool tellMaster)
     engines[BOT_STATE_NON_COMBAT]->removeStrategy("dungeon lead");
     engines[BOT_STATE_COMBAT]->removeStrategy("mythic plus");
     MapEntry const* mapEntry = sMapStore.LookupEntry(mapId);
-    if (sPlayerbotAIConfig.DungeonLeadEnabled && mapEntry && mapEntry->IsNonRaidDungeon())
+    if ((sPlayerbotAIConfig.DungeonLeadEnabled || MythicPlusBotMgr::instance().InRun(bot)) && mapEntry &&
+        mapEntry->IsNonRaidDungeon())
     {
         engines[BOT_STATE_COMBAT]->addStrategy("dungeon lead");
         engines[BOT_STATE_NON_COMBAT]->addStrategy("dungeon lead");
