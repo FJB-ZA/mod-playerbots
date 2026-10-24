@@ -349,6 +349,7 @@ enum WARRIOR_TABS
     WARRIOR_TAB_ARMS,
     WARRIOR_TAB_FURY,
     WARRIOR_TAB_PROTECTION,
+    WARRIOR_TAB_GLADIATOR,  // the Gladiator sub-class path's own tree, open only while a slot follows the path
 };
 
 class PacketHandlingHelper

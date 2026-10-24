@@ -66,6 +66,8 @@ struct State
 };
 
 bool Enabled();
+// The feature, or a bot group running its own Mythic+ key, which leads whatever the setting
+bool EnabledFor(Player* bot);
 State& StateOf(PlayerbotAI* botAI);
 // The bot tank leading this run, or nullptr when the feature is off, a player tanks, or the tank has nowhere to go.
 Player* Leader(PlayerbotAI* botAI);

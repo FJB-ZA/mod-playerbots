@@ -5,6 +5,7 @@
  */
 
 #include "EquipAction.h"
+#include "AiFactory.h"
 #include "Event.h"
 #include "ItemCountValue.h"
 #include "ItemPackets.h"
@@ -122,7 +123,7 @@ void EquipAction::EquipItem(Item* item)
         // Check if the item is a weapon and whether the bot can dual wield or use Titan Grip
         bool isWeapon = (itemProto->Class == ITEM_CLASS_WEAPON);
         bool canTitanGrip = bot->CanTitanGrip();
-        bool canDualWield = bot->CanDualWield();
+        bool canDualWield = bot->CanDualWield() && !AiFactory::KeepsShieldOffhand(bot);
 
         bool isTwoHander = (invType == INVTYPE_2HWEAPON);
         bool isValidTGWeapon = false;

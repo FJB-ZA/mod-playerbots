@@ -281,6 +281,15 @@ bool RandomTrigger::IsActive()
     return (rand() % k) == 0;
 }
 
+bool NoTalentsSpentTrigger::IsActive()
+{
+    if (!sPlayerbotAIConfig.AutoTalentsOnFreePoints || !sPlayerbotAIConfig.AutoPickTalents || bot->IsInCombat())
+        return false;
+
+    uint32 const freePoints = bot->GetFreeTalentPoints();
+    return freePoints && freePoints == bot->CalculateTalentsPoints();
+}
+
 bool AndTrigger::IsActive() { return ls && rs && ls->IsActive() && rs->IsActive(); }
 
 std::string const AndTrigger::getName()

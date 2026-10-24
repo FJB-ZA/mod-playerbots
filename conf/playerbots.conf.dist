@@ -546,6 +546,16 @@ Playerbots.ApplyInstanceStrategies = 1
 # Default: 0 (disabled)
 Playerbots.DungeonLead.Enabled = 0
 
+# Bot groups run their own Mythic+ keys (solo-wow core scripts/Custom/MythicPlus) on the WotLK heroics. A level 80
+# random bot holding a key gathers a tank, a healer and three damage dealers of its faction whose hidden skill is
+# close to its own and whose gear and skill handle the key: fresh heroic gear runs +2, every 5 item levels more one
+# level higher, skill two levels either way. The tank leads the run (dungeon lead, whatever its setting), the dead
+# get up after a wipe, and the group goes home and disbands when the run ends or stalls.
+# BotRuns: how many bot runs at once. BotRunInterval: seconds between attempts to form one.
+# Default: 0 (disabled), 300
+Playerbots.MythicPlus.BotRuns = 0
+Playerbots.MythicPlus.BotRunInterval = 300
+
 # Enable auto avoid aoe strategy
 # Default: 1 (enabled)
 Playerbots.AutoAvoidAoe = 1
@@ -1439,6 +1449,11 @@ Playerbots.AutoLearnTrainerSpells = 1
 # Default: 1 (enabled)
 Playerbots.AutoPickTalents = 1
 
+# Randombots with free talent points and none spent pick talents at once (needs AutoPickTalents), such as
+# after a talent reset or after the core moves them onto a sub-class path
+# Default: 0 (disabled)
+Playerbots.AutoTalentsOnFreePoints = 0
+
 # Spells every randombot will learn automatically and every altbot will learn with maintenance
 # Default: 54197 (Cold Weather Flying)
 Playerbots.RandomBotSpellIds = "54197"
@@ -1911,6 +1926,12 @@ Playerbots.PremadeSpecName.1.5 = prot pvp
 Playerbots.PremadeSpecGlyph.1.5 = 43425,43397,43415,43396,49084,45792
 Playerbots.PremadeSpecLink.1.5.60 = --250031220223012520332113321
 Playerbots.PremadeSpecLink.1.5.80 = 0502300123-3-250031220223012521332113321
+# The Gladiator sub-class path's tree is a fourth page; a bot takes this spec only while its slot follows the path.
+Playerbots.PremadeSpecName.1.6 = gladiator
+# Glyphs: Unending Rage, Shield Rush, Shield Charge, Rallying Cry, Mass Reflection, Dragon Roar (solo-wow gladiator-gear.json).
+Playerbots.PremadeSpecGlyph.1.6 = 990181,990187,990180,990188,990189,990182
+Playerbots.PremadeSpecLink.1.6.60 = ---53502201220101110321011203210301221
+Playerbots.PremadeSpecLink.1.6.80 = --250301225-53502201220101110321011203210301221
 
 #
 #
@@ -2304,6 +2325,9 @@ Playerbots.RandomClassSpecIndex.1.4 = 4
 # prot pvp
 Playerbots.RandomClassSpecProb.1.5 = 0
 Playerbots.RandomClassSpecIndex.1.5 = 5
+# gladiator: never rolled; a bot on the Gladiator path takes it, the core picks those bots
+Playerbots.RandomClassSpecProb.1.6 = 0
+Playerbots.RandomClassSpecIndex.1.6 = 6
 
 #
 #

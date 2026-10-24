@@ -22,6 +22,7 @@
 #include "GlobalScript.h"
 #include "GuildTaskMgr.h"
 #include "LivingArenaMgr.h"
+#include "MythicPlusBotMgr.h"
 #include "LivingBondMgr.h"
 #include "LivingWorldMgr.h"
 #include "PlayerScript.h"
@@ -569,6 +570,7 @@ public:
         PlayerbotWorldThreadProcessor::instance().Update(diff);
         sRandomPlayerbotMgr.UpdateAI(diff);  // World thread only
         LivingArenaMgr::instance().Update(diff);
+        MythicPlusBotMgr::instance().Update(diff);
     }
 
     // Runs before the sessions are kicked on server shutdown

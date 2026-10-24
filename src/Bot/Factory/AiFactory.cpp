@@ -14,6 +14,7 @@
 #include "Item.h"
 #include "LivingArenaMgr.h"
 #include "MageAiObjectContext.h"
+#include "MythicPlusBotMgr.h"
 #include "PaladinAiObjectContext.h"
 #include "PlayerbotAI.h"
 #include "PlayerbotAIConfig.h"
@@ -69,12 +70,15 @@ AiObjectContext* AiFactory::createAiObjectContext(Player* player, PlayerbotAI* b
 uint8 AiFactory::GetPlayerSpecTab(Player* bot)
 {
     std::map<uint8, uint32> tabs = GetPlayerSpecTabs(bot);
+    uint32 total = 0;
+    for (auto const& [page, points] : tabs)
+        total += points;
 
-    if (bot->GetLevel() >= 10 && ((tabs[0] + tabs[1] + tabs[2]) > 0))
+    if (bot->GetLevel() >= 10 && total > 0)
     {
         int8 tab = -1;
         uint32 max = 0;
-        for (uint32 i = 0; i < uint32(3); i++)
+        for (uint32 i = 0; i < uint32(MAX_TALENT_TABS); i++)
         {
             if (tab == -1 || max < tabs[i])
             {
@@ -110,7 +114,10 @@ uint8 AiFactory::GetPlayerSpecTab(Player* bot)
 
 std::map<uint8, uint32> AiFactory::GetPlayerSpecTabs(Player* bot)
 {
-    std::map<uint8, uint32> tabs = {{0, 0}, {0, 0}, {0, 0}};
+    std::map<uint8, uint32> tabs;
+    for (uint8 page = 0; page < MAX_TALENT_TABS; ++page)
+        tabs[page] = 0;
+    uint32 const* talentTabIds = GetTalentTabPages(bot->getClass());
     PlayerTalentMap const& talentMap = bot->GetTalentMap();
     for (PlayerTalentMap::const_iterator i = talentMap.begin(); i != talentMap.end(); ++i)
     {
@@ -126,16 +133,11 @@ std::map<uint8, uint32> AiFactory::GetPlayerSpecTabs(Player* bot)
         if (!talentInfo)
             continue;
 
-        uint32 const* talentTabIds = GetTalentTabPages(bot->getClass());
-
         SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
         int rank = spellInfo ? spellInfo->GetRank() : 1;
-        if (talentInfo->TalentTab == talentTabIds[0])
-            tabs[0] += rank;
-        if (talentInfo->TalentTab == talentTabIds[1])
-            tabs[1] += rank;
-        if (talentInfo->TalentTab == talentTabIds[2])
-            tabs[2] += rank;
+        for (uint8 page = 0; page < MAX_TALENT_TABS; ++page)
+            if (talentTabIds[page] && talentInfo->TalentTab == talentTabIds[page])
+                tabs[page] += rank;
     }
     return tabs;
 }
@@ -216,6 +218,8 @@ std::string AiFactory::GetPlayerSpecName(Player* player)
                 specName = "prot";
             else if (tab == WARRIOR_TAB_FURY)
                 specName = "fury";
+            else if (tab == WARRIOR_TAB_GLADIATOR)
+                specName = "gladiator";
             else
                 specName = "arms";
             break;
@@ -282,6 +286,11 @@ std::string AiFactory::GetPlayerSpecName(Player* player)
     return specName;
 }
 
+bool AiFactory::KeepsShieldOffhand(Player* player)
+{
+    return player->getClass() == CLASS_WARRIOR && GetPlayerSpecTab(player) == WARRIOR_TAB_GLADIATOR;
+}
+
 void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const facade, Engine* engine)
 {
     if (sPlayerbotAIConfig.LivingWorldEnabled && sRandomPlayerbotMgr.IsRandomBot(player))
@@ -327,6 +336,8 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
         case CLASS_WARRIOR:
             if (tab == WARRIOR_TAB_PROTECTION)
                 engine->addStrategiesNoInit("prot", "tank assist", "pull", "pull back", "aoe", nullptr);
+            else if (tab == WARRIOR_TAB_GLADIATOR)
+                engine->addStrategiesNoInit("gladiator", "aoe", "dps assist", nullptr);
             else if (tab == WARRIOR_TAB_ARMS || !player->HasSpell(SPELL_WHIRLWIND))
                 engine->addStrategiesNoInit("arms", "aoe", "dps assist", nullptr);
             else // if (tab == WARRIOR_TAB_FURY)
@@ -600,7 +611,9 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
     if (sPlayerbotAIConfig.AutoSaveMana && PlayerbotAI::IsHeal(player, true))
         nonCombatEngine->addStrategy("save mana", false);
 
-    if ((sRandomPlayerbotMgr.IsRandomBot(player)) && !player->InBattleground())
+    // A bot running a Mythic+ key keeps to the run: no grinding, questing, queues or duels
+    if ((sRandomPlayerbotMgr.IsRandomBot(player)) && !player->InBattleground() &&
+        !MythicPlusBotMgr::instance().InRun(player))
     {
         if (sPlayerbotAIConfig.LivingWorldEnabled)
         {

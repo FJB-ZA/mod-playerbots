@@ -11,6 +11,7 @@
 #include "Group.h"
 #include "LivingArenaMgr.h"
 #include "Map.h"
+#include "MythicPlusBotMgr.h"
 #include "ObjectAccessor.h"
 #include "Player.h"
 #include "PlayerbotAI.h"
@@ -33,6 +34,8 @@ namespace DungeonLead
 {
 bool Enabled() { return sPlayerbotAIConfig.DungeonLeadEnabled; }
 
+bool EnabledFor(Player* bot) { return Enabled() || MythicPlusBotMgr::instance().InRun(bot); }
+
 State& StateOf(PlayerbotAI* botAI)
 {
     return botAI->GetAiObjectContext()->GetValue<State&>("dungeon lead state")->Get();
@@ -40,7 +43,7 @@ State& StateOf(PlayerbotAI* botAI)
 
 Player* Leader(PlayerbotAI* botAI)
 {
-    if (!Enabled() || !botAI)
+    if (!botAI || !EnabledFor(botAI->GetBot()))
         return nullptr;
 
     ObjectGuid const guid = botAI->GetAiObjectContext()->GetValue<ObjectGuid>("dungeon leader")->Get();
@@ -117,15 +120,16 @@ void OnPartyChat(Player* sender, uint32 type, std::string const& msg, Group* gro
 
 ObjectGuid DungeonLeaderValue::Calculate()
 {
-    if (!DungeonLead::Enabled() || !botAI->IsInNonRaidDungeon())
+    Group* group = bot->GetGroup();
+    bool const botRun = MythicPlusBotMgr::instance().IsRunGroup(group);
+    if ((!DungeonLead::Enabled() && !botRun) || !botAI->IsInNonRaidDungeon())
         return ObjectGuid::Empty;
 
-    Group* group = bot->GetGroup();
     if (!group || group->isRaidGroup())
         return ObjectGuid::Empty;
 
-    // Only groups with a player in them; a player who tanks runs the dungeon themselves.
-    bool hasPlayer = false;
+    // Groups with a player in them, or bots running a key on their own; a player who tanks runs the dungeon themselves.
+    bool hasPlayer = botRun;
     for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
     {
         Player* member = ref->GetSource();
