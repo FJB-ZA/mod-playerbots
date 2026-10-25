@@ -20,6 +20,7 @@
 #include "PathGenerator.h"
 #include "Playerbots.h"
 #include "RaceMgr.h"
+#include "SpawnClusterPolicy.h"
 #include "Talentspec.h"
 #include "Trainer.h"
 #include "TransportMgr.h"
@@ -4812,9 +4813,9 @@ void TravelMgr::PrepareDestinationCache()
             (creatureTemplate->unit_flags & 4096) == 0 &&
             creatureTemplate->rank == 0)
         {
-            int32 roundX = static_cast<int32>(std::lround(x / 50.0f));
-            int32 roundY = static_cast<int32>(std::lround(y / 50.0f));
-            int32 roundZ = static_cast<int32>(std::lround(z / 50.0f));
+            int32 roundX = static_cast<int32>(std::lround(x / BotMove::SpawnCellSize));
+            int32 roundY = static_cast<int32>(std::lround(y / BotMove::SpawnCellSize));
+            int32 roundZ = static_cast<int32>(std::lround(z / BotMove::SpawnCellSize));
             tempLocsCache[std::make_tuple(mapId, roundX, roundY, roundZ)].push_back(creatureData);
             tempCreatureCache[templateEntry][areaId].push_back(WorldLocation(mapId, x, y, z));
         }
@@ -4949,9 +4950,12 @@ void TravelMgr::PrepareDestinationCache()
     {
         if (creatureDataList.size() >= 2)
         {
-            WorldLocation const clusterLoc(std::get<0>(gridTuple), static_cast<float>(std::get<1>(gridTuple)) * 50.0f,
-                                           static_cast<float>(std::get<2>(gridTuple)) * 50.0f,
-                                           static_cast<float>(std::get<3>(gridTuple)) * 50.0f);
+            std::vector<BotMove::Point> spawns;
+            spawns.reserve(creatureDataList.size());
+            for (CreatureData const& data : creatureDataList)
+                spawns.push_back({data.posX, data.posY, data.posZ});
+            BotMove::Point const anchor = BotMove::ClusterAnchor(spawns);
+            WorldLocation const clusterLoc(std::get<0>(gridTuple), anchor.x, anchor.y, anchor.z);
             std::set<uint32> clusterEntries;
             for (CreatureData const& data : creatureDataList)
                 if (clusterEntries.insert(data.id).second)
@@ -4965,10 +4969,7 @@ void TravelMgr::PrepareDestinationCache()
                 if (l < 1 || l > int32(maxLevel))
                     continue;
 
-                locsPerLevelCache[(uint8)l].push_back(WorldLocation(std::get<0>(gridTuple),
-                    static_cast<float>(std::get<1>(gridTuple)) * 50.0f,
-                    static_cast<float>(std::get<2>(gridTuple)) * 50.0f,
-                    static_cast<float>(std::get<3>(gridTuple)) * 50.0f));
+                locsPerLevelCache[(uint8)l].push_back(clusterLoc);
             }
         }
     }
