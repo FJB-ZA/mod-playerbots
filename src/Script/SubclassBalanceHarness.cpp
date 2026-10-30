@@ -152,11 +152,35 @@ void Prepare(Player* plain, Player* path)
             continue;
         Item* copy = worn->CloneItem(1, path);
         uint16 dest = 0;
-        if (copy && path->CanEquipItem(slot, dest, copy, false) == EQUIP_ERR_OK)
-            path->EquipItem(dest, copy, true);
-        else
+        if (!copy || path->CanEquipItem(slot, dest, copy, false) != EQUIP_ERR_OK)
+        {
             delete copy;
+            continue;
+        }
+        // CloneItem keeps the item and its random stats only: its enchants and gems come across here, before the
+        // item is worn and they take effect (at level 60 they were a tenth of the plain bot's damage)
+        for (uint8 enchant = PERM_ENCHANTMENT_SLOT; enchant < MAX_ENCHANTMENT_SLOT; ++enchant)
+        {
+            EnchantmentSlot const each = EnchantmentSlot(enchant);
+            if (uint32 const id = worn->GetEnchantmentId(each))
+                copy->SetEnchantment(each, id, worn->GetEnchantmentDuration(each), worn->GetEnchantmentCharges(each));
+        }
+        path->EquipItem(dest, copy, true);
     }
+    auto gear = [](Player* bot) {
+        uint32 items = 0, enchants = 0;
+        for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+            if (Item* item = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+            {
+                ++items;
+                for (uint8 enchant = PERM_ENCHANTMENT_SLOT; enchant < MAX_ENCHANTMENT_SLOT; ++enchant)
+                    enchants += item->GetEnchantmentId(EnchantmentSlot(enchant)) ? 1 : 0;
+            }
+        return Acore::StringFormat("{} items, {} enchants and gems, {} shadow spell power, {} attack power", items,
+                                   enchants, bot->SpellBaseDamageBonusDone(SPELL_SCHOOL_MASK_SHADOW),
+                                   uint32(bot->GetTotalAttackPowerValue(BASE_ATTACK)));
+    };
+    Say("plain " + gear(plain) + "; path " + gear(path));
     for (Player* bot : {plain, path})
     {
         PlayerbotAI* ai = GET_PLAYERBOT_AI(bot);
