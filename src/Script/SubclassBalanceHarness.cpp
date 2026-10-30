@@ -61,6 +61,7 @@ struct Bot
     ObjectGuid dummy;
     SubclassBalance::Fight fight;
     std::vector<SubclassBalance::Fight> fights;
+    std::string trace;  // this fight, every renewal: mana and health in tenths, "-" while out of combat
 };
 
 struct Run
@@ -256,6 +257,11 @@ void Attack(Player* bot, Creature* dummy)
                                     bot->GetMaxPower(bot->getPowerType()), uint32(ai->GetState())));
         }
     }
+    std::string& trace = run.sides[bot == BotOf(0) ? 0 : 1].trace;
+    trace += Acore::StringFormat("{}{}/{} ", bot->IsInCombat() ? "" : "-",
+                                 bot->GetMaxPower(bot->getPowerType()) ?
+                                     bot->GetPower(bot->getPowerType()) * 10 / bot->GetMaxPower(bot->getPowerType()) : 0,
+                                 bot->GetHealthPct() >= 100.0f ? 10 : uint32(bot->GetHealthPct() / 10));
     bot->SetSelection(dummy->GetGUID());
     ai->GetAiObjectContext()->GetValue<Unit*>("current target")->Set(dummy);
     ai->ChangeEngine(BOT_STATE_COMBAT);
@@ -276,11 +282,13 @@ void EndFight()
                                     bot->IsAlive() ? "alive" : "dead", bot->GetTarget().ToString(),
                                     dummy ? dummy->GetGUID().ToString() : "missing",
                                     dummy ? bot->GetDistance(dummy) : 0.0f, b.fight.damage));
+            Say(Acore::StringFormat("{} mana/health: {}", bot->GetName(), b.trace));
         }
         b.fight.ms = run.fightMs;
         if (run.warm)
             b.fights.push_back(b.fight);
         b.fight = {};
+        b.trace.clear();
         if (Player* bot = BotOf(side))
         {
             bot->AttackStop();
@@ -376,6 +384,14 @@ void Tick(uint32 diff)
                 return;
             if (run.phase == Phase::Rest && !Lineup(gm))
                 return;
+            // Each fight starts fresh: what a bot spent resting (buffs, a pet, a Life Tap to fill up) isn't carried in
+            for (int side = 0; side < 2; ++side)
+                if (Player* bot = BotOf(side))
+                {
+                    bot->RemoveAllSpellCooldown();
+                    bot->SetFullHealth();
+                    bot->SetPower(bot->getPowerType(), bot->GetMaxPower(bot->getPowerType()));
+                }
             run.phase = Phase::Fight;
             run.elapsed = run.sinceAttack = ReattackMs;
             return;
