@@ -6,8 +6,10 @@
 
 // The sub-class balance harness (solo-wow): two bots of a path's class, one plain and one on the path, at the same
 // level with the same talents and the same gear, each fight a training dummy of their level for a set time while
-// everything they and their pets deal is metered. The comparison and its verdict follow SubclassBalancePolicy.h; the
-// rows go to the GM's chat, the server log and <LogsDir>/balance-<path>.md, to be copied into the path's folder.
+// everything they and their pets deal is metered, after an uncounted warm-up fight. A run fights at least `fights`
+// times and on, up to SubclassBalance::MaxFights, while the difference is too close to call. The comparison and its
+// verdict follow SubclassBalancePolicy.h; the rows go to the GM's chat, the server log and
+// <LogsDir>/balance-<path>.md, to be copied into the path's folder.
 //
 //   .balance start <path id> <level> <plain spec no> <path spec no> [fights 3] [seconds 180]
 //   .balance status
@@ -45,6 +47,7 @@ constexpr uint32 DummyEntry = 31144;      // Grandmaster's Training Dummy: takes
 constexpr uint32 LoginTimeoutMs = 60000;
 constexpr uint32 PrepareMs = 20000;       // buffs, pets and the path's minions
 constexpr uint32 RestMs = 15000;
+constexpr uint32 WarmUpMs = 60000;        // a first fight that isn't counted: pets, buffs and shards settle in it
 constexpr uint32 ReattackMs = 3000;       // a dummy drops a player 5 seconds after their last direct hit
 constexpr float Apart = 40.0f;            // between the two bots' dummies
 
@@ -70,6 +73,7 @@ struct Run
     uint32 fightsWanted = 3;
     uint32 fightMs = 180000;
     uint32 elapsed = 0, sinceAttack = 0;
+    bool warm = false;  // the warm-up fight is over
     Bot sides[2];  // 0 the plain class, 1 the path
     std::vector<ObjectGuid> before;  // the GM's bots before the run, so the two it adds are known
 };
@@ -158,6 +162,8 @@ void Prepare(Player* plain, Player* path)
         PlayerbotAI* ai = GET_PLAYERBOT_AI(bot);
         ai->ResetStrategies();
         ai->ChangeStrategy("-follow,+stay", BOT_STATE_NON_COMBAT);
+        // (a bot assisting its group takes the target most of the group attacks: the other bot's dummy, pet and all)
+        ai->ChangeStrategy("-dps assist", BOT_STATE_COMBAT);
         bot->SetFullHealth();
         bot->SetPower(bot->getPowerType(), bot->GetMaxPower(bot->getPowerType()));
     }
@@ -245,7 +251,8 @@ void EndFight()
                                     dummy ? bot->GetDistance(dummy) : 0.0f, b.fight.damage));
         }
         b.fight.ms = run.fightMs;
-        b.fights.push_back(b.fight);
+        if (run.warm)
+            b.fights.push_back(b.fight);
         b.fight = {};
         if (Player* bot = BotOf(side))
         {
@@ -351,18 +358,37 @@ void Tick(uint32 diff)
                     if (Creature* dummy = ObjectAccessor::GetCreature(*gm, run.sides[side].dummy))
                         Attack(BotOf(side), dummy);
             }
-            if (run.elapsed < run.fightMs + ReattackMs)
+            if (run.elapsed < (run.warm ? run.fightMs : WarmUpMs) + ReattackMs)
                 return;
+            if (!run.warm)
+            {
+                Say(Acore::StringFormat("warm-up: plain {:.1f} DPS, path {:.1f} DPS (not counted)",
+                                        SubclassBalance::PerSecond(run.sides[0].fight.damage, WarmUpMs),
+                                        SubclassBalance::PerSecond(run.sides[1].fight.damage, WarmUpMs)));
+                EndFight();
+                run.warm = true;
+                run.phase = Phase::Rest;
+                run.elapsed = 0;
+                return;
+            }
             EndFight();
             uint32 const done = uint32(run.sides[0].fights.size());
-            Say(Acore::StringFormat("fight {} of {}: plain {:.1f} DPS, path {:.1f} DPS", done, run.fightsWanted,
+            Say(Acore::StringFormat("fight {} (of at least {}): plain {:.1f} DPS, path {:.1f} DPS", done, run.fightsWanted,
                                     SubclassBalance::PerSecond(run.sides[0].fights.back().damage, run.fightMs),
                                     SubclassBalance::PerSecond(run.sides[1].fights.back().damage, run.fightMs)));
             if (done >= run.fightsWanted)
             {
-                Report();
-                Stop("done");
-                return;
+                // Fights on while the difference is too close to the budget to call, up to the cap
+                SubclassBalance::Comparison const c = SubclassBalance::Compare(run.sides[0].fights, run.sides[1].fights);
+                if (SubclassBalance::FightOn(c, done, std::max(run.fightsWanted, SubclassBalance::MaxFights)))
+                    Say(Acore::StringFormat("{:+.1f}% ± {:.1f}% is too close to call; another fight", c.dpsDiffPct,
+                                            c.marginPct));
+                else
+                {
+                    Report();
+                    Stop("done");
+                    return;
+                }
             }
             run.phase = Phase::Rest;
             run.elapsed = 0;
