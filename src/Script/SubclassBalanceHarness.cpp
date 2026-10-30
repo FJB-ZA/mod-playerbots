@@ -18,12 +18,14 @@
 #include <algorithm>
 #include <cmath>
 #include <fstream>
+#include <unordered_set>
 
 #include "Chat.h"
 #include "Config.h"
 #include "DBCEnums.h"
 #include "GameTime.h"
 #include "Log.h"
+#include "Map.h"
 #include "ObjectAccessor.h"
 #include "PlayerbotAI.h"
 #include "PlayerbotAIConfig.h"
@@ -91,14 +93,14 @@ void Say(std::string const& text)
 
 void Stop(std::string const& why)
 {
+    // The bots are the shared addclass pool's: the path bot goes back to its plain class before it leaves, GM or not
+    if (Player* path = BotOf(1); path && SubclassPaths::ActivePathId(path) != SubclassPaths::PlainClass)
+        SubclassPaths::ChangeActivePath(path, SubclassPaths::PlainClass, true);
     if (Player* gm = Gm())
     {
         for (Bot const& side : run.sides)
             if (Creature* dummy = ObjectAccessor::GetCreature(*gm, side.dummy))
                 dummy->DespawnOrUnsummon();
-        // The bots are the shared addclass pool's: the path bot goes back to its plain class before it leaves
-        if (Player* path = BotOf(1); path && SubclassPaths::ActivePathId(path) != SubclassPaths::PlainClass)
-            SubclassPaths::ChangeActivePath(path, SubclassPaths::PlainClass, true);
         if (PlayerbotMgr* mgr = GET_PLAYERBOT_MGR(gm))
             for (Bot const& side : run.sides)
                 if (!side.guid.IsEmpty())
@@ -121,10 +123,16 @@ void Prepare(Player* plain, Player* path)
         PlayerbotFactory factory(bot, run.level);
         factory.Randomize(false);
     }
-    if (std::string const why = SubclassPaths::ChangeActivePath(path, run.pathId, true); !why.empty())
+    // (either may still follow a path from a run that ended without its GM)
+    for (auto [bot, wanted] : {std::pair{plain, SubclassPaths::PlainClass}, std::pair{path, run.pathId}})
     {
-        Stop("the path bot couldn't take the path: " + why);
-        return;
+        if (SubclassPaths::ActivePathId(bot) == wanted)
+            continue;
+        if (std::string const why = SubclassPaths::ChangeActivePath(bot, wanted, true); !why.empty())
+        {
+            Stop(Acore::StringFormat("{} couldn't take path {}: {}", bot->GetName(), wanted, why));
+            return;
+        }
     }
     for (auto [bot, spec] : {std::pair{plain, run.plainSpec}, std::pair{path, run.pathSpec}})
     {
@@ -155,8 +163,16 @@ void Prepare(Player* plain, Player* path)
     }
 }
 
-// Each bot to its own spot beside the GM, facing a fresh dummy of its level
-void Lineup(Player* gm)
+// The ground under (x, y), near the GM's height
+float GroundZ(Player* gm, float x, float y)
+{
+    float const z = gm->GetMap()->GetHeight(gm->GetPhaseMask(), x, y, gm->GetPositionZ() + 10.0f);
+    return z > INVALID_HEIGHT ? z : gm->GetPositionZ();
+}
+
+// Each bot to its own spot beside the GM, on the ground and facing a fresh dummy of its level. A bot drops a target
+// it can't see, so a spot with a slope or a tree between the bot and its dummy stops the run.
+bool Lineup(Player* gm)
 {
     for (int side = 0; side < 2; ++side)
     {
@@ -166,10 +182,18 @@ void Lineup(Player* gm)
         float const angle = gm->GetOrientation() + (side ? -1.0f : 1.0f) * float(M_PI) / 2;
         float const x = gm->GetPositionX() + std::cos(angle) * Apart / 2;
         float const y = gm->GetPositionY() + std::sin(angle) * Apart / 2;
-        float const z = gm->GetPositionZ();
-        bot->TeleportTo(gm->GetMapId(), x, y, z, gm->GetOrientation());
+        float const z = GroundZ(gm, x, y);
         float const dx = x + std::cos(gm->GetOrientation()) * 15.0f, dy = y + std::sin(gm->GetOrientation()) * 15.0f;
-        if (TempSummon* dummy = gm->SummonCreature(DummyEntry, dx, dy, z, gm->GetOrientation() + float(M_PI),
+        float const dz = GroundZ(gm, dx, dy);
+        if (!gm->GetMap()->isInLineOfSight(x, y, z + 2.0f, dx, dy, dz + 2.0f, gm->GetPhaseMask(),
+                                           LINEOFSIGHT_ALL_CHECKS, VMAP::ModelIgnoreFlags::Nothing))
+        {
+            Stop(Acore::StringFormat("{} can't see its dummy from its spot; stand on flat, open ground and start again",
+                                     bot->GetName()));
+            return false;
+        }
+        bot->TeleportTo(gm->GetMapId(), x, y, z, gm->GetOrientation());
+        if (TempSummon* dummy = gm->SummonCreature(DummyEntry, dx, dy, dz, gm->GetOrientation() + float(M_PI),
                                                    TEMPSUMMON_TIMED_DESPAWN, run.fightMs + RestMs + 60000))
         {
             dummy->SetLevel(run.level);
@@ -177,12 +201,28 @@ void Lineup(Player* gm)
             run.sides[side].dummy = dummy->GetGUID();
         }
     }
+    return true;
 }
 
 // As the bots' own attack action does it: the dummy their current target, the combat engine on
 void Attack(Player* bot, Creature* dummy)
 {
     PlayerbotAI* ai = GET_PLAYERBOT_AI(bot);
+    // A bot that dropped out of combat after the first renewal: once a fight, what might keep it from fighting
+    if (!bot->IsInCombat() && run.elapsed > 2 * ReattackMs && !run.sides[bot == BotOf(0) ? 0 : 1].fight.damage)
+    {
+        static std::unordered_set<uint64> told;
+        uint64 const key = bot->GetGUID().GetRawValue() ^ (uint64(run.sides[0].fights.size()) << 56);
+        if (told.insert(key).second)
+        {
+            Say(Acore::StringFormat("{} isn't fighting: valid target {}, in sight {}, invalid to its AI {}, height {:.1f} "
+                                    "against its dummy's {:.1f}, power {}/{}, state {}",
+                                    bot->GetName(), bot->IsValidAttackTarget(dummy), bot->IsWithinLOSInMap(dummy),
+                                    ai->GetAiObjectContext()->GetValue<bool>("invalid target", "current target")->Get(),
+                                    bot->GetPositionZ(), dummy->GetPositionZ(), bot->GetPower(bot->getPowerType()),
+                                    bot->GetMaxPower(bot->getPowerType()), uint32(ai->GetState())));
+        }
+    }
     bot->SetSelection(dummy->GetGUID());
     ai->GetAiObjectContext()->GetValue<Unit*>("current target")->Set(dummy);
     ai->ChangeEngine(BOT_STATE_COMBAT);
@@ -274,7 +314,8 @@ void Tick(uint32 diff)
                     return;
                 Say(Acore::StringFormat("{} (plain) and {} ({}) ready at level {}", BotOf(0)->GetName(),
                                         BotOf(1)->GetName(), run.pathName, run.level));
-                Lineup(gm);
+                if (!Lineup(gm))
+                    return;
                 run.phase = Phase::Prepare;
                 run.elapsed = 0;
             }
@@ -290,8 +331,8 @@ void Tick(uint32 diff)
         case Phase::Rest:
             if (run.elapsed < (run.phase == Phase::Prepare ? PrepareMs : RestMs))
                 return;
-            if (run.phase == Phase::Rest)
-                Lineup(gm);
+            if (run.phase == Phase::Rest && !Lineup(gm))
+                return;
             run.phase = Phase::Fight;
             run.elapsed = run.sinceAttack = ReattackMs;
             return;
