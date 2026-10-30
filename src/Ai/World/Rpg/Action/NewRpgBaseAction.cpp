@@ -129,6 +129,17 @@ bool NewRpgBaseAction::MoveFarTo(WorldPosition dest)
             bot->GetName(), bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), bot->GetMapId(),
             dest.GetPositionX(), dest.GetPositionY(), dest.GetPositionZ(), dest.GetMapId(), bot->GetZoneId(),
             zone_name);
+        // Land on the ground or water under dest, never above it: bots have no client to catch a fall
+        if (dest.GetMapId() == bot->GetMapId())
+        {
+            float const x = dest.GetPositionX();
+            float const y = dest.GetPositionY();
+            float const z = dest.GetPositionZ();
+            float const landing = bot->GetMap()->GetWaterOrGroundLevel(bot->GetPhaseMask(), x, y, z, nullptr, true,
+                                                                       bot->GetCollisionHeight());
+            if (landing > INVALID_HEIGHT)
+                dest.setZ(landing + 0.05f);
+        }
         bot->RemoveAurasWithInterruptFlags(AURA_INTERRUPT_FLAG_TELEPORTED | AURA_INTERRUPT_FLAG_CHANGE_MAP);
         return bot->TeleportTo(dest);
     }
