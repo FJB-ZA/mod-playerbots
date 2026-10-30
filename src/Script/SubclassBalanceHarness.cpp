@@ -11,15 +11,17 @@
 // verdict follow SubclassBalancePolicy.h; the rows go to the GM's chat, the server log and
 // <LogsDir>/balance-<path>.md, to be copied into the path's folder.
 //
-//   .balance start <path id> <level> <plain spec no> <path spec no> [fights 3] [seconds 180]
+//   .balance start <path id> <level> <plain spec no> <path spec no> [fights 3] [seconds 180] [swap 0]
 //   .balance status
 //   .balance stop
 //
-// Spec numbers are the class's premade specs in playerbots.conf (Playerbots.PremadeSpecName.<class>.<no>).
+// Spec numbers are the class's premade specs in playerbots.conf (Playerbots.PremadeSpecName.<class>.<no>). With
+// swap 1 the bot that would have been plain takes the path, to check a result against the two bots' races.
 
 #include <algorithm>
 #include <cmath>
 #include <fstream>
+#include <iterator>
 #include <unordered_set>
 
 #include "Chat.h"
@@ -72,6 +74,7 @@ struct Run
     int plainSpec = 0, pathSpec = 0;
     uint32 fightsWanted = 3;
     uint32 fightMs = 180000;
+    bool swap = false;  // the first bot found takes the path, so the two can trade sides between runs
     uint32 elapsed = 0, sinceAttack = 0;
     bool warm = false;  // the warm-up fight is over
     Bot sides[2];  // 0 the plain class, 1 the path
@@ -298,7 +301,9 @@ void Report()
 {
     using namespace SubclassBalance;
     Row const row{Acore::Time::TimeToTimestampStr(GameTime::GetGameTime()).substr(0, 10), run.level,
-                  SpecName(run.classId, run.plainSpec) + " / " + SpecName(run.classId, run.pathSpec), Scenario::Dummy};
+                  SpecName(run.classId, run.plainSpec) + " / " + SpecName(run.classId, run.pathSpec) +
+                      (run.swap ? " (sides swapped)" : ""),
+                  Scenario::Dummy};
     Comparison const c = Compare(run.sides[0].fights, run.sides[1].fights);
     std::string const line = TableRow(row, c);
     Say(run.pathName + ": " + line);
@@ -336,15 +341,22 @@ void Tick(uint32 diff)
                     continue;
                 if (!GET_PLAYERBOT_AI(bot) || !bot->IsInWorld())
                     continue;
-                run.sides[found++].guid = bot->GetGUID();
+                run.sides[run.swap ? 1 - found : found].guid = bot->GetGUID();
+                ++found;
             }
             if (found == 2)
             {
                 Prepare(BotOf(0), BotOf(1));
                 if (run.phase == Phase::Idle)
                     return;
-                Say(Acore::StringFormat("{} (plain) and {} ({}) ready at level {}", BotOf(0)->GetName(),
-                                        BotOf(1)->GetName(), run.pathName, run.level));
+                auto race = [](Player* bot) {
+                    static char const* const races[] = {"", "human", "orc", "dwarf", "night elf", "undead",
+                                                        "tauren", "gnome", "troll", "", "blood elf", "draenei"};
+                    return bot->getRace() < std::size(races) ? races[bot->getRace()] : "";
+                };
+                Say(Acore::StringFormat("{} ({}, plain) and {} ({}, {}) ready at level {}", BotOf(0)->GetName(),
+                                        race(BotOf(0)), BotOf(1)->GetName(), race(BotOf(1)), run.pathName,
+                                        run.level));
                 if (!Lineup(gm))
                     return;
                 run.phase = Phase::Prepare;
@@ -481,7 +493,7 @@ public:
     }
 
     static bool HandleStart(ChatHandler* handler, uint16 pathId, uint8 level, uint8 plainSpec, uint8 pathSpec,
-                            Optional<uint32> fights, Optional<uint32> seconds)
+                            Optional<uint32> fights, Optional<uint32> seconds, Optional<uint32> swap)
     {
         if (run.phase != Phase::Idle)
         {
@@ -527,6 +539,7 @@ public:
         run.pathSpec = pathSpec;
         run.fightsWanted = std::max<uint32>(fights.value_or(SubclassBalance::MinFights), 1);
         run.fightMs = std::clamp<uint32>(seconds.value_or(180), 30, 900) * IN_MILLISECONDS;
+        run.swap = swap.value_or(0) != 0;
         for (auto itr = mgr->GetPlayerBotsBegin(); itr != mgr->GetPlayerBotsEnd(); ++itr)
             run.before.push_back(itr->first);
         static char const* const names[MAX_CLASSES] = {"", "warrior", "paladin", "hunter", "rogue", "priest",
