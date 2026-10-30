@@ -12,6 +12,7 @@
 #include "Playerbots.h"
 #include "SubclassBotMgr.h"
 #include "TargetValue.h"
+#include "WarlockActions.h"
 
 static const uint32 SOUL_SHARD_ITEM_ID = 6265;
 
@@ -91,10 +92,10 @@ bool DecimationTrigger::IsActive()
     return aura && aura->GetDuration() > 3000;
 }
 
-// Checks if the bot's mana is below 85% and health is above a low health threshold
+// Checks if the bot's mana is below 85% and it has the health to spare (LifeTapHealthAllows)
 bool LifeTapTrigger::IsActive()
 {
-    if (AI_VALUE2(uint8, "health", "self target") <= sPlayerbotAIConfig.LowHealth)
+    if (!LifeTapHealthAllows(botAI, bot))
         return false;
 
     if (!AI_VALUE2(bool, "has mana", "self target"))
