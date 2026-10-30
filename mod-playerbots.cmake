@@ -8,3 +8,9 @@
 target_link_libraries(modules
   PRIVATE
     mysql)
+
+# The sub-class balance harness (src/Script/SubclassBalanceHarness.cpp) uses the core's path engine and its
+# balance policy, which live with the custom scripts.
+target_include_directories(modules
+  PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/server/scripts/Custom)

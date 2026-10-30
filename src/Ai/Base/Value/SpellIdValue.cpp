@@ -7,6 +7,7 @@
 #include "SpellIdValue.h"
 #include "ChatHelper.h"
 #include "Playerbots.h"
+#include "SubclassBotMgr.h"
 #include "Vehicle.h"
 
 SpellIdValue::SpellIdValue(PlayerbotAI* botAI) : CalculatedValue<uint32>(botAI, "spell id", 20 * IN_MILLISECONDS) {}
@@ -29,6 +30,12 @@ uint32 SpellIdValue::Calculate()
         return 0;
 
     wstrToLower(wnamepart);
+    if (SubclassBotMgr::Alias const* alias = SubclassBotMgr::instance().FindAlias(bot, wnamepart))
+    {
+        namepart = alias->name;
+        wnamepart = alias->lowerName;
+    }
+
     char firstSymbol = tolower(namepart[0]);
     size_t spellLength = wnamepart.length();
 
@@ -39,7 +46,8 @@ uint32 SpellIdValue::Calculate()
     {
         uint32 spellId = itr->first;
 
-        if (itr->second->State == PLAYERSPELL_REMOVED || !itr->second->Active)
+        if (itr->second->State == PLAYERSPELL_REMOVED || !itr->second->Active ||
+            !itr->second->IsInSpec(bot->GetActiveSpec()))
             continue;
 
         SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
