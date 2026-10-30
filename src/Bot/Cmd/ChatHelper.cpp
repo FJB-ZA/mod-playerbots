@@ -171,6 +171,7 @@ ChatHelper::ChatHelper(PlayerbotAI* botAI) : PlayerbotAIAware(botAI)
     specs[CLASS_WARRIOR][0] = "arms";
     specs[CLASS_WARRIOR][1] = "fury";
     specs[CLASS_WARRIOR][2] = "protection";
+    specs[CLASS_WARRIOR][3] = "gladiator";
 
     classes[CLASS_DEATH_KNIGHT] = "dk";
     specs[CLASS_DEATH_KNIGHT][0] = "blood";
@@ -653,6 +654,9 @@ std::string const ChatHelper::FormatClass(Player* player, int8 spec)
     out << (c0 ? "|h|cff00ff00" : "") << c0 << "|h|cffffffff/";
     out << (c1 ? "|h|cff00ff00" : "") << c1 << "|h|cffffffff/";
     out << (c2 ? "|h|cff00ff00" : "") << c2 << "|h|cffffffff";
+    // A sub-class path's tree shows only once it holds points.
+    if (uint32 const c3 = tabs[3])
+        out << "/|h|cff00ff00" << c3 << "|h|cffffffff";
 
     out << ")|r " << classes[cls];
     return out.str();

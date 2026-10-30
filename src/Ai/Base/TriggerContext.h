@@ -45,6 +45,7 @@ public:
         creators["timer bg"] = &TriggerContext::TimerBG;
         creators["random"] = &TriggerContext::Random;
         creators["seldom"] = &TriggerContext::seldom;
+        creators["no talents spent"] = &TriggerContext::no_talents_spent;
         creators["living arena"] = &TriggerContext::living_arena;
         creators["dungeon lead"] = &TriggerContext::dungeon_lead;
         creators["lead healer"] = &TriggerContext::lead_healer;
@@ -350,6 +351,7 @@ private:
     static Trigger* enemy_player_near(PlayerbotAI* botAI) { return new EnemyPlayerNear(botAI); }
     static Trigger* Random(PlayerbotAI* botAI) { return new RandomTrigger(botAI, "random", 20); }
     static Trigger* seldom(PlayerbotAI* botAI) { return new RandomTrigger(botAI, "seldom", 300); }
+    static Trigger* no_talents_spent(PlayerbotAI* botAI) { return new NoTalentsSpentTrigger(botAI); }
     static Trigger* living_arena(PlayerbotAI* botAI) { return new LivingArenaTrigger(botAI); }
     static Trigger* dungeon_lead(PlayerbotAI* botAI) { return new DungeonLeadTrigger(botAI); }
     static Trigger* lead_healer(PlayerbotAI* botAI) { return new LeadHealerTrigger(botAI); }

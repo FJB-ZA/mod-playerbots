@@ -29,6 +29,7 @@
 #include "Log.h"
 #include "LootMgr.h"
 #include "ObjectMgr.h"
+#include "PathTalentPolicy.h"
 #include "PerfMonitor.h"
 #include "PetDefines.h"
 #include "Player.h"
@@ -43,6 +44,7 @@
 #include "RandomItemMgr.h"
 #include "RandomPlayerbotFactory.h"
 #include "ReputationMgr.h"
+#include "ScriptMgr.h"
 #include "SharedDefines.h"
 #include "SpellMgr.h"
 #include "StatsWeightCalculator.h"
@@ -1722,11 +1724,17 @@ uint32 PlayerbotFactory::InitTalentsTree(bool increment /*false*/, bool use_temp
     uint32 specTab;
     uint8 cls = bot->getClass();
     std::map<uint8, uint32> tabs = AiFactory::GetPlayerSpecTabs(bot);
-    uint32 total_tabs = tabs[0] + tabs[1] + tabs[2];
-    if (increment && total_tabs != 0)
+    uint32 total_tabs = 0;
+    for (auto const& [page, points] : tabs)
+        total_tabs += points;
+    bool const pathTreeOpen = PathTreeOpen();
+    int const keptSpec = PathTalents::KeptSpec(
+        pathTreeOpen, PathTalents::PathSpec(sPlayerbotAIConfig.RandomClassSpecUsesPathTree[cls], MAX_SPECNO),
+        increment && total_tabs != 0, AiFactory::GetPlayerSpecTab(bot));
+    if (keptSpec >= 0)
     {
         /// @todo: match current talent with template
-        specTab = AiFactory::GetPlayerSpecTab(bot);
+        specTab = keptSpec;
         /// @todo: fix cat druid hardcode
         if (bot->getClass() == CLASS_DRUID && specTab == DRUID_TAB_FERAL && bot->GetLevel() >= 20)
         {
@@ -1746,28 +1754,19 @@ uint32 PlayerbotFactory::InitTalentsTree(bool increment /*false*/, bool use_temp
     }
     else
     {
-        uint32 pointSum = 0;
-        for (int i = 0; i < MAX_SPECNO; i++)
-        {
-            pointSum += sPlayerbotAIConfig.RandomClassSpecProb[cls][i];
-        }
-        uint32 point = urand(1, pointSum);
-        uint32 currentP = 0;
-        int i;
-        for (i = 0; i < MAX_SPECNO; i++)
-        {
-            currentP += sPlayerbotAIConfig.RandomClassSpecProb[cls][i];
-            if (point <= currentP)
-            {
-                specTab = i;
-                break;
-            }
-        }
-        if (i == MAX_SPECNO)
+        uint32 const* weights = sPlayerbotAIConfig.RandomClassSpecProb[cls];
+        bool const* usesPathTree = sPlayerbotAIConfig.RandomClassSpecUsesPathTree[cls];
+        uint32 const pointSum = PathTalents::TotalWeight(weights, usesPathTree, MAX_SPECNO, pathTreeOpen);
+        int const rolled = pointSum ? PathTalents::SpecForRoll(weights, usesPathTree, MAX_SPECNO, pathTreeOpen,
+                                                               urand(1, pointSum))
+                                    : -1;
+        if (rolled < 0)
         {
             specTab = 0;
             LOG_ERROR("playerbots", "Fail to select spec num for bot {}! Set to 0.", bot->GetName());
         }
+        else
+            specTab = rolled;
     }
     if (reset)
     {
@@ -1780,10 +1779,10 @@ uint32 PlayerbotFactory::InitTalentsTree(bool increment /*false*/, bool use_temp
     }
     // if LimitTalentsExpansion = 1 there may be unused talent points
     if (bot->GetFreeTalentPoints())
-        InitTalents((specTab + 1) % 3);
+        InitTalents(PathTalents::LeftoverPage(specTab, 1));
 
     if (bot->GetFreeTalentPoints())
-        InitTalents((specTab + 2) % 3);
+        InitTalents(PathTalents::LeftoverPage(specTab, 2));
 
     if (bot->getClass() == CLASS_SHAMAN && bot->HasSpell(SPELL_SHAMAN_DUAL_WIELD))
     {
@@ -2405,6 +2404,7 @@ void PlayerbotFactory::InitEquipment(bool incremental, bool second_chance)
     StatsWeightCalculator calculator(bot);
     if (isPvp)
         calculator.SetPvpSpec(true);
+    bool const shieldOffhand = AiFactory::KeepsShieldOffhand(bot);
 
     // Pre-select CC-break trinket for PvP specs: best available by item level
     // that the bot meets the level requirement for.
@@ -2540,6 +2540,10 @@ void PlayerbotFactory::InitEquipment(bool incremental, bool second_chance)
 
                         if (slot == EQUIPMENT_SLOT_OFFHAND && bot->getClass() == CLASS_ROGUE &&
                             proto->Class != ITEM_CLASS_WEAPON)
+                            continue;
+
+                        if (slot == EQUIPMENT_SLOT_OFFHAND && shieldOffhand &&
+                            (proto->Class != ITEM_CLASS_ARMOR || proto->SubClass != ITEM_SUBCLASS_ARMOR_SHIELD))
                             continue;
 
                         int32 bestRandomProp = 0;
@@ -3747,6 +3751,13 @@ void PlayerbotFactory::InitTalents(uint32 specNo)
     }
 }
 
+// The core's talent hook says whether the bot's active slot may spend points in its class's path tree.
+bool PlayerbotFactory::PathTreeOpen() const
+{
+    TalentEntry const* talent = sPlayerbotAIConfig.PathTreeTalent[bot->getClass()];
+    return talent && sScriptMgr->OnPlayerCanLearnTalent(bot, talent, 0);
+}
+
 void PlayerbotFactory::InitTalentsByTemplate(uint32 specTab)
 {
     // if (sPlayerbotAIConfig.ParsedSpecLinkOrder[bot->getClass()][specNo][80].size() == 0)
@@ -4570,8 +4581,11 @@ void PlayerbotFactory::InitGlyphs(bool increment)
     // Warrior PVP exceptions
     if (bot->getClass() == CLASS_WARRIOR)
     {
+        // Gladiator (spec index 6): the sub-class path's own tree
+        if (tab == WARRIOR_TAB_GLADIATOR)
+            tab = 6;
         // Arms PvP (spec index 3): If the bot has the Second Wind talent
-        if (bot->HasAura(SPELL_SECOND_WIND))
+        else if (bot->HasAura(SPELL_SECOND_WIND))
             tab = 3;
         // Fury PvP (spec index 4): If the bot has the Blood Craze talent
         else if (bot->HasAura(SPELL_BLOOD_CRAZE))
