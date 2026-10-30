@@ -1918,9 +1918,10 @@ Playerbots.PremadeSpecLink.1.5.60 = --250031220223012520332113321
 Playerbots.PremadeSpecLink.1.5.80 = 0502300123-3-250031220223012521332113321
 # The Gladiator sub-class path's tree is a fourth page; a bot takes this spec only while its slot follows the path.
 Playerbots.PremadeSpecName.1.6 = gladiator
-Playerbots.PremadeSpecGlyph.1.6 = 43418,43395,43414,43396,49084,43425
-Playerbots.PremadeSpecLink.1.6.60 = ---5350202012203110321021012202103121
-Playerbots.PremadeSpecLink.1.6.80 = --250301225-5350202012203110321021012202103121
+# Glyphs: Unending Rage, Shield Rush, Shield Charge, Rallying Cry, Mass Reflection, Dragon Roar (solo-wow gladiator-gear.json).
+Playerbots.PremadeSpecGlyph.1.6 = 990181,990187,990180,990188,990189,990182
+Playerbots.PremadeSpecLink.1.6.60 = ---53502201220101110321011203210301221
+Playerbots.PremadeSpecLink.1.6.80 = --250301225-53502201220101110321011203210301221
 
 #
 #
