@@ -96,6 +96,9 @@ void Stop(std::string const& why)
         for (Bot const& side : run.sides)
             if (Creature* dummy = ObjectAccessor::GetCreature(*gm, side.dummy))
                 dummy->DespawnOrUnsummon();
+        // The bots are the shared addclass pool's: the path bot goes back to its plain class before it leaves
+        if (Player* path = BotOf(1); path && SubclassPaths::ActivePathId(path) != SubclassPaths::PlainClass)
+            SubclassPaths::ChangeActivePath(path, SubclassPaths::PlainClass, true);
         if (PlayerbotMgr* mgr = GET_PLAYERBOT_MGR(gm))
             for (Bot const& side : run.sides)
                 if (!side.guid.IsEmpty())
@@ -192,6 +195,15 @@ void EndFight()
     for (int side = 0; side < 2; ++side)
     {
         Bot& b = run.sides[side];
+        if (Player* bot = BotOf(side))
+        {
+            Creature* dummy = Gm() ? ObjectAccessor::GetCreature(*Gm(), b.dummy) : nullptr;
+            Say(Acore::StringFormat("{}: level {}, {}, {} health, targeting {}, dummy {} at {:.0f} yards, {} damage",
+                                    bot->GetName(), bot->GetLevel(), bot->IsInCombat() ? "in combat" : "out of combat",
+                                    bot->IsAlive() ? "alive" : "dead", bot->GetTarget().ToString(),
+                                    dummy ? dummy->GetGUID().ToString() : "missing",
+                                    dummy ? bot->GetDistance(dummy) : 0.0f, b.fight.damage));
+        }
         b.fight.ms = run.fightMs;
         b.fights.push_back(b.fight);
         b.fight = {};
@@ -428,9 +440,13 @@ public:
             run.before.push_back(itr->first);
         static char const* const names[MAX_CLASSES] = {"", "warrior", "paladin", "hunter", "rogue", "priest",
                                                        "dk", "shaman", "mage", "warlock", "", "druid"};
-        std::string const add = Acore::StringFormat("addclass {}", names[cls]);
+        // The command is split in place (strtok): each call gets its own copy
         for (int i = 0; i < 2; ++i)
-            mgr->HandlePlayerbotCommand(add.c_str(), gm);
+        {
+            std::string add = Acore::StringFormat("addclass {}", names[cls]);
+            for (std::string const& reply : mgr->HandlePlayerbotCommand(add.data(), gm))
+                LOG_INFO("playerbots", "Balance: {}", reply);
+        }
         run.phase = Phase::Login;
         handler->PSendSysMessage("Balance: {} at level {}, {} fights of {} seconds; logging in two bots.", path->name,
                                  level, run.fightsWanted, run.fightMs / IN_MILLISECONDS);
