@@ -19,11 +19,11 @@ namespace MythicPlusBots
 // The core's MythicItemPolicy.h rank ids and its keystone item
 inline constexpr uint32_t FirstRankId = 900000;
 inline constexpr uint32_t RankIdEnd = 990000;
-inline constexpr uint32_t KeystoneItem = 990300;
+inline constexpr uint32_t KeystoneItem = 990900;
 // The core's Explosive Orb creature, which bots kill before it bursts
 inline constexpr uint32_t ExplosiveOrbEntry = 990921;
 // The core's Quake spell: it ticks an interrupt, so casters stop casting until it ends
-inline constexpr uint32_t QuakeSpell = 990310;
+inline constexpr uint32_t QuakeSpell = 990910;
 
 // Mythic+ items come only from the end-of-run cache and the vault: random gearing skips them and keeps earned ones
 constexpr bool IsMythicPlusItem(uint32_t itemId)
