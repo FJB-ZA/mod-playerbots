@@ -2,11 +2,18 @@
 
 #include "BattleGroundTactics.h"
 
+#include <span>
+
 #include "BattlegroundWS.h"
+#include "GameObject.h"
+#include "IVMapMgr.h"
+#include "LastMovementValue.h"
 #include "LivingBattlegroundPolicy.h"
 #include "Playerbots.h"
 #include "PositionValue.h"
+#include "PvpValues.h"
 #include "ServerFacade.h"
+#include "TargetedMovementGenerator.h"
 
 // common bg positions
 Position const WS_WAITING_POS_HORDE_1 = {944.981f, 1423.478f, 345.434f, 6.18f};
@@ -24,8 +31,6 @@ Position const WS_FLAG_HIDE_ALLIANCE_1 = {1529.249f, 1456.470f, 353.04f, 1.25f};
 Position const WS_FLAG_HIDE_ALLIANCE_2 = {1540.286f, 1476.026f, 352.692f, 2.91f};
 Position const WS_FLAG_HIDE_ALLIANCE_3 = {1495.807f, 1466.774f, 352.350f, 1.50f};
 Position const WS_ROAM_POS = {1227.446f, 1476.235f, 307.484f, 1.50f};
-Position const WS_GY_CAMPING_HORDE = {1039.819, 1388.759f, 340.703f, 0.0f};
-Position const WS_GY_CAMPING_ALLIANCE = {1422.320f, 1551.978f, 342.834f, 0.0f};
 std::vector<Position> const WS_FLAG_HIDE_HORDE = {WS_FLAG_HIDE_HORDE_1, WS_FLAG_HIDE_HORDE_2, WS_FLAG_HIDE_HORDE_3};
 std::vector<Position> const WS_FLAG_HIDE_ALLIANCE = {WS_FLAG_HIDE_ALLIANCE_1, WS_FLAG_HIDE_ALLIANCE_2,
                                                      WS_FLAG_HIDE_ALLIANCE_3};
@@ -196,6 +201,21 @@ BattleBotPath vPath_WSG_HordeGraveyardLower_to_AllianceFlagRoom = {
     {1531.44f, 1481.79f, 351.959f, nullptr},
 };
 
+// Horde Graveyard (lower) to Horde Tunnel
+BattleBotPath vPath_WSG_HordeGraveyardLower_to_HordeTunnel = {
+    {1164.96f, 1356.91f, 313.884f, nullptr}, {1155.38f, 1378.91f, 311.360f, nullptr},
+    {1148.72f, 1397.70f, 311.160f, nullptr}, {1144.07f, 1417.15f, 311.140f, nullptr},
+    {1139.53f, 1432.42f, 311.060f, nullptr}, {1132.54f, 1446.81f, 313.040f, nullptr},
+    {1124.37f, 1462.28f, 315.853f, nullptr},
+};
+
+// Alliance Graveyard (lower) to Alliance Tunnel
+BattleBotPath vPath_WSG_AllianceGraveyardLower_to_AllianceTunnel = {
+    {1316.07f, 1533.53f, 315.700f, nullptr}, {1322.52f, 1518.89f, 315.800f, nullptr},
+    {1328.98f, 1504.25f, 316.630f, nullptr}, {1335.43f, 1489.61f, 322.550f, nullptr},
+    {1341.89f, 1474.97f, 324.010f, nullptr}, {1348.02f, 1461.06f, 323.167f, nullptr},
+};
+
 // Alliance Graveyard Jump
 BattleBotPath vPath_WSG_AllianceGraveyardJump = {
     {1420.08f, 1552.84f, 342.878f, nullptr},
@@ -223,79 +243,127 @@ std::vector<BattleBotPath*> const vPaths_WS = {
     &vPath_WSG_AllianceTunnel_to_HordeTunnel,
     &vPath_WSG_AllianceGraveyardLower_to_HordeFlagRoom,
     &vPath_WSG_HordeGraveyardLower_to_AllianceFlagRoom,
+    &vPath_WSG_HordeGraveyardLower_to_HordeTunnel,
+    &vPath_WSG_AllianceGraveyardLower_to_AllianceTunnel,
     &vPath_WSG_AllianceGraveyardJump,
     &vPath_WSG_HordeGraveyardJump
 };
 
 std::vector<BattleBotPath*> const vPaths_OneWay_WS = {&vPath_WSG_AllianceGraveyardJump, &vPath_WSG_HordeGraveyardJump};
 
-bool BGTactics::wsJumpDown()
+uint8 BGTactics::GetWsgDefenderCount(Battleground* bg, TeamId teamId)
+{
+    if (!bg)
+        return WSG_DEFENDER_ROLES_BALANCED;
+
+    WSBotStrategy teamStrategy = static_cast<WSBotStrategy>(GetBotStrategyForTeam(bg, teamId));
+    WSBotStrategy enemyStrategy = static_cast<WSBotStrategy>(GetBotStrategyForTeam(bg, bg->GetOtherTeamId(teamId)));
+
+    uint8 defendersCount = WSG_DEFENDER_ROLES_BALANCED;
+    switch (teamStrategy)
+    {
+        case WS_STRATEGY_BALANCED:
+            defendersCount = WSG_DEFENDER_ROLES_BALANCED;
+            break;
+        case WS_STRATEGY_OFFENSIVE:
+            defendersCount = WSG_DEFENDER_ROLES_OFFENSIVE;
+            break;
+        case WS_STRATEGY_DEFENSIVE:
+            defendersCount = WSG_DEFENDER_ROLES_DEFENSIVE;
+            break;
+        default:
+            defendersCount = WSG_DEFENDER_ROLES_BALANCED;
+            break;
+    }
+
+    if (enemyStrategy == WS_STRATEGY_DEFENSIVE)
+        defendersCount = WSG_DEFENDER_ROLES_VS_DEFENSIVE;
+
+    return defendersCount;
+}
+
+BGTactics::WsgJumpResult BGTactics::WsJumpDown()
 {
     Battleground* bg = bot->GetBattleground();
-    if (!bg)
-        return false;
+    if (!bg || bg->GetBgTypeID(true) != BATTLEGROUND_WS)
+        return WsgJumpResult::NotApplicable;
+
+    PositionInfo goal = context->GetValue<PositionMap&>("position")->Get()["bg objective"];
+    if (!goal.isSet() || goal.mapId != bot->GetMapId())
+        return WsgJumpResult::NotApplicable;
 
     TeamId team = bot->GetTeamId();
-    uint32 mapId = bg->GetMapId();
+    Position const& ownBase = team == TEAM_HORDE ? WS_FLAG_POS_HORDE : WS_FLAG_POS_ALLIANCE;
+    Position const& enemyBase = team == TEAM_HORDE ? WS_FLAG_POS_ALLIANCE : WS_FLAG_POS_HORDE;
+    BattleBotPath const& jumpPath = team == TEAM_HORDE ? vPath_WSG_HordeGraveyardJump : vPath_WSG_AllianceGraveyardJump;
+    constexpr float descentHeight = 10.0f;
+    bool towardEnemyBase = enemyBase.GetExactDist2dSq(goal.x, goal.y) < ownBase.GetExactDist2dSq(goal.x, goal.y);
+    bool belowLedge = goal.z + descentHeight < jumpPath.at(1).z;
+    // A resurrection departure owns its exit; live home-plateau approaches do not.
+    if (!_wsgGraveyardDeparture && !_wsgJumpNextPoint && !towardEnemyBase && !belowLedge)
+        return WsgJumpResult::NotApplicable;
 
-    if (team == TEAM_HORDE)
+    Position const hordeJumpPositions[] = {
+        {1038.220f, 1420.197f, 340.099f}, {1029.242f, 1387.024f, 340.866f}, {1045.764f, 1389.831f, 340.825f},
+        {1057.076f, 1393.081f, 339.505f}, {1075.233f, 1398.645f, 323.669f}, {1096.590f, 1395.070f, 317.016f},
+        {1134.380f, 1370.130f, 312.741f},
+    };
+    Position const allianceJumpPositions[] = {
+        {1415.548f, 1554.538f, 343.164f}, {1407.234f, 1551.658f, 343.432f}, {1385.325f, 1544.592f, 322.047f},
+        {1370.710f, 1543.550f, 321.585f}, {1339.410f, 1533.420f, 313.336f},
+    };
+    std::span<Position const> positions = team == TEAM_HORDE ? std::span<Position const>(hordeJumpPositions)
+                                                             : std::span<Position const>(allianceJumpPositions);
+    constexpr uint32 hordeJumpPoint = 4;
+    constexpr uint32 allianceJumpPoint = 2;
+    uint32 jumpPoint = team == TEAM_HORDE ? hordeJumpPoint : allianceJumpPoint;
+    constexpr float departureRadius = 4.0f;
+    constexpr float graveyardRadius = 12.0f;
+    if (!_wsgJumpNextPoint)
     {
-        if (bot->GetDistance({1038.220f, 1420.197f, 340.099f}) < 4.0f)
+        float closestDistance = _wsgGraveyardDeparture ? graveyardRadius : departureRadius;
+        for (uint32 i = 0; i + 1 < positions.size(); ++i)
         {
-            MoveTo(mapId, 1029.242f, 1387.024f, 340.866f);
-            return true;
+            float distance = bot->GetDistance(positions[i]);
+            if (distance < closestDistance)
+            {
+                closestDistance = distance;
+                _wsgJumpNextPoint = i + 1;
+            }
         }
-        if (bot->GetDistance({1029.242f, 1387.024f, 340.866f}) < 4.0f)
-        {
-            MoveTo(mapId, 1045.764f, 1389.831f, 340.825f);
-            return true;
-        }
-        if (bot->GetDistance({1045.764f, 1389.831f, 340.825f}) < 4.0f)
-        {
-            MoveTo(mapId, 1057.076f, 1393.081f, 339.505f);
-            return true;
-        }
-        if (bot->GetDistance({1057.076f, 1393.081f, 339.505f}) < 4.0f)
-        {
-            JumpTo(mapId, 1075.233f, 1398.645f, 323.669f);
-            return true;
-        }
-        if (bot->GetDistance({1075.233f, 1398.645f, 323.669f}) < 4.0f)
-        {
-            MoveTo(mapId, 1096.590f, 1395.070f, 317.016f);
-            return true;
-        }
-        if (bot->GetDistance({1096.590f, 1395.070f, 317.016f}) < 4.0f)
-        {
-            MoveTo(mapId, 1134.380f, 1370.130f, 312.741f);
-            return true;
-        }
-    }
-    else if (team == TEAM_ALLIANCE)
-    {
-        if (bot->GetDistance({1415.548f, 1554.538f, 343.164f}) < 4.0f)
-        {
-            MoveTo(mapId, 1407.234f, 1551.658f, 343.432f);
-            return true;
-        }
-        if (bot->GetDistance({1407.234f, 1551.658f, 343.432f}) < 4.0f)
-        {
-            JumpTo(mapId, 1385.325f, 1544.592f, 322.047f);
-            return true;
-        }
-        if (bot->GetDistance({1385.325f, 1544.592f, 322.047f}) < 4.0f)
-        {
-            MoveTo(mapId, 1370.710f, 1543.550f, 321.585f);
-            return true;
-        }
-        if (bot->GetDistance({1370.710f, 1543.550f, 321.585f}) < 4.0f)
-        {
-            MoveTo(mapId, 1339.410f, 1533.420f, 313.336f);
-            return true;
-        }
+        _wsgGraveyardDeparture = false;
+        if (!_wsgJumpNextPoint)
+            return WsgJumpResult::NotApplicable;
     }
 
-    return false;
+    if (bot->isMoving() || IsWaitingForLastMove(MovementPriority::MOVEMENT_NORMAL))
+        return WsgJumpResult::Blocked;
+    if (_wsgJumpNextPoint >= positions.size())
+    {
+        ClearWsgJump();
+        return WsgJumpResult::NotApplicable;
+    }
+    if (bot->GetDistance(positions[_wsgJumpNextPoint]) <= departureRadius)
+        ++_wsgJumpNextPoint;
+    if (_wsgJumpNextPoint >= positions.size())
+    {
+        ClearWsgJump();
+        return WsgJumpResult::NotApplicable;
+    }
+
+    Position const& target = positions[_wsgJumpNextPoint];
+    constexpr float departureResumeRadius = 90.0f;
+    if (bot->GetDistance(target) > departureResumeRadius ||
+        IsUnsafeWsgCliffApproach(target.GetPositionX(), target.GetPositionY(), target.GetPositionZ()) ||
+        (_wsgJumpNextPoint == jumpPoint && bot->GetDistance(positions[jumpPoint - 1]) > departureRadius))
+    {
+        ClearWsgJump();
+        return WsgJumpResult::NotApplicable;
+    }
+    bool moved = _wsgJumpNextPoint == jumpPoint
+                     ? JumpTo(bg->GetMapId(), target.GetPositionX(), target.GetPositionY(), target.GetPositionZ())
+                     : MoveTo(bg->GetMapId(), target.GetPositionX(), target.GetPositionY(), target.GetPositionZ());
+    return moved ? WsgJumpResult::Moved : WsgJumpResult::Blocked;
 }
 
 void BGTactics::moveToStartWS(Battleground* bg)
@@ -303,6 +371,12 @@ void BGTactics::moveToStartWS(Battleground* bg)
     uint32 role = context->GetValue<uint32>("bg role")->Get();
 
     int startSpot = role < 4 ? BB_WSG_WAIT_SPOT_LEFT : role > 6 ? BB_WSG_WAIT_SPOT_RIGHT : BB_WSG_WAIT_SPOT_SPAWN;
+    if (bg->GetStatus() == STATUS_WAIT_JOIN)
+    {
+        WsgTeamAssignment assignment = context->GetValue<WsgTeamAssignment>("wsg team assignment")->Get();
+        constexpr uint32 startSpotCount = 3;
+        startSpot = assignment.Role % startSpotCount;
+    }
     if (startSpot == BB_WSG_WAIT_SPOT_RIGHT)
     {
         if (bot->GetTeamId() == TEAM_HORDE)
@@ -343,160 +417,165 @@ bool BGTactics::selectObjectiveWS(Battleground* bg, PositionMap& posMap, Positio
     Position target;
     TeamId team = bot->GetTeamId();
 
-    // Utility to safely relocate a position with optional random radius
-    auto SetSafePos = [&](Position const& origin, float radius = 0.0f) -> void
+    BattlegroundWS* warsong = static_cast<BattlegroundWS*>(bg);
+    TeamId enemyTeam = bg->GetOtherTeamId(team);
+    uint8 ownFlagState = warsong->GetFlagState(team);
+    uint8 enemyFlagState = warsong->GetFlagState(enemyTeam);
+    bool carryingEnemyFlag = warsong->GetFlagPickerGUID(enemyTeam) == bot->GetGUID();
+    WsgTeamAssignment assignment = context->GetValue<WsgTeamAssignment>("wsg team assignment")->Get();
+    uint32 role = assignment.Valid ? assignment.Role : context->GetValue<uint32>("bg role")->Get();
+    uint8 defendersCount = assignment.Valid ? assignment.Defenders : GetWsgDefenderCount(bg, team);
+    constexpr uint32 fallbackEscortRoles = 2;
+    uint32 escortRoles = assignment.Valid ? assignment.Escorts : fallbackEscortRoles;
+    bool escortRole =
+        assignment.Valid ? assignment.Escort : role >= defendersCount && role < defendersCount + escortRoles;
+    bool baseDefender = assignment.Valid ? assignment.BaseDefender : role == 0 && defendersCount > 0;
+    bool returnerRole = assignment.Valid ? assignment.Returner : role < defendersCount;
+
+    auto ResolveCarrier = [&](TeamId flagTeam) -> Player*
     {
-        float rx, ry, rz;
-        if (radius > 0.0f)
-        {
-            bot->GetRandomPoint(origin, radius, rx, ry, rz);
-            target.Relocate(rx, ry, rz);
-        }
-        else
-        {
-            target.Relocate(origin);
-        }
+        ObjectGuid guid = warsong->GetFlagPickerGUID(flagTeam);
+        Player* carrier = guid.IsEmpty() ? nullptr : ObjectAccessor::GetPlayer(bg->GetBgMap(), guid);
+        return carrier && carrier->IsInWorld() && carrier->IsAlive() && carrier->GetMap() == bot->GetMap()
+                   ? carrier
+                   : nullptr;
     };
 
-    // Check if the bot is carrying the flag
-    bool hasFlag = bot->HasAura(BG_WS_SPELL_WARSONG_FLAG) || bot->HasAura(BG_WS_SPELL_SILVERWING_FLAG);
-
-    // Retrieve role
-    uint8 role = context->GetValue<uint32>("bg role")->Get();
-    WSBotStrategy strategyHorde = static_cast<WSBotStrategy>(GetBotStrategyForTeam(bg, TEAM_HORDE));
-    WSBotStrategy strategyAlliance = static_cast<WSBotStrategy>(GetBotStrategyForTeam(bg, TEAM_ALLIANCE));
-    WSBotStrategy strategy = (team == TEAM_ALLIANCE) ? strategyAlliance : strategyHorde;
-    WSBotStrategy enemyStrategy = (team == TEAM_ALLIANCE) ? strategyHorde : strategyAlliance;
-
-    uint8 defendersProhab = 3;  // Default balanced
-
-    switch (strategy)
+    Player* friendlyCarrier =
+        enemyFlagState == BG_WS_FLAG_STATE_ON_PLAYER ? ResolveCarrier(enemyTeam) : nullptr;
+    Player* enemyCarrier = ownFlagState == BG_WS_FLAG_STATE_ON_PLAYER ? ResolveCarrier(team) : nullptr;
+    auto PatrolMidfield = [&]()
     {
-        case WS_STRATEGY_OFFENSIVE:
-            defendersProhab = 1;
-            break;
-        case WS_STRATEGY_DEFENSIVE:
-            defendersProhab = 6;
-            break;
-        default:
-            break;
-    }
-
-    if (enemyStrategy == WS_STRATEGY_DEFENSIVE)
-        defendersProhab = 2;
-
-    // Role check
-    bool isDefender = role < defendersProhab;
-
-    // Retrieve flag carriers
-    Unit* enemyFC = AI_VALUE(Unit*, "enemy flag carrier");
-    Unit* teamFC = AI_VALUE(Unit*, "team flag carrier");
-
-    // Retrieve current score
-    uint8 allianceScore = bg->GetTeamScore(TEAM_ALLIANCE);
-    uint8 hordeScore = bg->GetTeamScore(TEAM_HORDE);
-
-    // Check if both teams currently have the flag
-    bool bothFlagsTaken = enemyFC && teamFC;
-    if (!hasFlag && bothFlagsTaken)
-    {
-        // If both flags taken: coordinated teams send some bots to escort their carrier, the rest hunt the enemy FC
-        if (teamFC && coordinated() &&
-            urand(0, 99) < LivingBattleground::EscortChance(sPlayerbotAIConfig.LivingWorldEnabled))
+        // Screen the enemy half rather than retreating the whole offense
+        // behind the carrier. Keep a patrol leg until reached.
+        PositionInfo& patrol = posMap["wsg midfield patrol"];
+        constexpr float patrolArrivalRadius = 12.0f;
+        if (!patrol.isSet() || patrol.mapId != bot->GetMapId() ||
+            bot->GetDistance(patrol.x, patrol.y, patrol.z) < patrolArrivalRadius)
         {
-            target.Relocate(teamFC->GetPositionX(), teamFC->GetPositionY(), teamFC->GetPositionZ());
-            if (ServerFacade::instance().GetDistance2d(bot, teamFC) < 33.0f)
-                Follow(teamFC);
+            constexpr float forwardOffset = 35.0f;
+            constexpr float laneSpacing = 45.0f;
+            constexpr float patrolSpread = 25.0f;
+            constexpr uint32 laneCount = 3;
+            float direction = team == TEAM_ALLIANCE ? -1.0f : 1.0f;
+            bool defenderRole = assignment.Valid ? assignment.Defender : role < defendersCount;
+            if (defenderRole && !escortRole && !returnerRole)
+                direction = -direction;
+            float lane = static_cast<float>(role % laneCount) - 1.0f;
+            Position center(WS_ROAM_POS.GetPositionX() + direction * forwardOffset,
+                            WS_ROAM_POS.GetPositionY() + lane * laneSpacing, WS_ROAM_POS.GetPositionZ());
+            Position point = bot->GetRandomPoint(center, patrolSpread);
+            if (point.IsPositionValid())
+                patrol.Set(point.GetPositionX(), point.GetPositionY(), point.GetPositionZ(), bot->GetMapId());
         }
+        if (patrol.isSet())
+            target.Relocate(patrol.x, patrol.y, patrol.z);
         else
-            target.Relocate(enemyFC->GetPositionX(), enemyFC->GetPositionY(), enemyFC->GetPositionZ());
-    }
-    // Graveyard camping if in lead; defenders keep the flag room
-    else if (!hasFlag && !isDefender && role < 8 && coordinated() &&
-        ((team == TEAM_ALLIANCE && allianceScore == 2 && hordeScore == 0) ||
-        (team == TEAM_HORDE && hordeScore == 2 && allianceScore == 0)))
+            target.Relocate(WS_ROAM_POS);
+    };
+    bool enemyObserved = enemyCarrier && bot->CanSeeOrDetect(enemyCarrier);
+    bool pursueEnemyCarrier = returnerRole;
+
+    // Living battlegrounds: a loosely playing team's bots sometimes leave their role to wander midfield
+    if (!carryingEnemyFlag && slips(10))
+        PatrolMidfield();
+    else if (carryingEnemyFlag)
     {
-        if (team == TEAM_ALLIANCE)
-            SetSafePos(WS_GY_CAMPING_HORDE, 10.0f);
+        // A carrier can score only when its own flag is home.
+        GameObject* ownBaseFlag =
+            bg->GetBGObject(team == TEAM_ALLIANCE ? BG_WS_OBJECT_A_FLAG : BG_WS_OBJECT_H_FLAG);
+        if (ownFlagState == BG_WS_FLAG_STATE_ON_BASE && ownBaseFlag && ownBaseFlag->isSpawned() &&
+            ownBaseFlag->GetGoState() == GO_STATE_READY)
+            target.Relocate(team == TEAM_ALLIANCE ? WS_FLAG_POS_ALLIANCE : WS_FLAG_POS_HORDE);
         else
-            SetSafePos(WS_GY_CAMPING_ALLIANCE, 10.0f);
+            target.Relocate(team == TEAM_ALLIANCE ? WS_FLAG_HIDE_ALLIANCE[0] : WS_FLAG_HIDE_HORDE[0]);
     }
-    else if (hasFlag)
+    else if (ownFlagState == BG_WS_FLAG_STATE_ON_GROUND &&
+             (assignment.Valid ? assignment.Defender : role < defendersCount) && !escortRole &&
+             !assignment.CommittedAttack)
     {
-        // If carrying the flag, either hide or return to base
-        if (team == TEAM_ALLIANCE)
-            SetSafePos(teamFlagTaken() ? WS_FLAG_HIDE_ALLIANCE[urand(0, 2)] : WS_FLAG_POS_ALLIANCE);
+        GameObject* droppedFlag = bg->GetBgMap()->GetGameObject(warsong->GetDroppedFlagGUID(team));
+        if (droppedFlag && droppedFlag->isSpawned() && bot->CanSeeOrDetect(droppedFlag))
+            target.Relocate(droppedFlag->GetPosition());
         else
-            SetSafePos(teamFlagTaken() ? WS_FLAG_HIDE_HORDE[urand(0, 2)] : WS_FLAG_POS_HORDE);
+            target.Relocate(team == TEAM_ALLIANCE ? WS_FLAG_POS_ALLIANCE : WS_FLAG_POS_HORDE);
+    }
+    else if (enemyObserved && pursueEnemyCarrier)
+        target.Relocate(enemyCarrier->GetPosition());
+    else if (ownFlagState == BG_WS_FLAG_STATE_ON_PLAYER && returnerRole && enemyCarrier)
+    {
+        // BG map positions expose carrier X/Y even without local detection.
+        // Route to the marker, but require normal detection before attacking.
+        float x = enemyCarrier->GetPositionX();
+        float y = enemyCarrier->GetPositionY();
+        Position const& enemyBase = team == TEAM_ALLIANCE ? WS_FLAG_POS_HORDE : WS_FLAG_POS_ALLIANCE;
+        constexpr float flagRoomMarkerRadius = 80.0f;
+        float sampleZ = bot->GetPositionZ();
+        if (enemyBase.GetExactDist2d(x, y) < flagRoomMarkerRadius)
+            sampleZ = enemyBase.GetPositionZ();
+        // Use known terrain/flag-room height, not the hidden EFC's Z.
+        float groundZ = bot->GetMap()->GetHeight(x, y, sampleZ);
+        if (groundZ != VMAP_INVALID_HEIGHT_VALUE)
+            target.Relocate(x, y, groundZ);
+        else if (enemyFlagState == BG_WS_FLAG_STATE_ON_PLAYER)
+            target.Relocate(enemyBase);
+        else
+            PatrolMidfield();
+    }
+    else if (enemyFlagState == BG_WS_FLAG_STATE_ON_GROUND && !baseDefender &&
+             !(assignment.Valid ? assignment.Defender : role < defendersCount))
+    {
+        GameObject* droppedFlag = bg->GetBgMap()->GetGameObject(warsong->GetDroppedFlagGUID(enemyTeam));
+        if (droppedFlag && droppedFlag->isSpawned() && bot->CanSeeOrDetect(droppedFlag))
+            target.Relocate(droppedFlag->GetPosition());
+        else
+            PatrolMidfield();
+    }
+    // and an escort sticks with its carrier only when the team plays together
+    else if (friendlyCarrier && friendlyCarrier != bot && escortRole && coordinated())
+        target.Relocate(friendlyCarrier->GetPosition());
+    else if (baseDefender && !assignment.CommittedAttack)
+        target.Relocate(team == TEAM_ALLIANCE ? WS_FLAG_POS_ALLIANCE : WS_FLAG_POS_HORDE);
+    else if ((assignment.Valid ? assignment.Defender : role < defendersCount) && !assignment.CommittedAttack)
+    {
+        Position const& home = team == TEAM_ALLIANCE ? WS_FLAG_POS_ALLIANCE : WS_FLAG_POS_HORDE;
+        PositionInfo& defense = posMap["wsg home defense"];
+        constexpr float defenseSpread = 15.0f;
+        constexpr float defenseAreaRadius = 25.0f;
+        if (!defense.isSet() || defense.mapId != bot->GetMapId() ||
+            home.GetExactDist(defense.x, defense.y, defense.z) > defenseAreaRadius)
+        {
+            Position point = bot->GetRandomPoint(home, defenseSpread);
+            if (point.IsPositionValid())
+                defense.Set(point.GetPositionX(), point.GetPositionY(), point.GetPositionZ(), bot->GetMapId());
+        }
+        if (defense.isSet())
+            target.Relocate(defense.x, defense.y, defense.z);
+        else
+            target.Relocate(home);
+    }
+    else if (enemyFlagState == BG_WS_FLAG_STATE_ON_BASE)
+    {
+        GameObject* baseFlag =
+            bg->GetBGObject(enemyTeam == TEAM_ALLIANCE ? BG_WS_OBJECT_A_FLAG : BG_WS_OBJECT_H_FLAG);
+        if (baseFlag && baseFlag->isSpawned() && baseFlag->GetGoState() == GO_STATE_READY)
+            target.Relocate(team == TEAM_ALLIANCE ? WS_FLAG_POS_HORDE : WS_FLAG_POS_ALLIANCE);
+        else
+            PatrolMidfield();
     }
     else
     {
-        if (isDefender)
-        {
-            if (enemyFC)
-            {
-                // Defenders attack enemy FC if found
-                target.Relocate(enemyFC->GetPositionX(), enemyFC->GetPositionY(), enemyFC->GetPositionZ());
-            }
-            else if (teamFlagTaken())
-            {
-                // our flag is gone and its carrier out of sight: cut it off on the way to their flag room
-                SetSafePos(team == TEAM_ALLIANCE ? WS_FLAG_POS_HORDE : WS_FLAG_POS_ALLIANCE, 10.0f);
-            }
-            else if (teamFC && coordinated())
-            {
-                // support own FC
-                target.Relocate(teamFC->GetPositionX(), teamFC->GetPositionY(), teamFC->GetPositionZ());
-                if (ServerFacade::instance().GetDistance2d(bot, teamFC) < 33.0f)
-                    Follow(teamFC);
-            }
-            else if (slips(15))
-            {
-                // Roam around central area
-                SetSafePos(WS_ROAM_POS, 75.0f);
-            }
-            else
-            {
-                // Hold the flag room
-                SetSafePos(team == TEAM_ALLIANCE ? WS_FLAG_HIDE_ALLIANCE[urand(0, 2)] : WS_FLAG_HIDE_HORDE[urand(0, 2)], 5.0f);
-            }
-        }
-        else  // attacker logic
-        {
-            if (enemyFC && urand(0, 99) < 70)
-            {
-                // 70% chance to pursue enemy FC
-                target.Relocate(enemyFC->GetPositionX(), enemyFC->GetPositionY(), enemyFC->GetPositionZ());
-            }
-            else if (teamFC && (coordinated() || ServerFacade::instance().GetDistance2d(bot, teamFC) < 40.0f))
-            {
-                // Assist own FC if not pursuing enemy FC; uncoordinated bots only when they're already close
-                target.Relocate(teamFC->GetPositionX(), teamFC->GetPositionY(), teamFC->GetPositionZ());
-                if (ServerFacade::instance().GetDistance2d(bot, teamFC) < 33.0f)
-                    Follow(teamFC);
-            }
-            else if (slips(5))
-            {
-                // 5% chance to free roam
-                SetSafePos(WS_ROAM_POS, 75.0f);
-            }
-            else
-            {
-                // Push toward enemy flag base
-                SetSafePos(team == TEAM_ALLIANCE ? WS_FLAG_POS_HORDE : WS_FLAG_POS_ALLIANCE);
-            }
-        }
+        // Unassigned attackers screen midfield, not the carrier's retreat.
+        // This does not reveal a hidden carrier or dropped flag's position.
+        PatrolMidfield();
     }
 
-    // Save the final target position
-    if (target.IsPositionValid())
-    {
-        pos.Set(target.GetPositionX(), target.GetPositionY(), target.GetPositionZ(), bot->GetMapId());
-        posMap["bg objective"] = pos;
-        return true;
-    }
+    if (!target.IsPositionValid())
+        return false;
 
-    return false;
+    pos.Set(target.GetPositionX(), target.GetPositionY(), target.GetPositionZ(), bot->GetMapId());
+    posMap["bg objective"] = pos;
+    return true;
 }
 
 bool BGTactics::flagTaken()
@@ -515,4 +594,310 @@ bool BGTactics::teamFlagTaken()
         return false;
 
     return !bg->GetFlagPickerGUID(bot->GetTeamId()).IsEmpty();
+}
+
+bool BGTactics::ClearObsoleteWsgFollow()
+{
+    Battleground* bg = bot->GetBattleground();
+    if (!bg || bg->GetBgTypeID(true) != BATTLEGROUND_WS || bot->IsNonMeleeSpellCast(false))
+        return false;
+    Value<ObjectGuid>* ownership = context->GetValue<ObjectGuid>("wsg follow carrier");
+    ObjectGuid guid = ownership->Get();
+    if (guid.IsEmpty())
+        return false;
+    if (bot->GetMotionMaster()->GetCurrentMovementGeneratorType() != FOLLOW_MOTION_TYPE)
+    {
+        ownership->Set(ObjectGuid::Empty);
+        return false;
+    }
+    auto* follow = static_cast<FollowMovementGenerator<Player>*>(bot->GetMotionMaster()->top());
+    Unit* carrier = follow->GetTarget();
+    if (!carrier || carrier->GetGUID() != guid)
+    {
+        ownership->Set(ObjectGuid::Empty);
+        return false;
+    }
+    WsgTeamAssignment assignment = context->GetValue<WsgTeamAssignment>("wsg team assignment")->Get();
+    bool stillCarrier = IsValidWsgCarrier(bot, carrier, true);
+    bool stillSupport = assignment.Valid && assignment.Escort;
+    if (stillCarrier && stillSupport)
+        return false;
+    bot->StopMoving();
+    bot->GetMotionMaster()->Clear();
+    ownership->Set(ObjectGuid::Empty);
+    ClearWsgRoute();
+    return true;
+}
+
+bool BGTactics::IsUnsafeWsgCliffApproach(float x, float y, float z) const
+{
+    PerformanceData* cliffCheckData = nullptr;
+    if (sPerfMonitor.IsEnabled())
+    {
+        static thread_local PerformanceData* data = sPerfMonitor.acquire(PERF_MON_VALUE, "wsg cliff check");
+        cliffCheckData = data;
+    }
+    PerfMonitorScope cliffCheck(cliffCheckData);
+    Battleground* bg = bot->GetBattleground();
+    if (!bg || bg->GetBgTypeID(true) != BATTLEGROUND_WS || !bot->IsAlive() ||
+        z <= bot->GetPositionZ() + WSG_CLIFF_HEIGHT_TOLERANCE)
+        return false;
+
+    constexpr float landingRadius = 45.0f;
+    constexpr float ledgeRadius = 20.0f;
+    for (BattleBotPath const* cliff : {&vPath_WSG_HordeGraveyardJump, &vPath_WSG_AllianceGraveyardJump})
+    {
+        BattleBotWaypoint const& ledge = cliff->at(1);
+        BattleBotWaypoint const& landing = cliff->back();
+        if (bot->GetPositionZ() + WSG_CLIFF_HEIGHT_TOLERANCE >= ledge.z ||
+            bot->GetExactDist2d(landing.x, landing.y) > landingRadius ||
+            Position(x, y, z).GetExactDist2d(ledge.x, ledge.y) > ledgeRadius)
+            continue;
+
+        // A complete terrain path can take the ramp around this one-way jump.
+        PerformanceData* cliffPathData = nullptr;
+        if (sPerfMonitor.IsEnabled())
+        {
+            static thread_local PerformanceData* data = sPerfMonitor.acquire(PERF_MON_VALUE, "wsg cliff pathfind");
+            cliffPathData = data;
+        }
+        PerfMonitorScope cliffPath(cliffPathData);
+        PathGenerator path(bot);
+        path.CalculatePath(x, y, z);
+        return !(path.GetPathType() & PATHFIND_NORMAL) ||
+               (path.GetPathType() & (PATHFIND_SHORTCUT | PATHFIND_NOT_USING_PATH));
+    }
+    return false;
+}
+
+void BGTactics::UpdateWsgRouteLane()
+{
+    Battleground* bg = bot->GetBattleground();
+    if (!bg || bg->GetBgTypeID(true) != BATTLEGROUND_WS)
+        return;
+
+    PositionInfo goal = context->GetValue<PositionMap&>("position")->Get()["bg objective"];
+    Position const& destinationBase =
+        _wsgCarrying ? (bot->GetTeamId() == TEAM_ALLIANCE ? WS_FLAG_POS_ALLIANCE : WS_FLAG_POS_HORDE)
+                     : (bot->GetTeamId() == TEAM_ALLIANCE ? WS_FLAG_POS_HORDE : WS_FLAG_POS_ALLIANCE);
+    WsgTeamAssignment assignment = AI_VALUE(WsgTeamAssignment, "wsg team assignment");
+    uint32 role = AI_VALUE(uint32, "bg role");
+    uint8 defenders = assignment.Valid ? assignment.Defenders : GetWsgDefenderCount(bg, bot->GetTeamId());
+    constexpr uint32 fallbackEscortRoles = 2;
+    bool escort = assignment.Valid ? assignment.Escort : role >= defenders && role < defenders + fallbackEscortRoles;
+    bool returner = assignment.Valid ? assignment.Returner : role < defenders;
+    constexpr float flagRoomRadius = 80.0f;
+    if (!goal.isSet() || goal.mapId != bot->GetMapId() ||
+        destinationBase.GetExactDist(goal.x, goal.y, goal.z) > flagRoomRadius ||
+        (!_wsgCarrying && (escort || returner)))
+    {
+        if (_wsgMidfieldPath)
+            ClearWsgRoute();
+        ClearWsgLane();
+        return;
+    }
+
+    float direction = goal.x < WS_ROAM_POS.GetPositionX() ? -1.0f : 1.0f;
+    if (_wsgMidfieldPath)
+    {
+        constexpr float laneArrivalRadius = 20.0f;
+        if (bot->GetDistance(_wsgMidfieldGoal) <= laneArrivalRadius)
+            _wsgMidfieldReached = true;
+        // Abandon an unreached lane after external movement well into the far half.
+        constexpr float farSideMargin = 80.0f;
+        if (!_wsgMidfieldReached && (bot->GetPositionX() - _wsgMidfieldGoal.GetPositionX()) * direction > farSideMargin)
+        {
+            ClearWsgRoute();
+            ClearWsgLane();
+        }
+        return;
+    }
+
+    // Only start a lane plan for a fresh cross-field trip, never a committed descent or corridor.
+    constexpr float midfieldClearance = 80.0f;
+    if (_wsgPath || _wsgGraveyardDeparture || _wsgJumpNextPoint ||
+        (bot->GetPositionX() - WS_ROAM_POS.GetPositionX()) * direction > -midfieldClearance ||
+        (goal.x - WS_ROAM_POS.GetPositionX()) * direction < midfieldClearance)
+        return;
+
+    struct MidfieldLane
+    {
+        BattleBotPath* Path;
+        uint32 Point;
+    };
+    constexpr uint32 outerMidfieldPoint = 2;
+    constexpr uint32 centralMidfieldPoint = 4;
+    std::array<MidfieldLane, 3> const lanes = {
+        {{&vPath_WSG_HordeGraveyardLower_to_AllianceFlagRoom, outerMidfieldPoint},
+         {&vPath_WSG_AllianceTunnel_to_HordeTunnel, centralMidfieldPoint},
+         {&vPath_WSG_AllianceGraveyardLower_to_HordeFlagRoom, outerMidfieldPoint}}};
+    GuidVector observedEnemies;
+    if (_wsgCarrying)
+        observedEnemies = AI_VALUE(GuidVector, "nearest enemy players");
+    uint32 now = getMSTime();
+    constexpr uint32 avoidWindow = 20 * IN_MILLISECONDS;
+    bool avoidPreviousPath = _wsgAvoidPath && now - _wsgAvoidMs < avoidWindow;
+    MidfieldLane const* chosen = nullptr;
+    uint32 lowestDanger = UINT32_MAX;
+    uint32 equalChoices = 0;
+    constexpr float dangerRadius = 60.0f;
+    for (MidfieldLane const& lane : lanes)
+    {
+        if (avoidPreviousPath && lane.Path == _wsgAvoidPath)
+            continue;
+        BattleBotWaypoint const& point = lane.Path->at(lane.Point);
+        uint32 danger = 0;
+        for (ObjectGuid const& guid : observedEnemies)
+        {
+            Player* enemy = ObjectAccessor::GetPlayer(bot->GetMap(), guid);
+            if (!enemy || !enemy->IsInWorld() || !enemy->IsAlive() || enemy->GetMap() != bot->GetMap() ||
+                enemy->GetTeamId() == bot->GetTeamId() || !bot->CanSeeOrDetect(enemy))
+                continue;
+            if (enemy->GetDistance(point.x, point.y, point.z) < dangerRadius)
+                ++danger;
+        }
+        if (danger < lowestDanger)
+        {
+            lowestDanger = danger;
+            equalChoices = 1;
+            chosen = &lane;
+        }
+        else if (danger == lowestDanger && urand(1, ++equalChoices) == 1)
+            chosen = &lane;
+    }
+    if (chosen)
+    {
+        BattleBotWaypoint const& point = chosen->Path->at(chosen->Point);
+        _wsgMidfieldPath = chosen->Path;
+        _wsgMidfieldGoal.Relocate(point.x, point.y, point.z);
+        _wsgMidfieldReached = false;
+    }
+}
+
+bool BGTactics::MoveToWsgWaypoint()
+{
+    if (!_wsgPath || _wsgNextPoint >= _wsgPath->size())
+    {
+        ClearWsgRoute();
+        return false;
+    }
+
+    BattleBotWaypoint const& next = _wsgPath->at(_wsgNextPoint);
+    constexpr float waypointRadius = 8.0f;
+    bool moving = bot->isMoving();
+    if (moving && bot->GetDistance(next.x, next.y, next.z) > waypointRadius)
+        return false;
+    if (bot->GetDistance(next.x, next.y, next.z) <= waypointRadius)
+    {
+        bool atEnd = _wsgReverse ? _wsgNextPoint == 0 : _wsgNextPoint + 1 == _wsgPath->size();
+        if (atEnd)
+        {
+            _wsgCompletedPath = _wsgPath;
+            _wsgCompletedReverse = _wsgReverse;
+            ClearWsgRoute();
+            return false;
+        }
+        uint32 followingPoint = _wsgReverse ? _wsgNextPoint - 1 : _wsgNextPoint + 1;
+        BattleBotWaypoint const& following = _wsgPath->at(followingPoint);
+        if (moving && !bot->IsWithinLOS(following.x, following.y, following.z))
+            return false;
+        _wsgNextPoint = followingPoint;
+        _wsgProgressMs = 0;
+    }
+    else if (moving)
+        return false;
+
+    // These legacy tunnel points are buff spurs, not required corridor corners.
+    constexpr uint32 speedBuffPoint = 7;
+    if (_wsgNextPoint == speedBuffPoint && (_wsgPath == &vPath_WSG_HordeTunnel_to_HordeFlagRoom ||
+                                            _wsgPath == &vPath_WSG_AllianceTunnel_to_AllianceFlagRoom))
+    {
+        BattlegroundWS* warsong = static_cast<BattlegroundWS*>(bot->GetBattleground());
+        GameObject* speedBuff = warsong->GetBGObject(
+            _wsgPath == &vPath_WSG_HordeTunnel_to_HordeFlagRoom ? BG_WS_OBJECT_SPEEDBUFF_2 : BG_WS_OBJECT_SPEEDBUFF_1);
+        if (_wsgCarrying || warsong->GetFlagState(bot->GetTeamId()) != BG_WS_FLAG_STATE_ON_BASE || !speedBuff ||
+            !speedBuff->isSpawned() || speedBuff->getLootState() != GO_READY)
+            _wsgNextPoint = _wsgReverse ? _wsgNextPoint - 1 : _wsgNextPoint + 1;
+    }
+
+    uint32 movePoint = _wsgNextPoint;
+    constexpr uint32 maxLookaheadPoints = 3;
+    constexpr float lookaheadRadius = 45.0f;
+    constexpr float minimumAlignmentSquared = 0.96f;
+    bool tunnelBuffPath = _wsgPath == &vPath_WSG_HordeTunnel_to_HordeFlagRoom ||
+                          _wsgPath == &vPath_WSG_AllianceTunnel_to_AllianceFlagRoom;
+    bool jumpPath = std::find(vPaths_OneWay_WS.begin(), vPaths_OneWay_WS.end(), _wsgPath) != vPaths_OneWay_WS.end();
+    float fromX = bot->GetPositionX();
+    float fromY = bot->GetPositionY();
+    float fromZ = bot->GetPositionZ();
+    for (uint32 i = 0; !jumpPath && i < maxLookaheadPoints; ++i)
+    {
+        bool atEnd = _wsgReverse ? movePoint == 0 : movePoint + 1 == _wsgPath->size();
+        if (atEnd || (tunnelBuffPath && movePoint == speedBuffPoint))
+            break;
+        uint32 following = _wsgReverse ? movePoint - 1 : movePoint + 1;
+        if (tunnelBuffPath && following == speedBuffPoint)
+            break;
+        BattleBotWaypoint const& current = _wsgPath->at(movePoint);
+        BattleBotWaypoint const& candidate = _wsgPath->at(following);
+        float ax = current.x - fromX;
+        float ay = current.y - fromY;
+        float az = current.z - fromZ;
+        float bx = candidate.x - current.x;
+        float by = candidate.y - current.y;
+        float bz = candidate.z - current.z;
+        float dot = ax * bx + ay * by + az * bz;
+        float lengthProduct = (ax * ax + ay * ay + az * az) * (bx * bx + by * by + bz * bz);
+        // Coalesce only nearly straight, LOS-clear segments. Keep corners, buff
+        // spurs and one-way jumps explicit instead of randomly cutting across them.
+        if (dot <= 0.0f || dot * dot < minimumAlignmentSquared * lengthProduct ||
+            IsUnsafeWsgCliffApproach(candidate.x, candidate.y, candidate.z) ||
+            bot->GetDistance(candidate.x, candidate.y, candidate.z) > lookaheadRadius ||
+            !bot->IsWithinLOS(candidate.x, candidate.y, candidate.z))
+            break;
+        fromX = current.x;
+        fromY = current.y;
+        fromZ = current.z;
+        movePoint = following;
+    }
+
+    BattleBotWaypoint const& waypoint = _wsgPath->at(movePoint);
+    if (IsUnsafeWsgCliffApproach(waypoint.x, waypoint.y, waypoint.z))
+    {
+        ClearWsgRoute();
+        return false;
+    }
+    constexpr float routeResumeRadius = 90.0f;
+    if (bot->GetDistance(waypoint.x, waypoint.y, waypoint.z) > routeResumeRadius)
+    {
+        ClearWsgRoute();
+        return false;
+    }
+
+    if (moving && !bot->IsWithinLOS(waypoint.x, waypoint.y, waypoint.z))
+        return false;
+
+    bool moved = MoveTo(bot->GetMapId(), waypoint.x, waypoint.y, waypoint.z);
+    if (moved)
+    {
+        if (_wsgNextPoint != movePoint)
+        {
+            _wsgProgressMs = 0;
+            _wsgStalledSamples = 0;
+        }
+        _wsgNextPoint = movePoint;
+    }
+    if (moved && !_wsgCarrying)
+    {
+        BattleBotWaypoint const& approachEnd = _wsgReverse ? _wsgPath->front() : _wsgPath->back();
+        Position const& enemyBase = bot->GetTeamId() == TEAM_ALLIANCE ? WS_FLAG_POS_HORDE : WS_FLAG_POS_ALLIANCE;
+        constexpr float flagRoomRadius = 70.0f;
+        if (enemyBase.GetExactDist(approachEnd.x, approachEnd.y, approachEnd.z) < flagRoomRadius)
+        {
+            _wsgApproachPath = _wsgPath;
+            _wsgApproachReverse = _wsgReverse;
+            _wsgApproachMs = getMSTime();
+        }
+    }
+    return moved;
 }

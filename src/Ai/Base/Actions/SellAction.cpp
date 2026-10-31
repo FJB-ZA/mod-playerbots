@@ -6,6 +6,8 @@
 
 #include "SellAction.h"
 
+#include <algorithm>
+
 #include "ChatHelper.h"
 #include "Event.h"
 #include "ItemPackets.h"
@@ -134,9 +136,8 @@ bool SellAction::Execute(Event event)
     {
         std::vector<Item*> items = parseItems(text, ITERATE_ITEMS_IN_BAGS);
         for (Item* item : items)
-        {
-            Sell(item);
-        }
+            Sell(item, true);
+
         return true;
     }
 
@@ -154,13 +155,64 @@ void SellAction::Sell(FindItemVisitor* visitor)
     }
 }
 
-void SellAction::Sell(Item* item)
+uint32 SellAction::GetQuestItemRequirement(uint32 itemId)
 {
+    uint32 maxRequirement = 0;
+
+    for (auto const& questPair : botAI->GetCurrentQuestsRequiringItemId(itemId))
+    {
+        Quest const* quest = questPair.first;
+        if (!quest)
+            continue;
+
+        for (uint8 i = 0; i < QUEST_ITEM_OBJECTIVES_COUNT; i++)
+        {
+            if (quest->RequiredItemId[i] == itemId)
+                maxRequirement = std::max(maxRequirement, quest->RequiredItemCount[i]);
+        }
+    }
+
+    return maxRequirement;
+}
+
+void SellAction::Sell(Item* item, bool force)
+{
+    // Even a forced sell keeps what a living-world field task reserved
     if (!item || LivingProfessions::FieldReservedItem(botAI, item->GetGUID()))
         return;
 
     std::ostringstream out;
-    ItemTemplate const* soldTemplate = item->GetTemplate();
+    uint32 itemId = item->GetEntry();
+    ItemTemplate const* proto = item->GetTemplate();
+
+    uint32 keepRequirement = force ? 0 : GetQuestItemRequirement(itemId);
+
+    if (!force && (proto->Class == ITEM_CLASS_TRADE_GOODS || proto->Class == ITEM_CLASS_MISC ||
+        proto->Class == ITEM_CLASS_REAGENT))
+    {
+        // Needed class reagents (spells in the bot's book consume them): keep exactly 2 full
+        // stacks, so the sell stop point is consistent regardless of bag stack order.
+        bool lowBagSpace = context->GetValue<uint8>("bag space")->Get() > 50;
+        if (ItemUsageValue(botAI).IsItemNeededForUsefullSpell(proto, lowBagSpace))
+            keepRequirement = std::max(keepRequirement, 2u * proto->GetMaxStackSize());
+    }
+
+    uint32 countToSell = item->GetCount();
+
+    if (keepRequirement > 0)
+    {
+        QueryItemCountVisitor countVisitor(itemId);
+        IterateItems(&countVisitor, ITERATE_ITEMS_IN_BAGS);
+        uint32 totalCount = countVisitor.GetCount();
+
+        if (totalCount <= keepRequirement)
+            return;
+
+        // Sell only the excess, keeping the required amount in the stack.
+        uint32 excessCount = totalCount - keepRequirement;
+        if (item->GetCount() > excessCount)
+            countToSell = excessCount;
+    }
 
     GuidVector vendors = botAI->GetAiObjectContext()->GetValue<GuidVector>("nearest npcs")->Get();
 
@@ -171,12 +223,11 @@ void SellAction::Sell(Item* item)
             continue;
 
         ObjectGuid itemguid = item->GetGUID();
-        uint32 count = item->GetCount();
 
         uint32 botMoney = bot->GetMoney();
 
         WorldPacket p(CMSG_SELL_ITEM);
-        p << vendorguid << itemguid << count;
+        p << vendorguid << itemguid << countToSell;
 
         WorldPackets::Item::SellItem nicePacket(std::move(p));
         nicePacket.Read();
@@ -187,7 +238,9 @@ void SellAction::Sell(Item* item)
             bot->SetMoney(botMoney);
         }
 
-        out << "Selling " << chat->FormatItem(soldTemplate);
+        out << "Selling " << chat->FormatItem(proto);
+        if (keepRequirement > 0)
+            out << " (keeping " << keepRequirement << ")";
         botAI->TellMaster(out);
 
         bot->PlayDistanceSound(120);
