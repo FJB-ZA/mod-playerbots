@@ -28,6 +28,7 @@
 #include "DropQuestAction.h"
 #include "DungeonLeadActions.h"
 #include "EmoteAction.h"
+#include "MythicPlusTactics.h"
 #include "FishingAction.h"
 #include "FollowActions.h"
 #include "GenericSpellActions.h"
@@ -92,6 +93,7 @@ public:
         creators["living arena los"] = &ActionContext::living_arena_los;
         creators["living arena kite"] = &ActionContext::living_arena_kite;
         creators["living arena stealth"] = &ActionContext::living_arena_stealth;
+        creators["attack explosive orb"] = &ActionContext::attack_explosive_orb;
         creators["lead talk"] = &ActionContext::lead_talk;
         creators["lead advance"] = &ActionContext::lead_advance;
         creators["lead pull"] = &ActionContext::lead_pull;
@@ -319,6 +321,7 @@ private:
     static Action* living_arena_los(PlayerbotAI* botAI) { return new LivingArenaLosAction(botAI); }
     static Action* living_arena_kite(PlayerbotAI* botAI) { return new LivingArenaKiteAction(botAI); }
     static Action* living_arena_stealth(PlayerbotAI* botAI) { return new LivingArenaStealthAction(botAI); }
+    static Action* attack_explosive_orb(PlayerbotAI* botAI) { return new AttackExplosiveOrbAction(botAI); }
     static Action* lead_talk(PlayerbotAI* botAI) { return new LeadTalkAction(botAI); }
     static Action* lead_advance(PlayerbotAI* botAI) { return new LeadAdvanceAction(botAI); }
     static Action* lead_pull(PlayerbotAI* botAI) { return new LeadPullAction(botAI); }

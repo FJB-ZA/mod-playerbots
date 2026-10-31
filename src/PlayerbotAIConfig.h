@@ -300,6 +300,7 @@ public:
     std::string ReactStrategies, RandomBotReactStrategies;
     bool ApplyInstanceStrategies;
     bool DungeonLeadEnabled;
+    uint32 MythicPlusBotRuns, MythicPlusBotRunInterval;
     uint32 RandomBotMinLevel, RandomBotMaxLevel;
     float RandomChangeMultiplier;
 

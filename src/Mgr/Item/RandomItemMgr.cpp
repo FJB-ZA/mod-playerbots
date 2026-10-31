@@ -8,6 +8,7 @@
 #include "PlayerbotsDatabase.h"
 #include "DBCStores.h"
 #include "ItemTemplate.h"
+#include "MythicPlusBotPolicy.h"
 #include "Playerbots.h"
 
 std::unordered_set<uint32> RandomItemMgr::itemCache;
@@ -1435,6 +1436,9 @@ bool RandomItemMgr::IsValidItem(ItemTemplate const* proto)
 
     // skip items flagged as unobtainable
     if (sPlayerbotAIConfig.UnobtainableItems.contains(proto->ItemId))
+        return false;
+
+    if (MythicPlusBots::IsMythicPlusItem(proto->ItemId))
         return false;
 
     return true;

@@ -546,6 +546,16 @@ Playerbots.ApplyInstanceStrategies = 1
 # Default: 0 (disabled)
 Playerbots.DungeonLead.Enabled = 0
 
+# Bot groups run their own Mythic+ keys (solo-wow core scripts/Custom/MythicPlus) on the WotLK heroics. A level 80
+# random bot holding a key gathers a tank, a healer and three damage dealers of its faction whose hidden skill is
+# close to its own and whose gear and skill handle the key: fresh heroic gear runs +2, every 5 item levels more one
+# level higher, skill two levels either way. The tank leads the run (dungeon lead, whatever its setting), the dead
+# get up after a wipe, and the group goes home and disbands when the run ends or stalls.
+# BotRuns: how many bot runs at once. BotRunInterval: seconds between attempts to form one.
+# Default: 0 (disabled), 300
+Playerbots.MythicPlus.BotRuns = 0
+Playerbots.MythicPlus.BotRunInterval = 300
+
 # Enable auto avoid aoe strategy
 # Default: 1 (enabled)
 Playerbots.AutoAvoidAoe = 1

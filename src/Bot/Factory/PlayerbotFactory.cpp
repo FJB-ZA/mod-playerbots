@@ -28,6 +28,7 @@
 #include "LivingWorldMgr.h"
 #include "Log.h"
 #include "LootMgr.h"
+#include "MythicPlusBotPolicy.h"
 #include "ObjectMgr.h"
 #include "PathTalentPolicy.h"
 #include "PerfMonitor.h"
@@ -57,6 +58,13 @@ namespace
     constexpr uint32 ITEM_ETERNAL_BELT_BUCKLE = 41611;  // Eternal Belt Buckle (consumable)
     constexpr uint32 ENCHANT_SOCKET_BELT = 3729;        // "Socket Belt" -> adds 1 prismatic socket
     constexpr uint8 ETERNAL_BELT_BUCKLE_LEVEL = 70;     // required level of the buckle
+}
+
+// Mythic+ gear is earned in keystone runs, so gearing passes keep it like a player would.
+static bool WearsMythicPlusItem(Player* bot, uint8 slot)
+{
+    Item* item = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+    return item && MythicPlusBots::IsMythicPlusItem(item->GetEntry());
 }
 
 // A non-zero prismatic enchantment is the socket marker, so the belt already has its extra socket.
@@ -1971,6 +1979,9 @@ public:
     bool Visit(Item* item) override
     {
         uint32 id = item->GetTemplate()->ItemId;
+        if (MythicPlusBots::IsMythicPlusItem(id))
+            return true;
+
         if (CanKeep(id))
         {
             keep.insert(id);
@@ -2434,6 +2445,9 @@ void PlayerbotFactory::InitEquipment(bool incremental, bool second_chance)
         if (slot == EQUIPMENT_SLOT_TABARD || slot == EQUIPMENT_SLOT_BODY)
             continue;
 
+        if (WearsMythicPlusItem(bot, uint8(slot)))
+            continue;
+
         if (level < 50 && (slot == EQUIPMENT_SLOT_TRINKET1 || slot == EQUIPMENT_SLOT_TRINKET2))
             continue;
 
@@ -2695,6 +2709,9 @@ void PlayerbotFactory::InitEquipment(bool incremental, bool second_chance)
         for (int32 slot : initSlotsOrder)
         {
             if (slot == EQUIPMENT_SLOT_TABARD || slot == EQUIPMENT_SLOT_BODY)
+                continue;
+
+            if (WearsMythicPlusItem(bot, uint8(slot)))
                 continue;
 
             if (level < 50 && (slot == EQUIPMENT_SLOT_TRINKET1 || slot == EQUIPMENT_SLOT_TRINKET2))
@@ -4106,7 +4123,7 @@ void PlayerbotFactory::DestroyEquippedGear(Player* bot)
 {
     for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
     {
-        if (slot == EQUIPMENT_SLOT_TABARD || slot == EQUIPMENT_SLOT_BODY)
+        if (slot == EQUIPMENT_SLOT_TABARD || slot == EQUIPMENT_SLOT_BODY || WearsMythicPlusItem(bot, slot))
             continue;
         if (bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
             bot->DestroyItem(INVENTORY_SLOT_BAG_0, slot, true);
