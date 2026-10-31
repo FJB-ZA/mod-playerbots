@@ -29,6 +29,7 @@
 #include "MapMgr.h"
 #include "MotionMaster.h"
 #include "MoveSplineInit.h"
+#include "MythicPlusBotMgr.h"
 #include "NewRpgStrategy.h"
 #include "ObjectGuid.h"
 #include "ObjectMgr.h"
@@ -56,6 +57,7 @@
 #include "Unit.h"
 #include "UpdateTime.h"
 #include "Vehicle.h"
+#include "WsgRouteState.h"
 #include <cmath>
 #include <mutex>
 #include <sstream>
@@ -289,8 +291,14 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
     bool isCasting = bot->IsNonMeleeSpellCast(true);
     if (bot->IsInCombat())
     {
-        if (!inCombat && !isCasting)
-            ResetActionDuration();
+        if (!inCombat)
+        {
+            // "attackers" is cached for 1 s; refresh it so the assist actions see the new attacker
+            // this tick.
+            aiObjectContext->GetValue<GuidVector>("attackers")->Reset();
+            if (!isCasting)
+                ResetActionDuration();
+        }
 
         inCombat = true;
     }
@@ -1591,6 +1599,11 @@ void PlayerbotAI::DoNextAction(bool min)
         aiObjectContext->GetValue<ObjectGuid>("pull strategy target")->Set(ObjectGuid::Empty);
         aiObjectContext->GetValue<LootObject>("loot target")->Set(LootObject());
 
+        // The dead engine has no battleground strategy, so its "dead" trigger cannot reset this route.
+        if (Battleground* bg = bot->GetBattleground())
+            if (bg->GetBgTypeID(true) == BATTLEGROUND_WS)
+                aiObjectContext->GetValue<WsgRouteState>("wsg route")->Reset();
+
         ChangeEngine(BOT_STATE_DEAD);
         return;
     }
@@ -1734,12 +1747,17 @@ void PlayerbotAI::ApplyInstanceStrategies(uint32 mapId, bool tellMaster)
 
     engines[BOT_STATE_COMBAT]->removeStrategy("dungeon lead");
     engines[BOT_STATE_NON_COMBAT]->removeStrategy("dungeon lead");
+    engines[BOT_STATE_COMBAT]->removeStrategy("mythic plus");
     MapEntry const* mapEntry = sMapStore.LookupEntry(mapId);
-    if (sPlayerbotAIConfig.DungeonLeadEnabled && mapEntry && mapEntry->IsNonRaidDungeon())
+    if ((sPlayerbotAIConfig.DungeonLeadEnabled || MythicPlusBotMgr::instance().InRun(bot)) && mapEntry &&
+        mapEntry->IsNonRaidDungeon())
     {
         engines[BOT_STATE_COMBAT]->addStrategy("dungeon lead");
         engines[BOT_STATE_NON_COMBAT]->addStrategy("dungeon lead");
     }
+    // Mythic+ runs on heroic dungeons; its orbs exist only in a run, so the trigger stays idle anywhere else
+    if (mapEntry && mapEntry->IsNonRaidDungeon())
+        engines[BOT_STATE_COMBAT]->addStrategy("mythic plus");
 
     std::string strategyName;
     switch (mapId)
@@ -6753,6 +6771,48 @@ std::set<uint32> PlayerbotAI::GetCurrentIncompleteQuestIds()
     }
 
     return result;
+}
+
+void PlayerbotAI::RecordQuestAccepted(uint32 questId)
+{
+    ++rpgStatistic.questAccepted;
+    if (sPlayerbotAIConfig.CollectDetailedQuestStats)
+        ++rpgStatistic.byQuest[questId].accepted;
+}
+
+void PlayerbotAI::RecordQuestCompleted(uint32 questId)
+{
+    // Each completion counts once per bot and quest, until the quest is rewarded or dropped.
+    if (!countedQuestCompletions.insert(questId).second)
+        return;
+
+    ++rpgStatistic.questCompleted;
+    if (sPlayerbotAIConfig.CollectDetailedQuestStats)
+        ++rpgStatistic.byQuest[questId].completed;
+}
+
+void PlayerbotAI::RecordQuestRewarded(uint32 questId)
+{
+    RecordQuestCompleted(questId);
+    countedQuestCompletions.erase(questId);
+    ++rpgStatistic.questRewarded;
+    if (sPlayerbotAIConfig.CollectDetailedQuestStats)
+        ++rpgStatistic.byQuest[questId].rewarded;
+}
+
+void PlayerbotAI::RecordQuestDropped(uint32 questId, QuestDropReason reason)
+{
+    countedQuestCompletions.erase(questId);
+    ++rpgStatistic.questDropped;
+    if (sPlayerbotAIConfig.CollectDetailedQuestStats)
+        ++rpgStatistic.byQuest[questId].dropped[static_cast<size_t>(reason)];
+}
+
+void PlayerbotAI::RecordQuestAbandoned(uint32 questId, QuestAbandonReason reason)
+{
+    ++rpgStatistic.questAbandoned;
+    if (sPlayerbotAIConfig.CollectDetailedQuestStats)
+        ++rpgStatistic.byQuest[questId].abandoned[static_cast<size_t>(reason)];
 }
 
 uint32 PlayerbotAI::GetReactDelay()

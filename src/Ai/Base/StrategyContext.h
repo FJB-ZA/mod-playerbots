@@ -20,6 +20,7 @@
 #include "DpsAssistStrategy.h"
 #include "DuelStrategy.h"
 #include "DungeonLeadActions.h"
+#include "MythicPlusTactics.h"
 #include "EmoteStrategy.h"
 #include "FocusTargetStrategy.h"
 #include "FollowMasterStrategy.h"
@@ -128,6 +129,7 @@ public:
         creators["living arena"] = &StrategyContext::living_arena;
         creators["living professions"] = &StrategyContext::living_professions;
         creators["dungeon lead"] = &StrategyContext::dungeon_lead;
+        creators["mythic plus"] = &StrategyContext::mythic_plus;
         creators["living fieldwork"] = &StrategyContext::living_fieldwork;
         creators["group"] = &StrategyContext::group;
         creators["guild"] = &StrategyContext::guild;
@@ -148,6 +150,7 @@ private:
     static Strategy* living_arena(PlayerbotAI* botAI) { return new LivingArenaStrategy(botAI); }
     static Strategy* living_professions(PlayerbotAI* botAI) { return new LivingProfessionStrategy(botAI); }
     static Strategy* dungeon_lead(PlayerbotAI* botAI) { return new DungeonLeadStrategy(botAI); }
+    static Strategy* mythic_plus(PlayerbotAI* botAI) { return new MythicPlusStrategy(botAI); }
     static Strategy* living_fieldwork(PlayerbotAI* botAI) { return new LivingFieldStrategy(botAI); }
     static Strategy* behind(PlayerbotAI* botAI) { return new SetBehindCombatStrategy(botAI); }
     static Strategy* ranged(PlayerbotAI* botAI) { return new RangedCombatStrategy(botAI); }

@@ -28,6 +28,7 @@
 #include "DropQuestAction.h"
 #include "DungeonLeadActions.h"
 #include "EmoteAction.h"
+#include "MythicPlusTactics.h"
 #include "FishingAction.h"
 #include "FollowActions.h"
 #include "GenericSpellActions.h"
@@ -92,6 +93,7 @@ public:
         creators["living arena los"] = &ActionContext::living_arena_los;
         creators["living arena kite"] = &ActionContext::living_arena_kite;
         creators["living arena stealth"] = &ActionContext::living_arena_stealth;
+        creators["attack explosive orb"] = &ActionContext::attack_explosive_orb;
         creators["lead talk"] = &ActionContext::lead_talk;
         creators["lead advance"] = &ActionContext::lead_advance;
         creators["lead pull"] = &ActionContext::lead_pull;
@@ -222,7 +224,7 @@ public:
         creators["cast random spell"] = &ActionContext::cast_random_spell;
         creators["free bg join"] = &ActionContext::free_bg_join;
         creators["use random recipe"] = &ActionContext::use_random_recipe;
-        creators["use random quest item"] = &ActionContext::use_random_quest_item;
+        creators["use start quest item"] = &ActionContext::use_start_quest_item;
         creators["craft random item"] = &ActionContext::craft_random_item;
         creators["smart destroy item"] = &ActionContext::smart_destroy_item;
         creators["disenchant random item"] = &ActionContext::disenchant_random_item;
@@ -250,6 +252,13 @@ public:
         creators["bg move to objective"] = &ActionContext::bg_move_to_objective;
         creators["bg select objective"] = &ActionContext::bg_select_objective;
         creators["bg check objective"] = &ActionContext::bg_check_objective;
+        creators["bg refresh wsg objective"] = &ActionContext::bg_refresh_wsg_objective;
+        creators["bg wsg route"] = &ActionContext::bg_wsg_route;
+        creators["bg wsg approach"] = &ActionContext::bg_wsg_approach;
+        creators["bg wsg corridor"] = &ActionContext::bg_wsg_corridor;
+        creators["bg wsg direct"] = &ActionContext::bg_wsg_direct;
+        creators["attack wsg support"] = &ActionContext::attack_wsg_support;
+        creators["wsg regroup"] = &ActionContext::wsg_regroup;
         creators["bg attack fc"] = &ActionContext::bg_attack_fc;
         creators["bg protect fc"] = &ActionContext::bg_protect_fc;
         creators["bg use buff"] = &ActionContext::bg_use_buff;
@@ -319,6 +328,7 @@ private:
     static Action* living_arena_los(PlayerbotAI* botAI) { return new LivingArenaLosAction(botAI); }
     static Action* living_arena_kite(PlayerbotAI* botAI) { return new LivingArenaKiteAction(botAI); }
     static Action* living_arena_stealth(PlayerbotAI* botAI) { return new LivingArenaStealthAction(botAI); }
+    static Action* attack_explosive_orb(PlayerbotAI* botAI) { return new AttackExplosiveOrbAction(botAI); }
     static Action* lead_talk(PlayerbotAI* botAI) { return new LeadTalkAction(botAI); }
     static Action* lead_advance(PlayerbotAI* botAI) { return new LeadAdvanceAction(botAI); }
     static Action* lead_pull(PlayerbotAI* botAI) { return new LeadPullAction(botAI); }
@@ -460,7 +470,7 @@ private:
     static Action* free_bg_join(PlayerbotAI* botAI) { return new FreeBGJoinAction(botAI); }
 
     static Action* use_random_recipe(PlayerbotAI* botAI) { return new UseRandomRecipe(botAI); }
-    static Action* use_random_quest_item(PlayerbotAI* botAI) { return new UseRandomQuestItem(botAI); }
+    static Action* use_start_quest_item(PlayerbotAI* botAI) { return new UseStartQuestItem(botAI); }
     static Action* craft_random_item(PlayerbotAI* botAI) { return new CraftRandomItemAction(botAI); }
     static Action* smart_destroy_item(PlayerbotAI* botAI) { return new SmartDestroyItemAction(botAI); }
     static Action* disenchant_random_item(PlayerbotAI* botAI) { return new DisEnchantRandomItemAction(botAI); }
@@ -487,8 +497,15 @@ private:
     static Action* bg_move_to_objective(PlayerbotAI* botAI) { return new BGTactics(botAI, "move to objective"); }
     static Action* bg_select_objective(PlayerbotAI* botAI) { return new BGTactics(botAI, "select objective"); }
     static Action* bg_check_objective(PlayerbotAI* botAI) { return new BGTactics(botAI, "check objective"); }
+    static Action* bg_refresh_wsg_objective(PlayerbotAI* botAI) { return new WsgObjectiveRefreshAction(botAI); }
     static Action* bg_attack_fc(PlayerbotAI* botAI) { return new BGTactics(botAI, "attack fc"); }
-    static Action* bg_protect_fc(PlayerbotAI* botAI) { return new BGTactics(botAI, "protect fc"); }
+    static Action* bg_protect_fc(PlayerbotAI* botAI) { return new WsgEscortFollowAction(botAI); }
+    static Action* bg_wsg_route(PlayerbotAI* botAI) { return new WsgObjectiveRouteAction(botAI); }
+    static Action* bg_wsg_approach(PlayerbotAI* botAI) { return new WsgObjectiveApproachAction(botAI); }
+    static Action* bg_wsg_corridor(PlayerbotAI* botAI) { return new WsgObjectiveCorridorAction(botAI); }
+    static Action* bg_wsg_direct(PlayerbotAI* botAI) { return new WsgObjectiveDirectAction(botAI); }
+    static Action* attack_wsg_support(PlayerbotAI* botAI) { return new WsgSupportAttackAction(botAI); }
+    static Action* wsg_regroup(PlayerbotAI* botAI) { return new WsgRegroupAction(botAI); }
     static Action* attack_enemy_fc(PlayerbotAI* botAI) { return new AttackEnemyFlagCarrierAction(botAI); }
     static Action* bg_use_buff(PlayerbotAI* botAI) { return new BGTactics(botAI, "use buff"); }
     static Action* bg_check_flag(PlayerbotAI* botAI) { return new BGTactics(botAI, "check flag"); }

@@ -20,7 +20,7 @@ bool TimeLostControllerDropsCharmingTotemTrigger::IsActive()
            AI_VALUE2(Unit*, "find target", "time-lost controller");
 }
 
-bool TimeLostControllerMarkCharmingTotemWithSkullAction::Execute(Event /*event*/)
+bool TimeLostControllerMarkCharmingTotemAction::Execute(Event /*event*/)
 {
     constexpr float searchRadius = 40.0f;
     Unit* totem = bot->FindNearestCreature(Id(SethNpcs::NPC_CHARMING_TOTEM), searchRadius);

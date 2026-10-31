@@ -546,6 +546,16 @@ Playerbots.ApplyInstanceStrategies = 1
 # Default: 0 (disabled)
 Playerbots.DungeonLead.Enabled = 0
 
+# Bot groups run their own Mythic+ keys (solo-wow core scripts/Custom/MythicPlus) on the WotLK heroics. A level 80
+# random bot holding a key gathers a tank, a healer and three damage dealers of its faction whose hidden skill is
+# close to its own and whose gear and skill handle the key: fresh heroic gear runs +2, every 5 item levels more one
+# level higher, skill two levels either way. The tank leads the run (dungeon lead, whatever its setting), the dead
+# get up after a wipe, and the group goes home and disbands when the run ends or stalls.
+# BotRuns: how many bot runs at once. BotRunInterval: seconds between attempts to form one.
+# Default: 0 (disabled), 300
+Playerbots.MythicPlus.BotRuns = 0
+Playerbots.MythicPlus.BotRunInterval = 300
+
 # Enable auto avoid aoe strategy
 # Default: 1 (enabled)
 Playerbots.AutoAvoidAoe = 1
@@ -1444,6 +1454,10 @@ Playerbots.AutoPickTalents = 1
 # Default: 0 (disabled)
 Playerbots.AutoTalentsOnFreePoints = 0
 
+# Player-controlled bots (altbots and selfbots) automatically spend free talent points on levelup.
+# Default: 0 (disabled)
+Playerbots.AutoPickTalentsForPlayerControlledBots = 0
+
 # Spells every randombot will learn automatically and every altbot will learn with maintenance
 # Default: 54197 (Cold Weather Flying)
 Playerbots.RandomBotSpellIds = "54197"
@@ -1501,6 +1515,16 @@ Playerbots.RestrictedHealerDPSMaps = "33,34,36,43,47,48,70,90,109,129,209,229,23
 # This option will override Playerbots.AutoDoQuests, RandomBotTeleLowerLevel, and RandomBotTeleHigherLevel
 # Default: 1 (enabled)
 Playerbots.EnableNewRpgStrategy = 1
+
+# Radius (yards) of the new RPG strategy's NPC and gameobject scans. Cost grows with the square of the radius. 
+# Default: 150.0
+Playerbots.RpgTargetSearchDistance = 150.0
+
+# Track per-quest accept/complete/reward/drop/abandon counts and drop/abandon reasons, reported by
+# ".playerbots rndbot queststats" and dumped to LogsDir/playerbots_quest_stats.json by
+# ".playerbots rndbot questdump". Adds per-bot maps that are cleared on every stats aggregation.
+# Default: 0 (disabled)
+Playerbots.CollectDetailedQuestStats = 0
 
 # Control probability weights for RPG status of bots. Takes effect only when the status meets its premise.​
 # Sum of weights need not be 100. Set to 0 to disable the status.
@@ -1671,9 +1695,24 @@ Playerbots.ZoneBracket.4197 = 79,80
 # Defaults: 0 = Eastern Kingdoms, 1 = Kalimdor, 530 = Outland, 571 = Northrend
 Playerbots.RandomBotMaps = 0,1,530,571
 
+# When an idle bot picks a random destination it makes ONE weighted roll across three classes,
+# so each value is an exact share of the roll (peers, not nested gates):
+#     quest giver   : ProbTeleToQuestGivers
+#     city/banker   : ProbTeleToBankers (level >= 10 only; falls through below level 10)
+#     innkeeper/hub : 1 - ProbTeleToQuestGivers - ProbTeleToBankers (the remainder)
+# A branch that cannot produce a destination (no currently-valid quest giver, below level 10, or
+# an empty city cache) falls through to the innkeeper/hub path, which absorbs the unused share.
+
 # Probability bots teleport to banker (city)
 # Default: 0.25
 Playerbots.ProbTeleToBankers = 0.25
+
+# Probability an idle random bot's random move targets a quest giver it can accept a quest from
+# right now (level/faction valid, no unmet prereq, not in progress, quest-log + item room).
+# Falls through to the innkeeper/hub path when no valid giver exists. With
+# RandomBotConcentrateInPlayerZone, only givers in a player zone are used.
+# Default: 0 (off; set above 0 to enable quest-giver teleports)
+Playerbots.ProbTeleToQuestGivers = 0
 
 # Control probability weights for bots teleporting to Capital city bankers
 # Sum of weights need not be 100. Set to 0 to disable teleporting to the city.
@@ -1717,7 +1756,7 @@ Playerbots.AutoTeleportForLevel = 1
 # Enable battlegrounds/arenas for randombots
 Playerbots.RandomBotJoinBG = 1
 
-# Allow players to command random bots on their own team in the same battleground or arena.
+# Allow players to command random bots with no player master on their own team in the same battleground or arena.
 # Every such player gets the command access of a master without becoming the bot's master,
 # so the bot keeps playing the battleground.
 # Default: 0 (disabled)
@@ -1918,9 +1957,10 @@ Playerbots.PremadeSpecLink.1.5.60 = --250031220223012520332113321
 Playerbots.PremadeSpecLink.1.5.80 = 0502300123-3-250031220223012521332113321
 # The Gladiator sub-class path's tree is a fourth page; a bot takes this spec only while its slot follows the path.
 Playerbots.PremadeSpecName.1.6 = gladiator
-Playerbots.PremadeSpecGlyph.1.6 = 43418,43395,43414,43396,49084,43425
-Playerbots.PremadeSpecLink.1.6.60 = ---5350202012203110321021012202103121
-Playerbots.PremadeSpecLink.1.6.80 = --250301225-5350202012203110321021012202103121
+# Glyphs: Unending Rage, Shield Rush, Shield Charge, Rallying Cry, Mass Reflection, Dragon Roar (solo-wow gladiator-gear.json).
+Playerbots.PremadeSpecGlyph.1.6 = 990181,990187,990180,990188,990189,990182
+Playerbots.PremadeSpecLink.1.6.60 = ---53502201220101110321011203210301221
+Playerbots.PremadeSpecLink.1.6.80 = --250301225-53502201220101110321011203210301221
 
 #
 #

@@ -11,6 +11,7 @@
 #include "LivingBondMgr.h"
 #include "LivingWorldMgr.h"
 #include "Playerbots.h"
+#include "PvpValues.h"
 #include "ServerFacade.h"
 #include "Vehicle.h"
 
@@ -80,7 +81,9 @@ Unit* EnemyPlayerValue::Calculate()
     for (auto const& [guid, combatRef] : bot->GetCombatManager().GetPvPCombatRefs())
     {
         Unit* pTarget = combatRef->GetOther(bot);
-        if (!pTarget || pTarget == pVictim || !pTarget->IsPlayer() ||
+        if (IsUnavailableCombatTarget(bot, pTarget))
+            continue;
+        if (pTarget == pVictim || !pTarget->IsPlayer() ||
             !(bot->InBattleground() ? bot->CanSeeOrDetect(pTarget) : pTarget->CanSeeOrDetect(bot)) ||
             !bot->IsWithinDist(pTarget, VISIBILITY_DISTANCE_NORMAL))
             continue;
@@ -159,7 +162,7 @@ Unit* EnemyPlayerValue::Calculate()
     for (auto const& gTarget : players)
     {
         Unit* pUnit = botAI->GetUnit(gTarget);
-        if (!pUnit)
+        if (!pUnit || IsUnavailableCombatTarget(bot, pUnit))
             continue;
 
         Player* pTarget = dynamic_cast<Player*>(pUnit);
@@ -209,8 +212,9 @@ Unit* EnemyPlayerValue::Calculate()
                     continue;
 
                 if (Unit* pAttacker = pMember->getAttackerForHelper())
-                    if (pAttacker->IsPlayer() && bot->IsWithinDist(pAttacker, maxAggroDistance * 2.0f) &&
-                        bot->IsWithinLOSInMap(pAttacker) && pAttacker != pVictim &&
+                    if (!IsUnavailableCombatTarget(bot, pAttacker) && pAttacker->IsPlayer() &&
+                        bot->IsWithinDist(pAttacker, maxAggroDistance * 2.0f) && bot->IsWithinLOSInMap(pAttacker) &&
+                        pAttacker != pVictim &&
                         (bot->InBattleground() ? bot->CanSeeOrDetect(pAttacker) : pAttacker->CanSeeOrDetect(bot)))
                         return pAttacker;
             }

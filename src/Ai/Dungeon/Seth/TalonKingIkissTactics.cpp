@@ -29,7 +29,7 @@ namespace
 bool HasBubble(Unit* ikiss) { return ikiss->HasAura(Id(SethSpells::SPELL_ARCANE_BUBBLE)); }
 }  // namespace
 
-bool TalonKingIkissBossEngagedByTankTrigger::IsActive()
+bool TalonKingIkissShouldBeTankedTrigger::IsActive()
 {
     if (!PlayerbotAI::IsTank(bot))
         return false;
@@ -38,7 +38,7 @@ bool TalonKingIkissBossEngagedByTankTrigger::IsActive()
     return ikiss && ikiss->GetVictim() == bot && bot->IsWithinMeleeRange(ikiss);
 }
 
-bool TalonKingIkissRangedPrepareForArcaneExplosionTrigger::IsActive()
+bool TalonKingIkissRangedShouldStayNearTankTrigger::IsActive()
 {
     if (!PlayerbotAI::IsRanged(bot))
         return false;
@@ -54,13 +54,13 @@ bool TalonKingIkissBossCastingArcaneExplosionTrigger::IsActive()
     return ikiss && HasBubble(ikiss);
 }
 
-bool TalonKingIkissBossOutOfLosTrigger::IsActive()
+bool TalonKingIkissOutOfLosTrigger::IsActive()
 {
     Unit* ikiss = AI_VALUE2(Unit*, "find target", "talon king ikiss");
     return ikiss && SethekkHalls::ReturnsToLos(HasBubble(ikiss), bot->IsWithinLOSInMap(ikiss));
 }
 
-bool TalonKingIkissTankMoveBossToPillarPositionAction::Execute(Event /*event*/)
+bool TalonKingIkissPositionTankNearPillarAction::Execute(Event /*event*/)
 {
     Unit* ikiss = AI_VALUE2(Unit*, "find target", "talon king ikiss");
     if (!ikiss)
@@ -90,7 +90,7 @@ bool TalonKingIkissTankMoveBossToPillarPositionAction::Execute(Event /*event*/)
                   MovementPriority::MOVEMENT_COMBAT, true, backwards);
 }
 
-bool TalonKingIkissRangedStayNearVictimOfBossAction::Execute(Event /*event*/)
+bool TalonKingIkissRangedMoveNearTankAction::Execute(Event /*event*/)
 {
     Unit* ikiss = AI_VALUE2(Unit*, "find target", "talon king ikiss");
     if (!ikiss || !ikiss->GetVictim())
@@ -152,7 +152,7 @@ bool TalonKingIkissLosArcaneExplosionAction::MoveAroundPillar(Position const& pi
                   MovementPriority::MOVEMENT_FORCED, true, false);
 }
 
-bool TalonKingIkissMoveToWithinLosAction::Execute(Event /*event*/)
+bool TalonKingIkissMoveWithinLosAction::Execute(Event /*event*/)
 {
     Unit* ikiss = AI_VALUE2(Unit*, "find target", "talon king ikiss");
     if (!ikiss)

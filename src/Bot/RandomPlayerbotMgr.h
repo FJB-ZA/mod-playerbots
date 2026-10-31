@@ -12,6 +12,10 @@
 #include "ObjectGuid.h"
 #include "PlayerbotCommandServer.h"
 #include "PlayerbotMgr.h"
+#include <algorithm>
+#include <array>
+#include <mutex>
+#include <set>
 #include <unordered_set>
 
 struct BattlegroundInfo
@@ -50,6 +54,30 @@ struct BattlegroundInfo
     // The same split by the real players' team, indexed by TeamId (alliance, horde)
     uint64 teamGearScoreSum[2] = {0, 0};
     uint32 teamGearScoreCount[2] = {0, 0};
+    std::vector<uint32> bgPlayerInstances;
+    std::map<uint32, uint32> bgInstanceCapacity;
+    std::map<uint32, std::array<uint32, 2>> bgInstanceBots;
+    uint32 bgAutoJoinTarget = 0;
+
+    uint32 DemandedBgSlotsPerTeam(uint32 queueTeamSize, TeamId team) const
+    {
+        uint32 slots = activeBgQueue * queueTeamSize;
+        uint32 botOnlyCounted = 0;
+        for (auto const& [instanceId, capacity] : bgInstanceCapacity)
+        {
+            if (std::find(bgPlayerInstances.begin(), bgPlayerInstances.end(), instanceId) != bgPlayerInstances.end())
+                slots += capacity;
+            else if (botOnlyCounted < bgAutoJoinTarget)
+            {
+                slots += capacity;
+                ++botOnlyCounted;
+            }
+            // a bot-only instance past the auto-join target only counts the bots it already has
+            else if (auto bots = bgInstanceBots.find(instanceId); bots != bgInstanceBots.end())
+                slots += bots->second[team];
+        }
+        return slots;
+    }
 };
 
 class ChatHandler;
@@ -131,6 +159,10 @@ public:
     PlayerBotMap GetAllBots() { return playerBots; };
     void InitArenaTeams();
     void PrintStats();
+    void PrintQuestTotals(NewRpgStatistic const& stats);
+    NewRpgStatistic CollectQuestStats();
+    void PrintQuestStats();
+    void ExportQuestStatsToJson();
     double GetBuyMultiplier(Player* bot);
     double GetSellMultiplier(Player* bot);
     void AddTradeDiscount(Player* bot, Player* master, int32 value);
@@ -249,6 +281,7 @@ private:
     void RandomTeleport(Player* bot);
     void RandomTeleport(Player* bot, std::vector<WorldLocation>& locs, bool hearth = false);
     uint32 GetZoneLevel(uint16 mapId, float teleX, float teleY, float teleZ);
+    void UpdatePlayerZones();
     std::vector<WorldLocation> GetPlayerZoneTeleportLocations(std::vector<WorldLocation> const& locs, Player* bot);
     typedef void (RandomPlayerbotMgr::*ConsoleCommandHandler)(Player*);
     std::vector<Player*> players;
@@ -260,6 +293,9 @@ private:
     std::unordered_map<uint32, BotEventCache> eventCache;
     std::unordered_set<uint32> currentBots;
     uint32 playersLevel;
+    // Written on the world thread, read from map threads.
+    std::set<std::pair<uint32, uint32>> _playerZones;
+    std::mutex _playerZonesLock;
 
     // Account lists
     std::vector<uint32> rndBotTypeAccounts;             // Accounts marked as RNDbot (type 1)

@@ -35,12 +35,11 @@ void BGTactics::RollTiers(Battleground* bg, BGStrategyData& data)
 
 uint8 BGTactics::GetTeamTier(Battleground* bg, TeamId teamId)
 {
-    std::lock_guard<std::mutex> guard(bgStrategiesLock);
-    auto itr = bgStrategies.find(bg->GetInstanceID());
-    if (itr == bgStrategies.end())
+    if (!bg)
         return BG_TIER_BASIC;
 
-    return teamId == TEAM_ALLIANCE ? itr->second.allianceTier : itr->second.hordeTier;
+    BGStrategyData const data = GetBotStrategies(bg->GetInstanceID());
+    return teamId == TEAM_ALLIANCE ? data.allianceTier : data.hordeTier;
 }
 
 uint8 BGTactics::teamTier()

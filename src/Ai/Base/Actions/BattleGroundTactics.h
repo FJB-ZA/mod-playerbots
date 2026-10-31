@@ -7,11 +7,12 @@
 #ifndef PLAYERBOTS_BATTLEGROUNDTACTICS_H
 #define PLAYERBOTS_BATTLEGROUNDTACTICS_H
 
+#include "AiObjectContext.h"
 #include "BattlegroundAV.h"
+#include "ChooseTargetActions.h"
 #include "MovementActions.h"
 #include "PositionValue.h"
-
-#include <mutex>
+#include "WsgRouteState.h"
 
 class ChatHandler;
 class Battleground;
@@ -27,6 +28,17 @@ enum WSBotStrategy : uint8
     WS_STRATEGY_DEFENSIVE     = 2,
     WS_STRATEGY_MAX           = 3,
 };
+
+constexpr uint8 WSG_DEFENDER_ROLES_BALANCED = 3;
+constexpr uint8 WSG_DEFENDER_ROLES_OFFENSIVE = 2;
+constexpr uint8 WSG_DEFENDER_ROLES_DEFENSIVE = 5;
+constexpr uint8 WSG_ATTACKER_ROLES_BALANCED = 3;
+constexpr uint8 WSG_ATTACKER_ROLES_OFFENSIVE = 5;
+constexpr uint8 WSG_ATTACKER_ROLES_DEFENSIVE = 2;
+constexpr uint8 WSG_DEFENDER_ROLES_VS_DEFENSIVE = 2;
+constexpr float WSG_CLIFF_HEIGHT_TOLERANCE = 10.0f;
+constexpr float WSG_ROOF_LOCATION_RADIUS = 100.0f;
+constexpr float WSG_ROOF_HEIGHT_TOLERANCE = 10.0f;
 
 enum ABBotStrategy : uint8
 {
@@ -62,8 +74,6 @@ enum SABotStrategy : uint8
     SA_STRATEGY_MAX           = 3,
 };
 
-typedef void (*BattleBotWaypointFunc)();
-
 // How well a team plays its battleground, rolled per team at gate open
 enum BGTacticsTier : uint8
 {
@@ -80,22 +90,6 @@ struct BGStrategyData
     uint8 hordeTier = BG_TIER_BASIC;
 };
 
-// Every battleground map thread reads and writes this map: hold bgStrategiesLock
-extern std::unordered_map<uint32, BGStrategyData> bgStrategies;
-extern std::mutex bgStrategiesLock;
-
-struct BattleBotWaypoint
-{
-    BattleBotWaypoint(float x_, float y_, float z_, BattleBotWaypointFunc func) : x(x_), y(y_), z(z_), pFunc(func){};
-
-    float x = 0.0f;
-    float y = 0.0f;
-    float z = 0.0f;
-    BattleBotWaypointFunc pFunc = nullptr;
-};
-
-typedef std::vector<BattleBotWaypoint> BattleBotPath;
-
 // Per battleground data, defined in src/Ai/Battleground/<Name>Tactics.cpp
 extern std::vector<BattleBotPath*> const vPaths_WS;
 extern std::vector<BattleBotPath*> const vPaths_AB;
@@ -106,6 +100,14 @@ extern std::vector<BattleBotPath*> const vPaths_SA;
 // paths that are only walked start to end (jumps, drops)
 extern std::vector<BattleBotPath*> const vPaths_OneWay_WS;
 extern std::vector<BattleBotPath*> const vPaths_OneWay_IC;
+// Warsong routes the shared path selection treats specially, defined in WarsongTactics.cpp
+extern BattleBotPath vPath_WSG_AllianceGraveyardJump;
+extern BattleBotPath vPath_WSG_HordeGraveyardJump;
+extern BattleBotPath vPath_WSG_AllianceGraveyardLower_to_HordeFlagRoom;
+extern BattleBotPath vPath_WSG_HordeGraveyardLower_to_AllianceFlagRoom;
+extern BattleBotPath vPath_WSG_AllianceTunnel_to_HordeTunnel;
+extern BattleBotPath vPath_WSG_AllianceTunnel_to_AllianceBaseRoof;
+extern BattleBotPath vPath_WSG_HordeTunnel_to_HordeBaseRoof;
 
 extern std::vector<uint32> const vFlagsAV;
 extern std::vector<uint32> const vFlagsAB;
@@ -121,30 +123,91 @@ public:
     uint8 static GetBotStrategyForTeam(Battleground* bg, TeamId teamId);
     uint8 static GetTeamTier(Battleground* bg, TeamId teamId);
     static void RollTiers(Battleground* bg, BGStrategyData& data);
+    static void SetBotStrategies(uint32 instanceId, BGStrategyData const& data);
+    static void ClearBotStrategies(uint32 instanceId);
+    static uint8 GetWsgDefenderCount(Battleground* bg, TeamId teamId);
+    static bool ShouldYieldWsgTactics(PlayerbotAI* botAI);
 
-    BGTactics(PlayerbotAI* botAI, std::string const name = "bg tactics") : MovementAction(botAI, name) {}
+    BGTactics(PlayerbotAI* botAI, std::string const name = "bg tactics")
+        : MovementAction(botAI, name),
+          _wsgState(context->GetValue<WsgRouteState>("wsg route")->RefGet()),
+          _wsgPath(_wsgState._wsgPath),
+          _wsgApproachPath(_wsgState._wsgApproachPath),
+          _wsgMidfieldPath(_wsgState._wsgMidfieldPath),
+          _wsgMidfieldGoal(_wsgState._wsgMidfieldGoal),
+          _wsgMidfieldReached(_wsgState._wsgMidfieldReached),
+          _wsgAvoidPath(_wsgState._wsgAvoidPath),
+          _wsgCompletedPath(_wsgState._wsgCompletedPath),
+          _wsgCompletedReverse(_wsgState._wsgCompletedReverse),
+          _wsgInstanceId(_wsgState._wsgInstanceId),
+          _wsgJumpNextPoint(_wsgState._wsgJumpNextPoint),
+          _wsgGraveyardDeparture(_wsgState._wsgGraveyardDeparture),
+          _wsgNextPoint(_wsgState._wsgNextPoint),
+          _wsgApproachMs(_wsgState._wsgApproachMs),
+          _wsgAvoidMs(_wsgState._wsgAvoidMs),
+          _wsgProgressMs(_wsgState._wsgProgressMs),
+          _wsgLastProgressCheckMs(_wsgState._wsgLastProgressCheckMs),
+          _wsgGoalX(_wsgState._wsgGoalX),
+          _wsgGoalY(_wsgState._wsgGoalY),
+          _wsgProgressDistance(_wsgState._wsgProgressDistance),
+          _wsgStalledSamples(_wsgState._wsgStalledSamples),
+          _wsgReverse(_wsgState._wsgReverse),
+          _wsgApproachReverse(_wsgState._wsgApproachReverse),
+          _wsgCarrying(_wsgState._wsgCarrying)
+    {
+    }
 
     bool Execute(Event event) override;
+    bool isUseful() override;
+
+protected:
+    bool ExecuteWsgRoute();
+    bool CanStartWsgRouteFallback();
+    bool RefreshWsgObjective();
+    bool protectFC();
+    bool ClearObsoleteWsgFollow();
+    void SuspendWsgRouteProgress();
+    void ClearWsgRoute();
 
 private:
+    enum class WsgJumpResult
+    {
+        NotApplicable,
+        Blocked,
+        Moved
+    };
+
     static std::string const HandleConsoleCommandPrivate(WorldSession* session, char const* args);
+    // A copy taken under the lock; defaults when the battleground has no entry
+    static BGStrategyData GetBotStrategies(uint32 instanceId);
     bool moveToStart(bool force = false);
     bool selectObjective(bool reset = false);
+
+protected:
     bool moveToObjective(bool ignoreDist);
     bool selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths);
+
+private:
     bool moveToObjectiveWp(BattleBotPath* const& currentPath, uint32 currentPoint, bool reverse = false);
+    bool MoveToWsgWaypoint();
+    void ValidateWsgRoute();
+    void UpdateWsgRouteLane();
+    PositionInfo GetWsgRoutingGoal(PositionInfo goal) const;
+    void ClearWsgLane();
+    void CheckWsgRouteProgress();
+    void ClearWsgJump();
+    bool IsUnsafeWsgCliffApproach(float x, float y, float z) const;
     bool startNewPathBegin(std::vector<BattleBotPath*> const& vPaths);
     bool startNewPathFree(std::vector<BattleBotPath*> const& vPaths);
     bool resetObjective();
     bool atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<uint32> const& vFlagIds);
-    bool protectFC();
     bool useBuff();
     uint32 getPlayersInArea(TeamId teamId, Position point, float range, bool combat = true);
 
-    // Warsong Gulch
+    // Warsong Gulch, in src/Ai/Battleground/WarsongTactics.cpp
     void moveToStartWS(Battleground* bg);
     bool selectObjectiveWS(Battleground* bg, PositionMap& posMap, PositionInfo& pos);
-    bool wsJumpDown();
+    WsgJumpResult WsJumpDown();
     bool flagTaken();
     bool teamFlagTaken();
 
@@ -175,6 +238,100 @@ private:
     uint8 teamTier();
     bool coordinated();
     bool slips(uint32 basePercent);
+
+protected:
+    WsgRouteState& _wsgState;
+    BattleBotPath*& _wsgPath;
+    BattleBotPath*& _wsgApproachPath;
+    BattleBotPath*& _wsgMidfieldPath;
+    Position& _wsgMidfieldGoal;
+    bool& _wsgMidfieldReached;
+    BattleBotPath*& _wsgAvoidPath;
+    BattleBotPath*& _wsgCompletedPath;
+    bool& _wsgCompletedReverse;
+    uint32& _wsgInstanceId;
+    uint32& _wsgJumpNextPoint;
+    bool& _wsgGraveyardDeparture;
+    uint32& _wsgNextPoint;
+    uint32& _wsgApproachMs;
+    uint32& _wsgAvoidMs;
+    uint32& _wsgProgressMs;
+    uint32& _wsgLastProgressCheckMs;
+    float& _wsgGoalX;
+    float& _wsgGoalY;
+    float& _wsgProgressDistance;
+    uint8& _wsgStalledSamples;
+    bool& _wsgReverse;
+    bool& _wsgApproachReverse;
+    bool& _wsgCarrying;
+};
+
+class WsgObjectiveRefreshAction : public BGTactics
+{
+public:
+    WsgObjectiveRefreshAction(PlayerbotAI* botAI) : BGTactics(botAI, "refresh wsg objective") {}
+    bool isUseful() override;
+    bool Execute(Event event) override;
+};
+
+class WsgEscortFollowAction : public BGTactics
+{
+public:
+    WsgEscortFollowAction(PlayerbotAI* botAI) : BGTactics(botAI, "protect fc") {}
+    bool isUseful() override;
+    bool Execute(Event event) override;
+
+private:
+    uint8 _escortIndex = 0;
+    bool _hasEscortIndex = false;
+};
+
+class WsgObjectiveRouteAction : public BGTactics
+{
+public:
+    WsgObjectiveRouteAction(PlayerbotAI* botAI, std::string const name = "bg wsg route") : BGTactics(botAI, name) {}
+    bool isUseful() override;
+    bool Execute(Event event) override;
+};
+
+class WsgObjectiveApproachAction : public WsgObjectiveRouteAction
+{
+public:
+    WsgObjectiveApproachAction(PlayerbotAI* botAI) : WsgObjectiveRouteAction(botAI, "bg wsg approach") {}
+    bool isUseful() override;
+    bool Execute(Event event) override;
+};
+
+class WsgObjectiveCorridorAction : public WsgObjectiveRouteAction
+{
+public:
+    WsgObjectiveCorridorAction(PlayerbotAI* botAI) : WsgObjectiveRouteAction(botAI, "bg wsg corridor") {}
+    bool isUseful() override;
+    bool Execute(Event event) override;
+};
+
+class WsgObjectiveDirectAction : public WsgObjectiveRouteAction
+{
+public:
+    WsgObjectiveDirectAction(PlayerbotAI* botAI) : WsgObjectiveRouteAction(botAI, "bg wsg direct") {}
+    bool isUseful() override;
+    bool Execute(Event event) override;
+};
+
+class WsgSupportAttackAction : public AttackAction
+{
+public:
+    WsgSupportAttackAction(PlayerbotAI* botAI) : AttackAction(botAI, "attack wsg support") {}
+    Unit* GetTarget() override;
+    bool isUseful() override;
+};
+
+class WsgRegroupAction : public DropTargetAction
+{
+public:
+    WsgRegroupAction(PlayerbotAI* botAI) : DropTargetAction(botAI) {}
+    std::string const getName() override { return "wsg regroup"; }
+    bool isUseful() override;
 };
 
 class ArenaTactics : public MovementAction

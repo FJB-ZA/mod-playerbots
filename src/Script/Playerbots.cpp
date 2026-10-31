@@ -22,6 +22,7 @@
 #include "GlobalScript.h"
 #include "GuildTaskMgr.h"
 #include "LivingArenaMgr.h"
+#include "MythicPlusBotMgr.h"
 #include "LivingBondMgr.h"
 #include "LivingWorldMgr.h"
 #include "PlayerScript.h"
@@ -571,6 +572,7 @@ public:
         PlayerbotWorldThreadProcessor::instance().Update(diff);
         sRandomPlayerbotMgr.UpdateAI(diff);  // World thread only
         LivingArenaMgr::instance().Update(diff);
+        MythicPlusBotMgr::instance().Update(diff);
     }
 
     // Runs before the sessions are kicked on server shutdown
@@ -590,7 +592,6 @@ public:
     void OnBattlegroundStart(Battleground* bg) override
     {
         BGStrategyData data;
-
         BattlegroundTypeId bgType = bg->GetBgTypeID();
         if (bgType == BATTLEGROUND_RB)  // a random-queue game: the rolled map
             bgType = bg->GetBgTypeID(true);
@@ -626,14 +627,12 @@ public:
                  uint32(bgType), bg->GetInstanceID(), data.allianceStrategy, data.allianceTier, data.hordeStrategy,
                  data.hordeTier);
 
-        std::lock_guard<std::mutex> guard(bgStrategiesLock);
-        bgStrategies[bg->GetInstanceID()] = data;
+        BGTactics::SetBotStrategies(bg->GetInstanceID(), data);
     }
 
     void OnBattlegroundEnd(Battleground* bg, TeamId /*winnerTeam*/) override
     {
-        std::lock_guard<std::mutex> guard(bgStrategiesLock);
-        bgStrategies.erase(bg->GetInstanceID());
+        BGTactics::ClearBotStrategies(bg->GetInstanceID());
     }
 };
 
