@@ -5,53 +5,75 @@
  */
 
 // The sub-class balance harness (solo-wow): two bots of a path's class, one plain and one on the path, at the same
-// level with the same talents and the same gear, each fight a training dummy of their level for a set time while
-// everything they and their pets deal is metered, after an uncounted warm-up fight. A run fights at least `fights`
-// times and on, up to SubclassBalance::MaxFights, while the difference is too close to call. The comparison and its
-// verdict follow SubclassBalancePolicy.h; the rows go to the GM's chat, the server log and
-// <LogsDir>/balance-<path>.md, to be copied into the path's folder.
+// level with the same talents and the same gear. In the single-target scenario each fights a training dummy of their
+// level for a set time; in the pack scenario each fights five mobs of their level that fight back, until the five or
+// the bot are dead; everything they and their pets deal is metered, after an uncounted warm-up fight. A run fights at
+// least `fights` times and on, up to SubclassBalance::MaxFights, while the difference is too close to call. In the
+// duel scenario the two duel each other until enough duels are decided. The comparison and its verdict follow
+// SubclassBalancePolicy.h; the rows go to the GM's chat, the server log and <LogsDir>/balance-<path>.md, to be copied
+// into the path's folder.
 //
-//   .balance start <path id> <level> <plain spec no> <path spec no> [fights 3] [seconds 180] [swap 0]
+//   .balance start <path id> <level> <plain spec no> <path spec no> [fights 3] [seconds 180] [swap 0] [low high]
+//   .balance pack <path id> <level> <plain spec no> <path spec no> [fights 3] [seconds 180] [swap 0] [low high]
+//   .balance duel <path id> <level> <plain spec no> <path spec no> [duels 10] [seconds 120] [swap 0]
 //   .balance status
 //   .balance stop
 //
 // Spec numbers are the class's premade specs in playerbots.conf (Playerbots.PremadeSpecName.<class>.<no>). With
-// swap 1 the bot that would have been plain takes the path, to check a result against the two bots' races.
+// swap 1 the bot that would have been plain takes the path, to check a result against the two bots' races. In the
+// pack `seconds` caps a fight; in a duel it is how long before the duel is called a draw. `low high` holds a path its
+// design puts at a share of the plain spec's damage to that band, in percent (the Gladiator against Fury: 75 90).
 
 #include <algorithm>
 #include <cmath>
 #include <fstream>
 #include <iterator>
+#include <map>
 #include <unordered_set>
 
+#include "AiFactory.h"
 #include "Chat.h"
 #include "Config.h"
 #include "DBCEnums.h"
+#include "DBCStores.h"
 #include "GameTime.h"
 #include "Log.h"
 #include "Map.h"
 #include "ObjectAccessor.h"
+#include "ObjectMgr.h"
+#include "Opcodes.h"
+#include "Pet.h"
 #include "PlayerbotAI.h"
 #include "PlayerbotAIConfig.h"
 #include "PlayerbotFactory.h"
 #include "PlayerbotMgr.h"
 #include "Playerbots.h"
 #include "ScriptMgr.h"
+#include "SpellMgr.h"
 #include "SubclassBalancePolicy.h"
 #include "SubclassPaths.h"
 #include "TemporarySummon.h"
+#include "WorldPacket.h"
+#include "WorldSession.h"
 
 using namespace Acore::ChatCommands;
+using SubclassBalance::Scenario;
 
 namespace
 {
 constexpr uint32 DummyEntry = 31144;      // Grandmaster's Training Dummy: takes no damage, never dies
+constexpr uint32 DuelSpell = 7266;
 constexpr uint32 LoginTimeoutMs = 60000;
 constexpr uint32 PrepareMs = 20000;       // buffs, pets and the path's minions
 constexpr uint32 RestMs = 15000;
 constexpr uint32 WarmUpMs = 60000;        // a first fight that isn't counted: pets, buffs and shards settle in it
 constexpr uint32 ReattackMs = 3000;       // a dummy drops a player 5 seconds after their last direct hit
-constexpr float Apart = 40.0f;            // between the two bots' dummies
+constexpr uint32 DuelRenewMs = 1000;      // in a duel, from the end of the countdown
+constexpr uint32 DuelStartMs = 10000;     // a duel not under way by then didn't start
+constexpr uint32 PackSize = 5;
+constexpr float Apart = 40.0f;            // between the two bots' dummies or packs
+constexpr float Ahead = 15.0f;            // from a bot to its dummy or pack
+constexpr float DuelApart = 8.0f;         // inside the Duel spell's reach
 
 enum class Phase : uint8 { Idle, Login, Prepare, Fight, Rest };
 
@@ -59,26 +81,38 @@ struct Bot
 {
     ObjectGuid guid;
     ObjectGuid dummy;
+    std::vector<ObjectGuid> pack;
+    Position target;  // where its dummy or pack goes
+    bool over = false;  // the pack: its fight ended, the five or the bot dead
     SubclassBalance::Fight fight;
     std::vector<SubclassBalance::Fight> fights;
     std::string trace;  // this fight, every renewal: mana and health in tenths, "-" while out of combat
+    uint64 white = 0;   // this fight: the bot's own melee and ranged swings that landed, and what they dealt
+    uint32 hits = 0;
+    std::map<uint32, uint64> spells;  // this fight: what each of the bot's own spells dealt, before the target's armor
 };
 
 struct Run
 {
     Phase phase = Phase::Idle;
+    Scenario scenario = Scenario::Dummy;
     ObjectGuid gm;
     uint16 pathId = 0;
     std::string pathName;
     uint8 classId = 0;
     uint8 level = 0;
     int plainSpec = 0, pathSpec = 0;
-    uint32 fightsWanted = 3;
+    uint32 fightsWanted = 3;  // a duel run: the duels to decide
     uint32 fightMs = 180000;
+    uint32 packEntry = 0;
     bool swap = false;  // the first bot found takes the path, so the two can trade sides between runs
     uint32 elapsed = 0, sinceAttack = 0;
     bool warm = false;  // the warm-up fight is over
+    uint32 wins[2] = {};  // duels: the plain bot's, the path bot's
+    uint32 draws = 0;
+    bool duelOver = false;
     Bot sides[2];  // 0 the plain class, 1 the path
+    SubclassBalance::Band band;  // none: parity within the budget
     std::vector<ObjectGuid> before;  // the GM's bots before the run, so the two it adds are known
 };
 
@@ -92,6 +126,8 @@ Player* BotOf(int side)
     return bot && bot->IsInWorld() && GET_PLAYERBOT_AI(bot) ? bot : nullptr;
 }
 
+int SideOf(Player* bot) { return bot && bot->GetGUID() == run.sides[1].guid ? 1 : 0; }
+
 void Say(std::string const& text)
 {
     LOG_INFO("playerbots", "Balance: {}", text);
@@ -99,16 +135,40 @@ void Say(std::string const& text)
         ChatHandler(gm->GetSession()).SendSysMessage("Balance: " + text);
 }
 
+// The dummy or the pack a side fought, gone
+void Clear(Player* gm, Bot& side)
+{
+    if (Creature* dummy = ObjectAccessor::GetCreature(*gm, side.dummy))
+        dummy->DespawnOrUnsummon();
+    for (ObjectGuid const& guid : side.pack)
+        if (Creature* mob = ObjectAccessor::GetCreature(*gm, guid))
+            mob->DespawnOrUnsummon();
+    side.dummy.Clear();
+    side.pack.clear();
+}
+
+void Revive(Player* bot)
+{
+    if (bot->IsAlive())
+        return;
+    bot->ResurrectPlayer(1.0f);
+    bot->SpawnCorpseBones();
+}
+
 void Stop(std::string const& why)
 {
+    if (Player* plain = BotOf(0); plain && plain->duel)
+        plain->DuelComplete(DUEL_INTERRUPTED);
     // The bots are the shared addclass pool's: the path bot goes back to its plain class before it leaves, GM or not
     if (Player* path = BotOf(1); path && SubclassPaths::ActivePathId(path) != SubclassPaths::PlainClass)
         SubclassPaths::ChangeActivePath(path, SubclassPaths::PlainClass, true);
+    for (int side = 0; side < 2; ++side)
+        if (Player* bot = BotOf(side))
+            Revive(bot);
     if (Player* gm = Gm())
     {
-        for (Bot const& side : run.sides)
-            if (Creature* dummy = ObjectAccessor::GetCreature(*gm, side.dummy))
-                dummy->DespawnOrUnsummon();
+        for (Bot& side : run.sides)
+            Clear(gm, side);
         if (PlayerbotMgr* mgr = GET_PLAYERBOT_MGR(gm))
             for (Bot const& side : run.sides)
                 if (!side.guid.IsEmpty())
@@ -121,6 +181,46 @@ void Stop(std::string const& why)
 std::string SpecName(uint8 classId, int specNo)
 {
     return specNo >= 0 && specNo < MAX_SPECNO ? sPlayerbotAIConfig.PremadeSpecName[classId][specNo] : "";
+}
+
+// The pack: five of one plain melee humanoid of exactly the run's level, hostile to players, without spells, script or
+// a modified health or damage, the lowest such entry so every fight and run meets the same one
+uint32 PackEntry(uint8 level)
+{
+    uint32 best = 0;
+    for (auto const& [entry, info] : *sObjectMgr->GetCreatureTemplates())
+    {
+        if (info.minlevel != level || info.maxlevel != level || info.rank != CREATURE_ELITE_NORMAL ||
+            info.unit_class != CLASS_WARRIOR || info.type != CREATURE_TYPE_HUMANOID || !info.AIName.empty() ||
+            info.ScriptID || info.npcflag || info.flags_extra || info.spells[0] || info.ModHealth != 1.0f ||
+            info.DamageModifier != 1.0f ||
+            (info.unit_flags & (UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PC)))
+            continue;
+        FactionTemplateEntry const* faction = sFactionTemplateStore.LookupEntry(info.faction);
+        if (faction && faction->IsHostileToPlayers() && (!best || entry < best))
+            best = entry;
+    }
+    return best;
+}
+
+void Strategies(Player* bot)
+{
+    PlayerbotAI* ai = GET_PLAYERBOT_AI(bot);
+    ai->ResetStrategies();
+    ai->ChangeStrategy("-follow,+stay", BOT_STATE_NON_COMBAT);
+    // (a bot assisting its group takes the target most of the group attacks: the other bot's dummy, pet and all)
+    ai->ChangeStrategy("-dps assist", BOT_STATE_COMBAT);
+    // The harness starts and accepts the duels: a bot's own acceptance resets its strategies
+    ai->ChangeStrategy("-duel", BOT_STATE_NON_COMBAT);
+    ai->ChangeStrategy("-duel", BOT_STATE_COMBAT);
+}
+
+void Fresh(Player* bot)
+{
+    Revive(bot);
+    bot->RemoveAllSpellCooldown();
+    bot->SetFullHealth();
+    bot->SetPower(bot->getPowerType(), bot->GetMaxPower(bot->getPowerType()));
 }
 
 // Both bots at the run's level and spec, the path bot on its path, and the plain bot's gear cloned onto the path bot
@@ -187,13 +287,13 @@ void Prepare(Player* plain, Player* path)
     Say("plain " + gear(plain) + "; path " + gear(path));
     for (Player* bot : {plain, path})
     {
-        PlayerbotAI* ai = GET_PLAYERBOT_AI(bot);
-        ai->ResetStrategies();
-        ai->ChangeStrategy("-follow,+stay", BOT_STATE_NON_COMBAT);
-        // (a bot assisting its group takes the target most of the group attacks: the other bot's dummy, pet and all)
-        ai->ChangeStrategy("-dps assist", BOT_STATE_COMBAT);
-        bot->SetFullHealth();
-        bot->SetPower(bot->getPowerType(), bot->GetMaxPower(bot->getPowerType()));
+        Strategies(bot);
+        Fresh(bot);
+        std::string combat;
+        for (std::string const& name : GET_PLAYERBOT_AI(bot)->GetStrategies(BOT_STATE_COMBAT))
+            combat += (combat.empty() ? "" : ",") + name;
+        Say(Acore::StringFormat("{}: talent tab {}, fights with {}", bot->GetName(), AiFactory::GetPlayerSpecTab(bot),
+                                combat));
     }
 }
 
@@ -204,30 +304,70 @@ float GroundZ(Player* gm, float x, float y)
     return z > INVALID_HEIGHT ? z : gm->GetPositionZ();
 }
 
-// Each bot to its own spot beside the GM, on the ground and facing a fresh dummy of its level. A bot drops a target
-// it can't see, so a spot with a slope or a tree between the bot and its dummy stops the run.
+bool Sees(Player* gm, float x, float y, float z, float tx, float ty, float tz)
+{
+    return gm->GetMap()->isInLineOfSight(x, y, z + 2.0f, tx, ty, tz + 2.0f, gm->GetPhaseMask(), LINEOFSIGHT_ALL_CHECKS,
+                                         VMAP::ModelIgnoreFlags::Nothing);
+}
+
+// Each bot to its own spot beside the GM, on the ground and facing a fresh dummy of its level, or the spot its pack
+// will come from; for a duel, the two a few yards apart facing each other. A bot drops a target it can't see, so a
+// spot with a slope or a tree in the way stops the run.
 bool Lineup(Player* gm)
 {
+    float const facing = gm->GetOrientation();
+    if (run.scenario == Scenario::Duel)
+    {
+        // (towns and starting valleys such as Northshire don't allow duels)
+        AreaTableEntry const* area = sAreaTableStore.LookupEntry(gm->GetAreaId());
+        if (area && !(area->flags & AREA_FLAG_ALLOW_DUELS))
+        {
+            Stop(Acore::StringFormat("{} doesn't allow duels; stand where it does (open country) and start again",
+                                     area->area_name[LOCALE_enUS]));
+            return false;
+        }
+        float const cx = gm->GetPositionX() + std::cos(facing) * 10.0f, cy = gm->GetPositionY() + std::sin(facing) * 10.0f;
+        float spots[2][3];
+        for (int side = 0; side < 2; ++side)
+        {
+            float const angle = facing + (side ? -1.0f : 1.0f) * float(M_PI) / 2;
+            spots[side][0] = cx + std::cos(angle) * DuelApart / 2;
+            spots[side][1] = cy + std::sin(angle) * DuelApart / 2;
+            spots[side][2] = GroundZ(gm, spots[side][0], spots[side][1]);
+        }
+        if (!Sees(gm, spots[0][0], spots[0][1], spots[0][2], spots[1][0], spots[1][1], spots[1][2]))
+        {
+            Stop("the two duel spots can't see each other; stand on flat, open ground and start again");
+            return false;
+        }
+        for (int side = 0; side < 2; ++side)
+            if (Player* bot = BotOf(side))
+                bot->TeleportTo(gm->GetMapId(), spots[side][0], spots[side][1], spots[side][2],
+                                facing + (side ? 1.0f : -1.0f) * float(M_PI) / 2);
+        return true;
+    }
     for (int side = 0; side < 2; ++side)
     {
         Player* bot = BotOf(side);
         if (!bot)
             continue;
-        float const angle = gm->GetOrientation() + (side ? -1.0f : 1.0f) * float(M_PI) / 2;
+        float const angle = facing + (side ? -1.0f : 1.0f) * float(M_PI) / 2;
         float const x = gm->GetPositionX() + std::cos(angle) * Apart / 2;
         float const y = gm->GetPositionY() + std::sin(angle) * Apart / 2;
         float const z = GroundZ(gm, x, y);
-        float const dx = x + std::cos(gm->GetOrientation()) * 15.0f, dy = y + std::sin(gm->GetOrientation()) * 15.0f;
+        float const dx = x + std::cos(facing) * Ahead, dy = y + std::sin(facing) * Ahead;
         float const dz = GroundZ(gm, dx, dy);
-        if (!gm->GetMap()->isInLineOfSight(x, y, z + 2.0f, dx, dy, dz + 2.0f, gm->GetPhaseMask(),
-                                           LINEOFSIGHT_ALL_CHECKS, VMAP::ModelIgnoreFlags::Nothing))
+        if (!Sees(gm, x, y, z, dx, dy, dz))
         {
-            Stop(Acore::StringFormat("{} can't see its dummy from its spot; stand on flat, open ground and start again",
-                                     bot->GetName()));
+            Stop(Acore::StringFormat("{} can't see its {} from its spot; stand on flat, open ground and start again",
+                                     bot->GetName(), run.scenario == Scenario::Pack ? "pack" : "dummy"));
             return false;
         }
-        bot->TeleportTo(gm->GetMapId(), x, y, z, gm->GetOrientation());
-        if (TempSummon* dummy = gm->SummonCreature(DummyEntry, dx, dy, dz, gm->GetOrientation() + float(M_PI),
+        bot->TeleportTo(gm->GetMapId(), x, y, z, facing);
+        run.sides[side].target.Relocate(dx, dy, dz, facing + float(M_PI));
+        if (run.scenario != Scenario::Dummy)
+            continue;
+        if (TempSummon* dummy = gm->SummonCreature(DummyEntry, dx, dy, dz, facing + float(M_PI),
                                                    TEMPSUMMON_TIMED_DESPAWN, run.fightMs + RestMs + 60000))
         {
             dummy->SetLevel(run.level);
@@ -238,70 +378,170 @@ bool Lineup(Player* gm)
     return true;
 }
 
-// As the bots' own attack action does it: the dummy their current target, the combat engine on
-void Attack(Player* bot, Creature* dummy)
+// Each bot's five, in a line across its spot, all on it
+void Pull(Player* gm)
+{
+    for (int side = 0; side < 2; ++side)
+    {
+        Player* bot = BotOf(side);
+        Bot& b = run.sides[side];
+        if (!bot)
+            continue;
+        float const across = b.target.GetOrientation() + float(M_PI) / 2;
+        for (uint32 i = 0; i < PackSize; ++i)
+        {
+            float const offset = (float(i) - float(PackSize - 1) / 2) * 2.5f;
+            float const x = b.target.GetPositionX() + std::cos(across) * offset;
+            float const y = b.target.GetPositionY() + std::sin(across) * offset;
+            if (TempSummon* mob = gm->SummonCreature(run.packEntry, x, y, GroundZ(gm, x, y), b.target.GetOrientation(),
+                                                     TEMPSUMMON_TIMED_DESPAWN, run.fightMs + RestMs + 60000))
+            {
+                b.pack.push_back(mob->GetGUID());
+                mob->AI()->AttackStart(bot);
+            }
+        }
+    }
+}
+
+// The duel: the plain bot challenges, the path bot accepts, and after the countdown the two fight
+// (empty when it started; else why not, from the Duel spell's own checks)
+std::string Challenge()
+{
+    Player* plain = BotOf(0);
+    Player* path = BotOf(1);
+    SpellCastResult const cast = plain->CastSpell(path, DuelSpell, true);
+    if (!path->duel || path->duel->State != DUEL_STATE_CHALLENGED)
+    {
+        auto area = [](Player* bot) {
+            AreaTableEntry const* entry = sAreaTableStore.LookupEntry(bot->GetAreaId());
+            return Acore::StringFormat("area {} {}", bot->GetAreaId(),
+                                       entry && !(entry->flags & AREA_FLAG_ALLOW_DUELS) ? "(no duels)" : "(duels)");
+        };
+        return Acore::StringFormat("the duel didn't start: cast result {}; {} in {}; {} in {}, {} social data; "
+                                   "already dueling {}/{}",
+                                   uint32(cast), plain->GetName(), area(plain), path->GetName(), area(path),
+                                   path->GetSocial() ? "with" : "without", plain->duel != nullptr, path->duel != nullptr);
+    }
+    WorldPacket accept(CMSG_DUEL_ACCEPTED, 8);
+    accept << plain->GetGuidValue(PLAYER_DUEL_ARBITER);
+    path->GetSession()->HandleDuelAcceptedOpcode(accept);
+    return "";
+}
+
+void Trace(Player* bot)
+{
+    std::string& trace = run.sides[SideOf(bot)].trace;
+    trace += Acore::StringFormat("{}{}/{} ", bot->IsInCombat() ? "" : "-",
+                                 bot->GetMaxPower(bot->getPowerType()) ?
+                                     bot->GetPower(bot->getPowerType()) * 10 / bot->GetMaxPower(bot->getPowerType()) : 0,
+                                 bot->GetHealthPct() >= 100.0f ? 10 : uint32(bot->GetHealthPct() / 10));
+}
+
+// As the bots' own attack action does it: the target their current target, the combat engine on
+void Attack(Player* bot, Unit* target)
 {
     PlayerbotAI* ai = GET_PLAYERBOT_AI(bot);
     // A bot that dropped out of combat after the first renewal: once a fight, what might keep it from fighting
-    if (!bot->IsInCombat() && run.elapsed > 2 * ReattackMs && !run.sides[bot == BotOf(0) ? 0 : 1].fight.damage)
+    if (!bot->IsInCombat() && run.elapsed > 2 * ReattackMs && !run.sides[SideOf(bot)].fight.damage)
     {
         static std::unordered_set<uint64> told;
         uint64 const key = bot->GetGUID().GetRawValue() ^ (uint64(run.sides[0].fights.size()) << 56);
         if (told.insert(key).second)
         {
             Say(Acore::StringFormat("{} isn't fighting: valid target {}, in sight {}, invalid to its AI {}, height {:.1f} "
-                                    "against its dummy's {:.1f}, power {}/{}, state {}",
-                                    bot->GetName(), bot->IsValidAttackTarget(dummy), bot->IsWithinLOSInMap(dummy),
+                                    "against its target's {:.1f}, power {}/{}, state {}",
+                                    bot->GetName(), bot->IsValidAttackTarget(target), bot->IsWithinLOSInMap(target),
                                     ai->GetAiObjectContext()->GetValue<bool>("invalid target", "current target")->Get(),
-                                    bot->GetPositionZ(), dummy->GetPositionZ(), bot->GetPower(bot->getPowerType()),
+                                    bot->GetPositionZ(), target->GetPositionZ(), bot->GetPower(bot->getPowerType()),
                                     bot->GetMaxPower(bot->getPowerType()), uint32(ai->GetState())));
         }
     }
-    std::string& trace = run.sides[bot == BotOf(0) ? 0 : 1].trace;
-    trace += Acore::StringFormat("{}{}/{} ", bot->IsInCombat() ? "" : "-",
-                                 bot->GetMaxPower(bot->getPowerType()) ?
-                                     bot->GetPower(bot->getPowerType()) * 10 / bot->GetMaxPower(bot->getPowerType()) : 0,
-                                 bot->GetHealthPct() >= 100.0f ? 10 : uint32(bot->GetHealthPct() / 10));
-    bot->SetSelection(dummy->GetGUID());
-    ai->GetAiObjectContext()->GetValue<Unit*>("current target")->Set(dummy);
+    bot->SetSelection(target->GetGUID());
+    ai->GetAiObjectContext()->GetValue<Unit*>("current target")->Set(target);
     ai->ChangeEngine(BOT_STATE_COMBAT);
-    if (bot->GetVictim() != dummy)
-        bot->Attack(dummy, !PlayerbotAI::IsRanged(bot));
+    if (bot->GetVictim() != target)
+        bot->Attack(target, !PlayerbotAI::IsRanged(bot));
+}
+
+// The pack: a side's fight is over when its five are dead, or it is; how long it took is its fight's length
+void PackCheck(Player* gm)
+{
+    for (int side = 0; side < 2; ++side)
+    {
+        Bot& b = run.sides[side];
+        Player* bot = BotOf(side);
+        if (b.over || !bot)
+            continue;
+        bool const alive = std::any_of(b.pack.begin(), b.pack.end(), [gm](ObjectGuid const& guid) {
+            Creature* mob = ObjectAccessor::GetCreature(*gm, guid);
+            return mob && mob->IsAlive();
+        });
+        if (alive && bot->IsAlive())
+            continue;
+        b.over = true;
+        b.fight.ms = run.elapsed - ReattackMs;
+        b.fight.deaths = bot->IsAlive() ? 0 : 1;
+    }
 }
 
 void EndFight()
 {
+    Player* gm = Gm();
     for (int side = 0; side < 2; ++side)
     {
         Bot& b = run.sides[side];
         if (Player* bot = BotOf(side))
         {
-            Creature* dummy = Gm() ? ObjectAccessor::GetCreature(*Gm(), b.dummy) : nullptr;
-            Say(Acore::StringFormat("{}: level {}, {}, {} health, targeting {}, dummy {} at {:.0f} yards, {} damage",
+            Creature* dummy = gm ? ObjectAccessor::GetCreature(*gm, b.dummy) : nullptr;
+            Say(Acore::StringFormat("{}: level {}, {}, {} health, form {}, targeting {}, dummy {} at {:.0f} yards, {} damage "
+                                    "({} of it from {} swings){}",
                                     bot->GetName(), bot->GetLevel(), bot->IsInCombat() ? "in combat" : "out of combat",
-                                    bot->IsAlive() ? "alive" : "dead", bot->GetTarget().ToString(),
-                                    dummy ? dummy->GetGUID().ToString() : "missing",
-                                    dummy ? bot->GetDistance(dummy) : 0.0f, b.fight.damage));
+                                    bot->IsAlive() ? "alive" : "dead", uint32(bot->GetShapeshiftForm()),
+                                    bot->GetTarget().ToString(), dummy ? dummy->GetGUID().ToString() : "missing",
+                                    dummy ? bot->GetDistance(dummy) : 0.0f, b.fight.damage, b.white, b.hits,
+                                    run.scenario == Scenario::Pack ?
+                                        Acore::StringFormat(", pack {} in {:.1f} seconds", b.fight.deaths ? "won" : "cleared",
+                                                            b.fight.ms / 1000.0f) : ""));
             Say(Acore::StringFormat("{} mana/health: {}", bot->GetName(), b.trace));
+            std::vector<std::pair<uint64, uint32>> top;
+            for (auto const& [spell, dealt] : b.spells)
+                top.emplace_back(dealt, spell);
+            std::sort(top.rbegin(), top.rend());
+            std::string spells;
+            for (size_t i = 0; i < top.size() && i < 5; ++i)
+            {
+                SpellInfo const* info = sSpellMgr->GetSpellInfo(top[i].second);
+                spells += Acore::StringFormat("{}{} {} {}", i ? ", " : "", top[i].second,
+                                              info ? info->SpellName[LOCALE_enUS] : "?", top[i].first);
+            }
+            Say(Acore::StringFormat("{} spells: {}{}", bot->GetName(), spells.empty() ? "none" : spells,
+                                    dummy ? Acore::StringFormat("; its dummy level {}, armor {}; {:.1f} yards from its "
+                                                                "centre, in melee range {}, facing it {}, behind it {}",
+                                                                dummy->GetLevel(), dummy->GetArmor(),
+                                                                bot->GetExactDist2d(dummy), bot->IsWithinMeleeRange(dummy),
+                                                                bot->HasInArc(float(M_PI), dummy),
+                                                                !dummy->HasInArc(float(M_PI), bot)) : ""));
         }
-        b.fight.ms = run.fightMs;
+        // (a pack fight's length is how long the side took; a pack still standing at the cap took all of it)
+        if (run.scenario != Scenario::Pack || !b.over)
+            b.fight.ms = run.warm ? run.fightMs : WarmUpMs;
         if (run.warm)
             b.fights.push_back(b.fight);
         b.fight = {};
         b.trace.clear();
+        b.white = 0;
+        b.hits = 0;
+        b.spells.clear();
+        b.over = false;
         if (Player* bot = BotOf(side))
         {
             bot->AttackStop();
             bot->CombatStop(true);
             GET_PLAYERBOT_AI(bot)->ChangeEngine(BOT_STATE_NON_COMBAT);
-            bot->RemoveAllSpellCooldown();
-            bot->SetFullHealth();
-            bot->SetPower(bot->getPowerType(), bot->GetMaxPower(bot->getPowerType()));
+            Fresh(bot);
         }
-        if (Player* gm = Gm())
-            if (Creature* dummy = ObjectAccessor::GetCreature(*gm, b.dummy))
-                dummy->DespawnOrUnsummon();
-        b.dummy.Clear();
+        if (gm)
+            Clear(gm, b);
     }
 }
 
@@ -311,17 +551,78 @@ void Report()
     Row const row{Acore::Time::TimeToTimestampStr(GameTime::GetGameTime()).substr(0, 10), run.level,
                   SpecName(run.classId, run.plainSpec) + " / " + SpecName(run.classId, run.pathSpec) +
                       (run.swap ? " (sides swapped)" : ""),
-                  Scenario::Dummy};
-    Comparison const c = Compare(run.sides[0].fights, run.sides[1].fights);
-    std::string const line = TableRow(row, c);
+                  run.scenario};
+    std::string const line = run.scenario == Scenario::Duel ?
+                                 TableRow(row, JudgeDuels(run.wins[1], run.wins[0], run.draws)) :
+                                 TableRow(row, Compare(run.sides[0].fights, run.sides[1].fights, run.band));
     Say(run.pathName + ": " + line);
     std::string const file = sConfigMgr->GetOption<std::string>("LogsDir", ".") + "/balance-" + run.pathName + ".md";
     bool const fresh = !std::ifstream(file).good();
     std::ofstream out(file, std::ios::app);
     if (fresh)
-        out << "# " << run.pathName << " balance\n\n" << TableHeader();
+        out << "# " << run.pathName << " balance\n\n" << SubclassBalance::TableHeader();
     out << line;
     Say("written to " + file);
+}
+
+// A duel's end, from the duel hook or the time running out
+void DuelTick(uint32 diff)
+{
+    Player* plain = BotOf(0);
+    Player* path = BotOf(1);
+    bool const going = plain->duel && plain->duel->State == DUEL_STATE_IN_PROGRESS;
+    if (!run.duelOver && !plain->duel && run.elapsed > DuelStartMs)
+    {
+        Stop("the duel didn't start (is dueling allowed here?)");
+        return;
+    }
+    run.sinceAttack += diff;
+    if (going && run.sinceAttack >= DuelRenewMs)
+    {
+        run.sinceAttack = 0;
+        Attack(plain, path);
+        Attack(path, plain);
+        Trace(plain);
+        Trace(path);
+    }
+    if (!run.duelOver && run.elapsed >= run.fightMs)
+    {
+        if (plain->duel)
+            plain->DuelComplete(DUEL_INTERRUPTED);  // the duel hook counts it a draw
+        if (!run.duelOver)
+            ++run.draws;
+        run.duelOver = true;
+    }
+    if (!run.duelOver)
+        return;
+    for (int side = 0; side < 2; ++side)
+    {
+        Player* bot = BotOf(side);
+        Say(Acore::StringFormat("{} mana/health: {}", bot->GetName(), run.sides[side].trace));
+        run.sides[side].trace.clear();
+        bot->AttackStop();
+        bot->CombatStop(true);
+        GET_PLAYERBOT_AI(bot)->ChangeEngine(BOT_STATE_NON_COMBAT);
+        Fresh(bot);
+    }
+    for (Player* bot : {plain, path})
+        if (Pet* pet = bot->GetPet())
+        {
+            pet->AttackStop();
+            pet->CombatStop(true);
+        }
+    uint32 const decided = run.wins[0] + run.wins[1];
+    Say(Acore::StringFormat("duel {}: plain {} won, path {} won, {} draws", decided + run.draws, run.wins[0], run.wins[1],
+                            run.draws));
+    if (decided >= run.fightsWanted || decided + run.draws >= 2 * run.fightsWanted)
+    {
+        Report();
+        Stop("done");
+        return;
+    }
+    run.duelOver = false;
+    run.phase = Phase::Rest;
+    run.elapsed = 0;
 }
 
 void Tick(uint32 diff)
@@ -387,13 +688,18 @@ void Tick(uint32 diff)
             // Each fight starts fresh: what a bot spent resting (buffs, a pet, a Life Tap to fill up) isn't carried in
             for (int side = 0; side < 2; ++side)
                 if (Player* bot = BotOf(side))
-                {
-                    bot->RemoveAllSpellCooldown();
-                    bot->SetFullHealth();
-                    bot->SetPower(bot->getPowerType(), bot->GetMaxPower(bot->getPowerType()));
-                }
+                    Fresh(bot);
             run.phase = Phase::Fight;
+            if (run.scenario == Scenario::Duel)
+            {
+                run.elapsed = run.sinceAttack = 0;
+                if (std::string const why = Challenge(); !why.empty())
+                    Stop(why);
+                return;
+            }
             run.elapsed = run.sinceAttack = ReattackMs;
+            if (run.scenario == Scenario::Pack)
+                Pull(gm);
             return;
         case Phase::Fight:
         {
@@ -402,21 +708,43 @@ void Tick(uint32 diff)
                 Stop("a bot left mid-fight; stopped");
                 return;
             }
+            if (run.scenario == Scenario::Duel)
+            {
+                DuelTick(diff);
+                return;
+            }
+            if (run.scenario == Scenario::Pack)
+                PackCheck(gm);
             run.sinceAttack += diff;
             if (run.sinceAttack >= ReattackMs)
             {
                 run.sinceAttack = 0;
                 for (int side = 0; side < 2; ++side)
-                    if (Creature* dummy = ObjectAccessor::GetCreature(*gm, run.sides[side].dummy))
-                        Attack(BotOf(side), dummy);
+                {
+                    Player* bot = BotOf(side);
+                    Bot const& b = run.sides[side];
+                    if (b.over)
+                        continue;
+                    Trace(bot);
+                    if (Creature* dummy = ObjectAccessor::GetCreature(*gm, b.dummy))
+                        Attack(bot, dummy);
+                    // (a pack keeps a bot in combat: it is only pointed at one of the five when it has no target)
+                    else if (run.scenario == Scenario::Pack && !bot->GetVictim())
+                        for (ObjectGuid const& guid : b.pack)
+                            if (Creature* mob = ObjectAccessor::GetCreature(*gm, guid); mob && mob->IsAlive())
+                            {
+                                Attack(bot, mob);
+                                break;
+                            }
+                }
             }
-            if (run.elapsed < (run.warm ? run.fightMs : WarmUpMs) + ReattackMs)
+            bool const packDone = run.scenario == Scenario::Pack && run.sides[0].over && run.sides[1].over;
+            if (!packDone && run.elapsed < (run.warm ? run.fightMs : WarmUpMs) + ReattackMs)
                 return;
             if (!run.warm)
             {
-                Say(Acore::StringFormat("warm-up: plain {:.1f} DPS, path {:.1f} DPS (not counted)",
-                                        SubclassBalance::PerSecond(run.sides[0].fight.damage, WarmUpMs),
-                                        SubclassBalance::PerSecond(run.sides[1].fight.damage, WarmUpMs)));
+                Say(Acore::StringFormat("warm-up: plain {} damage, path {} damage (not counted)", run.sides[0].fight.damage,
+                                        run.sides[1].fight.damage));
                 EndFight();
                 run.warm = true;
                 run.phase = Phase::Rest;
@@ -425,15 +753,25 @@ void Tick(uint32 diff)
             }
             EndFight();
             uint32 const done = uint32(run.sides[0].fights.size());
-            Say(Acore::StringFormat("fight {} (of at least {}): plain {:.1f} DPS, path {:.1f} DPS", done, run.fightsWanted,
-                                    SubclassBalance::PerSecond(run.sides[0].fights.back().damage, run.fightMs),
-                                    SubclassBalance::PerSecond(run.sides[1].fights.back().damage, run.fightMs)));
+            SubclassBalance::Fight const& plainLast = run.sides[0].fights.back();
+            SubclassBalance::Fight const& pathLast = run.sides[1].fights.back();
+            Say(Acore::StringFormat("fight {} (of at least {}): plain {:.1f} DPS, path {:.1f} DPS{}", done, run.fightsWanted,
+                                    SubclassBalance::PerSecond(plainLast.damage, plainLast.ms),
+                                    SubclassBalance::PerSecond(pathLast.damage, pathLast.ms),
+                                    run.scenario == Scenario::Pack ?
+                                        Acore::StringFormat(" (plain {:.1f} s{}, path {:.1f} s{})", plainLast.ms / 1000.0f,
+                                                            plainLast.deaths ? " and died" : "", pathLast.ms / 1000.0f,
+                                                            pathLast.deaths ? " and died" : "") : ""));
             if (done >= run.fightsWanted)
             {
                 // Fights on while the difference is too close to the budget to call, up to the cap
-                SubclassBalance::Comparison const c = SubclassBalance::Compare(run.sides[0].fights, run.sides[1].fights);
+                SubclassBalance::Comparison const c =
+                    SubclassBalance::Compare(run.sides[0].fights, run.sides[1].fights, run.band);
                 if (SubclassBalance::FightOn(c, done, std::max(run.fightsWanted, SubclassBalance::MaxFights)))
-                    Say(Acore::StringFormat("{:+.1f}% ± {:.1f}% is too close to call; another fight", c.dpsDiffPct,
+                    Say(Acore::StringFormat("{} ± {:.1f}% is too close to call; another fight",
+                                            SubclassBalance::HasBand(run.band) ?
+                                                Acore::StringFormat("{:.1f}% of plain", c.sharePct) :
+                                                Acore::StringFormat("{:+.1f}%", c.dpsDiffPct),
                                             c.marginPct));
                 else
                 {
@@ -451,23 +789,37 @@ void Tick(uint32 diff)
     }
 }
 
+void MeterSpell(Unit* attacker, uint32 damage, SpellInfo const* spellInfo)
+{
+    if (run.phase != Phase::Fight || !damage || !attacker || !spellInfo)
+        return;
+    for (Bot& side : run.sides)
+        if (attacker->GetGUID() == side.guid && !side.over)
+            side.spells[spellInfo->Id] += damage;
+}
+
 // What a bot of the run, or its pet, guardian or totem, deals during a fight; and what they take
-void Meter(Unit* attacker, Unit* victim, uint32 damage)
+void Meter(Unit* attacker, Unit* victim, uint32 damage, DamageEffectType type)
 {
     if (run.phase != Phase::Fight || !damage)
         return;
     if (attacker)
         if (Player* owner = attacker->GetCharmerOrOwnerPlayerOrPlayerItself())
             for (Bot& side : run.sides)
-                if (owner->GetGUID() == side.guid)
+                if (owner->GetGUID() == side.guid && !side.over)
                 {
                     side.fight.damage += damage;
                     if (attacker != owner)
                         side.fight.petDamage += damage;
+                    else if (type == DIRECT_DAMAGE)
+                    {
+                        side.white += damage;
+                        ++side.hits;
+                    }
                 }
     if (victim)
         for (Bot& side : run.sides)
-            if (victim->GetGUID() == side.guid)
+            if (victim->GetGUID() == side.guid && !side.over)
                 side.fight.taken += damage;
 }
 }
@@ -478,10 +830,22 @@ public:
     SubclassBalanceUnitScript() : UnitScript("SubclassBalanceUnitScript", true) {}
 
     // After absorbs, before the victim's AI: a training dummy zeroes what it takes only after this
-    uint32 DealDamage(Unit* attacker, Unit* victim, uint32 damage, DamageEffectType /*type*/) override
+    uint32 DealDamage(Unit* attacker, Unit* victim, uint32 damage, DamageEffectType type) override
     {
-        Meter(attacker, victim, damage);
+        Meter(attacker, victim, damage, type);
         return damage;
+    }
+
+    // Which of a bot's spells its damage came from, direct and over time
+    void ModifySpellDamageTaken(Unit* /*target*/, Unit* attacker, int32& damage, SpellInfo const* spellInfo) override
+    {
+        if (damage > 0)
+            MeterSpell(attacker, uint32(damage), spellInfo);
+    }
+
+    void ModifyPeriodicDamageAurasTick(Unit* /*target*/, Unit* attacker, uint32& damage, SpellInfo const* spellInfo) override
+    {
+        MeterSpell(attacker, damage, spellInfo);
     }
 };
 
@@ -493,6 +857,29 @@ public:
     void OnUpdate(uint32 diff) override { Tick(diff); }
 };
 
+class SubclassBalancePlayerScript : public PlayerScript
+{
+public:
+    SubclassBalancePlayerScript() : PlayerScript("SubclassBalancePlayerScript", {PLAYERHOOK_ON_DUEL_END}) {}
+
+    // A duel of the run's two bots: who won, or a draw when it was called off
+    void OnPlayerDuelEnd(Player* winner, Player* loser, DuelCompleteType type) override
+    {
+        if (run.scenario != Scenario::Duel || run.phase != Phase::Fight || run.duelOver)
+            return;
+        auto ours = [](Player* player) {
+            return player && (player->GetGUID() == run.sides[0].guid || player->GetGUID() == run.sides[1].guid);
+        };
+        if (!ours(winner) || !ours(loser))
+            return;
+        if (type == DUEL_WON)
+            ++run.wins[SideOf(winner)];
+        else
+            ++run.draws;
+        run.duelOver = true;
+    }
+};
+
 class SubclassBalanceCommandScript : public CommandScript
 {
 public:
@@ -502,15 +889,23 @@ public:
     {
         static ChatCommandTable balanceTable = {
             {"start", HandleStart, SEC_GAMEMASTER, Console::No},
+            {"pack", HandlePack, SEC_GAMEMASTER, Console::No},
+            {"duel", HandleDuel, SEC_GAMEMASTER, Console::No},
             {"status", HandleStatus, SEC_GAMEMASTER, Console::No},
             {"stop", HandleStop, SEC_GAMEMASTER, Console::No}};
         static ChatCommandTable commandTable = {{"balance", balanceTable}};
         return commandTable;
     }
 
-    static bool HandleStart(ChatHandler* handler, uint16 pathId, uint8 level, uint8 plainSpec, uint8 pathSpec,
-                            Optional<uint32> fights, Optional<uint32> seconds, Optional<uint32> swap)
+    static bool Begin(ChatHandler* handler, Scenario scenario, uint16 pathId, uint8 level, uint8 plainSpec,
+                      uint8 pathSpec, uint32 fights, uint32 seconds, bool swap,
+                      SubclassBalance::Band band = {})
     {
+        if (SubclassBalance::HasBand(band) && (band.lowPct <= 0 || band.lowPct >= band.highPct || band.highPct > 200))
+        {
+            handler->SendErrorMessage("A band is two percentages, low then high, of the plain spec's damage.", false);
+            return false;
+        }
         if (run.phase != Phase::Idle)
         {
             handler->SendErrorMessage("A balance run is going; .balance stop ends it.", false);
@@ -539,6 +934,22 @@ public:
                                       false);
             return false;
         }
+        uint32 packEntry = 0;
+        if (scenario == Scenario::Pack)
+        {
+            // (the five come at the bots, and the GM stands 20 yards from each)
+            if (!gm->IsGameMaster())
+            {
+                handler->SendErrorMessage("The pack needs GM mode on (.gm on): its mobs would come for you too.", false);
+                return false;
+            }
+            packEntry = PackEntry(level);
+            if (!packEntry)
+            {
+                handler->SendErrorMessage(Acore::StringFormat("No plain level {} mob for a pack.", level), false);
+                return false;
+            }
+        }
         PlayerbotMgr* mgr = GET_PLAYERBOT_MGR(gm);
         if (!mgr)
         {
@@ -546,6 +957,7 @@ public:
             return false;
         }
         run = Run{};
+        run.scenario = scenario;
         run.gm = gm->GetGUID();
         run.pathId = path->id;
         run.pathName = path->name;
@@ -553,9 +965,12 @@ public:
         run.level = level;
         run.plainSpec = plainSpec;
         run.pathSpec = pathSpec;
-        run.fightsWanted = std::max<uint32>(fights.value_or(SubclassBalance::MinFights), 1);
-        run.fightMs = std::clamp<uint32>(seconds.value_or(180), 30, 900) * IN_MILLISECONDS;
-        run.swap = swap.value_or(0) != 0;
+        run.fightsWanted = std::max<uint32>(fights, 1);
+        run.fightMs = std::clamp<uint32>(seconds, 30, 900) * IN_MILLISECONDS;
+        run.packEntry = packEntry;
+        run.swap = swap;
+        run.band = band;
+        run.warm = scenario == Scenario::Duel;  // each duel starts fresh: no warm-up
         for (auto itr = mgr->GetPlayerBotsBegin(); itr != mgr->GetPlayerBotsEnd(); ++itr)
             run.before.push_back(itr->first);
         static char const* const names[MAX_CLASSES] = {"", "warrior", "paladin", "hunter", "rogue", "priest",
@@ -568,18 +983,61 @@ public:
                 LOG_INFO("playerbots", "Balance: {}", reply);
         }
         run.phase = Phase::Login;
-        handler->PSendSysMessage("Balance: {} at level {}, {} fights of {} seconds; logging in two bots.", path->name,
-                                 level, run.fightsWanted, run.fightMs / IN_MILLISECONDS);
+        std::string const what =
+            scenario == Scenario::Duel ?
+                Acore::StringFormat("{} duels decided, a draw after {} seconds", run.fightsWanted, run.fightMs / IN_MILLISECONDS) :
+                Acore::StringFormat("{} fights of {}{} seconds{}", run.fightsWanted,
+                                    scenario == Scenario::Pack ? "at most " : "", run.fightMs / IN_MILLISECONDS,
+                                    scenario == Scenario::Pack ?
+                                        Acore::StringFormat(" against five {}",
+                                                            sObjectMgr->GetCreatureTemplate(packEntry)->Name) : "");
+        handler->PSendSysMessage("Balance: {} at level {}, {}, {}; logging in two bots.", path->name, level,
+                                 SubclassBalance::ScenarioName(scenario), what);
         return true;
+    }
+
+    static SubclassBalance::Band BandOf(Optional<uint32> low, Optional<uint32> high)
+    {
+        return low && high ? SubclassBalance::Band{double(*low), double(*high)} : SubclassBalance::Band{};
+    }
+
+    static bool HandleStart(ChatHandler* handler, uint16 pathId, uint8 level, uint8 plainSpec, uint8 pathSpec,
+                            Optional<uint32> fights, Optional<uint32> seconds, Optional<uint32> swap,
+                            Optional<uint32> low, Optional<uint32> high)
+    {
+        return Begin(handler, Scenario::Dummy, pathId, level, plainSpec, pathSpec,
+                     fights.value_or(SubclassBalance::MinFights), seconds.value_or(180), swap.value_or(0) != 0,
+                     BandOf(low, high));
+    }
+
+    static bool HandlePack(ChatHandler* handler, uint16 pathId, uint8 level, uint8 plainSpec, uint8 pathSpec,
+                           Optional<uint32> fights, Optional<uint32> seconds, Optional<uint32> swap,
+                           Optional<uint32> low, Optional<uint32> high)
+    {
+        return Begin(handler, Scenario::Pack, pathId, level, plainSpec, pathSpec,
+                     fights.value_or(SubclassBalance::MinFights), seconds.value_or(180), swap.value_or(0) != 0,
+                     BandOf(low, high));
+    }
+
+    static bool HandleDuel(ChatHandler* handler, uint16 pathId, uint8 level, uint8 plainSpec, uint8 pathSpec,
+                           Optional<uint32> duels, Optional<uint32> seconds, Optional<uint32> swap)
+    {
+        return Begin(handler, Scenario::Duel, pathId, level, plainSpec, pathSpec,
+                     std::max(duels.value_or(SubclassBalance::MinDuels), SubclassBalance::MinDuels),
+                     seconds.value_or(120), swap.value_or(0) != 0);
     }
 
     static bool HandleStatus(ChatHandler* handler)
     {
         static char const* const phases[] = {"idle", "logging in", "preparing", "fighting", "resting"};
+        uint32 const fought = run.scenario == Scenario::Duel ? run.wins[0] + run.wins[1] + run.draws
+                                                              : uint32(run.sides[0].fights.size());
         handler->PSendSysMessage("Balance: {}{}", phases[uint8(run.phase)],
                                  run.phase == Phase::Idle ? std::string()
-                                     : Acore::StringFormat(", {} at level {}, fight {} of {}", run.pathName, run.level,
-                                                           run.sides[0].fights.size() + 1, run.fightsWanted));
+                                     : Acore::StringFormat(", {} {} at level {}, {} {} of {}", run.pathName,
+                                                           SubclassBalance::ScenarioName(run.scenario), run.level,
+                                                           run.scenario == Scenario::Duel ? "duel" : "fight",
+                                                           fought + 1, run.fightsWanted));
         return true;
     }
 
@@ -599,5 +1057,6 @@ void AddSubclassBalanceScripts()
 {
     new SubclassBalanceUnitScript();
     new SubclassBalanceWorldScript();
+    new SubclassBalancePlayerScript();
     new SubclassBalanceCommandScript();
 }

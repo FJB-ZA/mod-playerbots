@@ -14,6 +14,7 @@
 #include "ServerFacade.h"
 #include "SpellInfo.h"
 #include "SpellMgr.h"
+#include "SubclassBotMgr.h"
 #include "Timer.h"
 #include "Unit.h"
 #include <mutex>
@@ -71,9 +72,10 @@ bool CastFearOnCcAction::isPossible()
     if (!target)
         return false;
 
-    // Fear cannot be cast on mechanical or undead creatures
+    // Fear cannot be cast on mechanical or undead creatures (a path's stand-in, the Necromancer's Entomb stun, can)
     uint32 creatureType = target->GetCreatureType();
-    if (creatureType == CREATURE_TYPE_MECHANICAL || creatureType == CREATURE_TYPE_UNDEAD)
+    if ((creatureType == CREATURE_TYPE_MECHANICAL || creatureType == CREATURE_TYPE_UNDEAD) &&
+        !SubclassBotMgr::instance().FindAlias(bot, L"fear"))
         return false;
 
     // Use base class to check spell available, range, etc
