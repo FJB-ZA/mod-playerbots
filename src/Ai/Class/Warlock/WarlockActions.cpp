@@ -12,6 +12,9 @@
 #include "PlayerbotAI.h"
 #include "Playerbots.h"
 #include "ServerFacade.h"
+#include "SpellInfo.h"
+#include "SpellMgr.h"
+#include "SubclassBotMgr.h"
 #include "Timer.h"
 #include "Unit.h"
 #include <mutex>
@@ -24,8 +27,24 @@ const int ITEM_SOUL_SHARD = 6265;
 // Checks if the bot has less than 26 soul shards, and if so, allows casting Drain Soul
 bool CastDrainSoulAction::isUseful() { return AI_VALUE2(uint32, "item count", "soul shard") < 26; }
 
-// Checks if the bot's health is above a certain threshold, and if so, allows casting Life Tap
-bool CastLifeTapAction::isUseful() { return AI_VALUE2(uint8, "health", "self target") > sPlayerbotAIConfig.LowHealth; }
+// Life Tap spends health on mana while the warlock is above the low-health line and something is hitting it. While
+// nothing is, it may go on as long as the health left after the tap (the spell's own cost) stays above the critical
+// line: with no damage coming in, holding 45% back left a warlock wanding at 0 mana for the last minute of a long
+// fight.
+bool LifeTapHealthAllows(PlayerbotAI* botAI, Player* bot)
+{
+    if (!bot->getAttackers().empty())
+        return bot->GetHealthPct() > sPlayerbotAIConfig.LowHealth;
+
+    uint32 const spellId = botAI->GetAiObjectContext()->GetValue<uint32>("spell id", "life tap")->Get();
+    SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+    if (!spellInfo || !bot->GetMaxHealth())
+        return false;
+    int64 const left = int64(bot->GetHealth()) - spellInfo->Effects[EFFECT_0].CalcValue(bot);
+    return left * 100.0f / bot->GetMaxHealth() > sPlayerbotAIConfig.CriticalHealth;
+}
+
+bool CastLifeTapAction::isUseful() { return LifeTapHealthAllows(botAI, bot); }
 
 Value<Unit*>* CastBanishOnCcAction::GetTargetValue() { return context->GetValue<Unit*>("rti cc target"); }
 Value<Unit*>* CastFearOnCcAction::GetTargetValue() { return context->GetValue<Unit*>("rti cc target"); }
@@ -53,9 +72,10 @@ bool CastFearOnCcAction::isPossible()
     if (!target)
         return false;
 
-    // Fear cannot be cast on mechanical or undead creatures
+    // Fear cannot be cast on mechanical or undead creatures (a path's stand-in, the Necromancer's Entomb stun, can)
     uint32 creatureType = target->GetCreatureType();
-    if (creatureType == CREATURE_TYPE_MECHANICAL || creatureType == CREATURE_TYPE_UNDEAD)
+    if ((creatureType == CREATURE_TYPE_MECHANICAL || creatureType == CREATURE_TYPE_UNDEAD) &&
+        !SubclassBotMgr::instance().FindAlias(bot, L"fear"))
         return false;
 
     // Use base class to check spell available, range, etc

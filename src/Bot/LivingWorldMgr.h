@@ -22,6 +22,9 @@ public:
     static LivingWorldMgr& instance();
     void Load();
     bool IsEnabled(Player* player) const;
+    // Leaves a bot out of the living world while it's borrowed for a fixed setup (the balance harness): not preserved,
+    // not level-capped, until it's let go again
+    void Exempt(Player* player, bool exempt);
     bool Preserve(Player* player);
     LivingWorld::Profile GetProfile(Player* player);
     void MarkInitialized(Player* player);
@@ -41,6 +44,8 @@ private:
     std::mutex _mutex;
     std::unordered_map<uint32, LivingWorld::Profile> _profiles;
     std::unordered_set<uint32> _cityStarts;
+    mutable std::mutex _exemptMutex;
+    std::unordered_set<uint32> _exempt;
 };
 
 #endif

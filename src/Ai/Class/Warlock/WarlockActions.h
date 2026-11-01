@@ -219,6 +219,8 @@ public:
     bool isUseful() override;
 };
 
+bool LifeTapHealthAllows(PlayerbotAI* botAI, Player* bot);
+
 class CastLifeTapAction : public CastSpellAction
 {
 public:
