@@ -62,8 +62,20 @@ void LivingWorldMgr::Load()
 
 bool LivingWorldMgr::IsEnabled(Player* player) const
 {
-    return sPlayerbotAIConfig.LivingWorldEnabled && player && player->GetSession() &&
-           player->GetSession()->IsHeadless() && sRandomPlayerbotMgr.IsRandomBot(player);
+    if (!sPlayerbotAIConfig.LivingWorldEnabled || !player || !player->GetSession() || !player->GetSession()->IsHeadless() ||
+        !sRandomPlayerbotMgr.IsRandomBot(player))
+        return false;
+    std::lock_guard<std::mutex> lock(_exemptMutex);
+    return !_exempt.count(player->GetGUID().GetCounter());
+}
+
+void LivingWorldMgr::Exempt(Player* player, bool exempt)
+{
+    std::lock_guard<std::mutex> lock(_exemptMutex);
+    if (exempt)
+        _exempt.insert(player->GetGUID().GetCounter());
+    else
+        _exempt.erase(player->GetGUID().GetCounter());
 }
 
 LivingWorld::Profile LivingWorldMgr::GetProfile(Player* player)

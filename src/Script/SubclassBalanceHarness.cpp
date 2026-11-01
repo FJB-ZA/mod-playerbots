@@ -37,6 +37,7 @@
 #include "DBCEnums.h"
 #include "DBCStores.h"
 #include "GameTime.h"
+#include "LivingWorldMgr.h"
 #include "Log.h"
 #include "Map.h"
 #include "ObjectAccessor.h"
@@ -164,7 +165,10 @@ void Stop(std::string const& why)
         SubclassPaths::ChangeActivePath(path, SubclassPaths::PlainClass, true);
     for (int side = 0; side < 2; ++side)
         if (Player* bot = BotOf(side))
+        {
             Revive(bot);
+            LivingWorldMgr::instance().Exempt(bot, false);
+        }
     if (Player* gm = Gm())
     {
         for (Bot& side : run.sides)
@@ -174,7 +178,7 @@ void Stop(std::string const& why)
                 if (!side.guid.IsEmpty())
                     mgr->LogoutPlayerBot(side.guid);
     }
-    Say(why);
+    Say("run over: " + why);  // .\wow.ps1 balance waits for this line; "done" is the only measured ending
     run = Run{};
 }
 
@@ -223,17 +227,74 @@ void Fresh(Player* bot)
     bot->SetPower(bot->getPowerType(), bot->GetMaxPower(bot->getPowerType()));
 }
 
+// What keeps a bot from being the setup the run asked for, or empty: anything here would measure another character
+// than the one the row names
+std::string Unready(Player* bot, uint16 wantedPath)
+{
+    std::vector<std::string> wrong;
+    if (bot->GetLevel() != run.level)
+        wrong.push_back(Acore::StringFormat("level {}", bot->GetLevel()));
+    if (uint16 const pathId = SubclassPaths::ActivePathId(bot); pathId != wantedPath)
+        wrong.push_back(Acore::StringFormat("path {}", pathId));
+    if (uint32 const free = bot->GetFreeTalentPoints())
+        wrong.push_back(Acore::StringFormat("{} talent points unspent", free));
+    uint8 const spec = bot->GetActiveSpec();
+    for (auto const& [spellId, talent] : bot->GetTalentMap())
+        // A passive talent is an aura on the bot, not a spell it knows: one without an aura (Titan's Grip) leaves
+        // nothing to see but its effect, and one for a stance is only there in that stance. A path may take a
+        // talent's spell for its own.
+        if (SpellInfo const* info = sSpellMgr->GetSpellInfo(spellId);
+            info && talent->State != PLAYERSPELL_REMOVED && talent->IsInSpec(spec) && !bot->HasSpell(spellId) &&
+            !(info->IsPassive() && (bot->HasAura(spellId) || !info->HasAnyAura() ||
+                                    info->CheckShapeshift(bot->GetShapeshiftForm()) != SPELL_CAST_OK)) &&
+            !SubclassPaths::ActiveReplacement(bot, spellId))
+        {
+            auto const known = bot->GetSpellMap().find(spellId);
+            wrong.push_back(known == bot->GetSpellMap().end()
+                                ? Acore::StringFormat("talent {} without its spell", spellId)
+                                : Acore::StringFormat("talent {} with its spell in state {}, slots {}", spellId,
+                                                      int(known->second->State), int(known->second->specMask)));
+        }
+    uint16 const cap = bot->GetMaxSkillValueForLevel();
+    if (bot->GetSkillValue(SKILL_DEFENSE) < cap)
+        wrong.push_back(Acore::StringFormat("defense {} of {}", bot->GetSkillValue(SKILL_DEFENSE), cap));
+    for (WeaponAttackType attack : {BASE_ATTACK, OFF_ATTACK, RANGED_ATTACK})
+        if (Item* weapon = bot->GetWeaponForAttack(attack, true))
+            if (uint32 const skill = weapon->GetSkill(); bot->GetSkillValue(skill) < cap)
+                wrong.push_back(Acore::StringFormat("{} skill {} of {}", weapon->GetTemplate()->Name1,
+                                                    bot->GetSkillValue(skill), cap));
+    if (bot->GetWeaponForAttack(OFF_ATTACK, true) && !bot->CanDualWield())
+        wrong.push_back("an off-hand weapon it can't swing");
+    if (Item* offhand = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_OFFHAND);
+        offhand && offhand->GetTemplate()->InventoryType == INVTYPE_2HWEAPON && !bot->CanTitanGrip())
+        wrong.push_back("a two-hander in its off hand without Titan's Grip");
+    // A plain bot that still knows a path's spells fights with them
+    if (wantedPath == SubclassPaths::PlainClass)
+        for (SubclassPaths::Path const* other : SubclassPaths::ClassPaths(bot->getClass()))
+            for (SubclassPaths::SpellSwap const& swap : other->swaps)
+                if (bot->HasSpell(swap.replacement))
+                    wrong.push_back(Acore::StringFormat("path spell {}", swap.replacement));
+    std::string why;
+    for (std::string const& each : wrong)
+        why += (why.empty() ? "" : ", ") + each;
+    return why.empty() ? why : bot->GetName() + ": " + why;
+}
+
 // Both bots at the run's level and spec, the path bot on its path, and the plain bot's gear cloned onto the path bot
 void Prepare(Player* plain, Player* path)
 {
     for (Player* bot : {plain, path})
     {
+        // A living-world bot would keep its own life here: Randomize leaves it as it is, or caps its level
+        LivingWorldMgr::instance().Exempt(bot, true);
         PlayerbotFactory factory(bot, run.level);
         factory.Randomize(false);
     }
-    // (either may still follow a path from a run that ended without its GM)
+    // (either may still follow a path from a run that ended without its GM). Each keeps its path for the run: a random
+    // bot left on plain class would otherwise pick a path of its own and reset its talents.
     for (auto [bot, wanted] : {std::pair{plain, SubclassPaths::PlainClass}, std::pair{path, run.pathId}})
     {
+        SubclassPaths::KeepPath(bot);
         if (SubclassPaths::ActivePathId(bot) == wanted)
             continue;
         if (std::string const why = SubclassPaths::ChangeActivePath(bot, wanted, true); !why.empty())
@@ -688,7 +749,15 @@ void Tick(uint32 diff)
             // Each fight starts fresh: what a bot spent resting (buffs, a pet, a Life Tap to fill up) isn't carried in
             for (int side = 0; side < 2; ++side)
                 if (Player* bot = BotOf(side))
+                {
                     Fresh(bot);
+                    if (std::string const why = Unready(bot, side == 0 ? SubclassPaths::PlainClass : run.pathId);
+                        !why.empty())
+                    {
+                        Stop("not measured, the bots aren't the setup asked for. " + why);
+                        return;
+                    }
+                }
             run.phase = Phase::Fight;
             if (run.scenario == Scenario::Duel)
             {
