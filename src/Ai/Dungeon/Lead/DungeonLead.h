@@ -36,6 +36,8 @@ struct State
     Position goal;
     uint32 goalCheckedAt = 0;
     uint32 goalBlockedAt = 0;
+    ObjectGuid::LowType goalSpawn = 0;                     // the spawn the goal is
+    std::unordered_set<ObjectGuid::LowType> blockedGoals;  // spawns the tank found no way to, until the next fight
     ObjectGuid pack;  // the pack's mob nearest the tank when it was picked
     uint32 packCheckedAt = 0;
     bool hasSpot = false;

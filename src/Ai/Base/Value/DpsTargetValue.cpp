@@ -5,6 +5,9 @@
  */
 
 #include "DpsTargetValue.h"
+
+#include <algorithm>
+
 #include "PlayerbotAIConfig.h"
 #include "Playerbots.h"
 #include "Strategy.h"
@@ -276,6 +279,20 @@ Unit* DpsTargetValue::Calculate()
     Unit* rti = RtiTargetValue::Calculate();
     if (rti && exclusions.find(rti->GetGUID()) == exclusions.end())
         return rti;
+
+    // No mark: the tank's target, as a group without a skull plays. Each picking by its own measure spread the damage
+    // over the pack (raids have no bot lead to mark), and the mobs the tank wasn't hitting turned on the damage dealers
+    if (!PlayerbotAI::IsTank(bot))
+    {
+        Unit* tank = AI_VALUE(Unit*, "main tank");
+        Unit* held = tank && tank != bot && tank->IsAlive() && tank->IsInCombat() ? tank->GetVictim() : nullptr;
+        if (held && held->IsAlive() && !held->IsPlayer() && exclusions.find(held->GetGUID()) == exclusions.end())
+        {
+            GuidVector const attackers = AI_VALUE(GuidVector, "attackers");
+            if (std::find(attackers.begin(), attackers.end(), held->GetGUID()) != attackers.end())
+                return held;
+        }
+    }
 
     float dps = AI_VALUE(float, "estimated group dps");
 

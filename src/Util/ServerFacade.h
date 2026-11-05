@@ -115,6 +115,14 @@ public:
     Unit* GetChaseTarget(Unit* target);
 
     /**
+     * @brief Get the unit a unit is following (the core's follow movement, not a chase).
+     *
+     * @param target Unit that is following.
+     * @return Unit* The followed unit, or nullptr if not following.
+     */
+    Unit* GetFollowTarget(Unit* target);
+
+    /**
      * @brief Send a raw packet to a player.
      *
      * @param player Player to receive the packet.

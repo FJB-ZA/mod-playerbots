@@ -19,23 +19,36 @@ struct PackCandidate
     float distToGoal = 0.0f;  // to the next boss; ignored without a goal
     float heightDiff = 0.0f;  // above or below the tank
     bool reachable = true;    // a walkable path exists
+    float aggroReach = 0.0f;  // the pack's own aggro range on the tank plus AggroSlack; under AlwaysPullRange counts as that
+    bool onPath = false;      // the walk on to the boss passes inside its aggro reach
 };
 
 constexpr float ScanRange = 45.0f;
 // A pack this close aggroes on its own, so it is pulled whatever the route says.
 constexpr float AlwaysPullRange = 18.0f;
+// Past a mob's aggro range: the group behind the tank and a step of the tank's own walk
+constexpr float AggroSlack = 6.0f;
 constexpr float MaxHeightDiff = 12.0f;
 // Lets a pack stand a little to the side of the straight line and still count as on the way.
 constexpr float AheadSlack = 8.0f;
 constexpr float PackRadius = 9.0f;
 
+constexpr float PullReach(PackCandidate const& pack)
+{
+    return pack.aggroReach > AlwaysPullRange ? pack.aggroReach : AlwaysPullRange;
+}
+
+// A pack the walk to the boss passes counts whatever its height or straight-line distance to the boss: a dungeon's
+// way winds round and up ramps, and a pack beside it aggroes all the same.
 constexpr bool Eligible(PackCandidate const& pack, bool hasGoal, float leaderDistToGoal)
 {
     if (!pack.reachable || pack.distToLeader > ScanRange)
         return false;
+    if (pack.onPath)
+        return true;
     if (pack.heightDiff > MaxHeightDiff || pack.heightDiff < -MaxHeightDiff)
         return false;
-    if (pack.distToLeader <= AlwaysPullRange || !hasGoal)
+    if (pack.distToLeader <= PullReach(pack) || !hasGoal)
         return true;
     return pack.distToGoal <= leaderDistToGoal + AheadSlack;
 }

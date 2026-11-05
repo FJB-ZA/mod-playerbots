@@ -45,6 +45,7 @@ public:
     CombatFormationStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
     const std::string getName() override { return "formation"; }
     std::vector<NextAction> getDefaultActions() override;
+    void InitTriggers(std::vector<TriggerNode*>& triggers) override;
 };
 
 #endif

@@ -65,8 +65,9 @@ constexpr uint32_t RestAfterFightMs(Tier tier)
     return tier == Tier::Good ? 5000 : tier == Tier::Average ? 3000 : 500;
 }
 
-// How close everyone must be before the pull; 0 means the tank does not wait for stragglers.
-constexpr float GatherRadius(Tier tier) { return tier == Tier::Good ? 15.0f : tier == Tier::Average ? 25.0f : 0.0f; }
+// How close everyone must be before the pull; 0 means the tank does not wait for stragglers. Past the back line the
+// casters and healers walk in (TrailPolicy.h, 12 yards), with room for lagging a few steps on the move.
+constexpr float GatherRadius(Tier tier) { return tier == Tier::Good ? 20.0f : tier == Tier::Average ? 25.0f : 0.0f; }
 
 // A bot that never reaches the mark (no drinks, a bad spec) stops holding the run after this long.
 constexpr uint32_t MaxBotWaitMs = 90000;
