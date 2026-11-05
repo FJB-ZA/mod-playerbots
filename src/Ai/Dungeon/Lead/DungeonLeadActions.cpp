@@ -167,6 +167,15 @@ std::vector<BossSpawn> const& TrashSpawns(uint32 mapId)
     return spawns;
 }
 
+// A boss held out of the fight until its turn comes (Keristrasza in her prison until the other three die, a Violet
+// Hold cell, an event's speaker): the tank standing by it waits for a pull that cannot happen
+bool Sealed(Creature const* creature)
+{
+    return creature->HasUnitFlag(UNIT_FLAG_NON_ATTACKABLE) || creature->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE) ||
+           creature->IsImmuneToPC();
+}
+
+// Alive and open to a pull: the next goal. pos is where it stands now.
 bool BossAlive(Map* map, BossSpawn const& spawn, Position& pos)
 {
     auto const bounds = map->GetCreatureBySpawnIdStore().equal_range(spawn.spawnId);
@@ -176,7 +185,7 @@ bool BossAlive(Map* map, BossSpawn const& spawn, Position& pos)
         if (!creature || !creature->IsInWorld())
             continue;
         pos.Relocate(creature->GetPositionX(), creature->GetPositionY(), creature->GetPositionZ());
-        return creature->IsAlive();
+        return creature->IsAlive() && !Sealed(creature);
     }
     pos = spawn.pos;
     return map->GetCreatureRespawnTime(spawn.spawnId) <= time(nullptr);
@@ -899,8 +908,11 @@ bool LeadAdvanceAction::Execute(Event /*event*/)
                       false, MovementPriority::MOVEMENT_NORMAL, true);
     }
 
-    // No pack on the way: walk a stretch toward the boss, then look again.
+    // No pack on the way: walk a stretch toward the boss, then look again. The corners of the way, not the smoothed
+    // path: a smoothed point every few yards ran out of points on a long winding route (Utgarde Keep's to Prince
+    // Keleseth), the search called that no path, and the tank set every boss aside in turn.
     PathGenerator path(bot);
+    path.SetUseStraightPath(true);
     path.CalculatePath(state.goal.GetPositionX(), state.goal.GetPositionY(), state.goal.GetPositionZ(), false);
     Movement::PointsArray const& points = path.GetPath();
     if ((path.GetPathType() & PATHFIND_NOPATH) || points.size() < 2)
@@ -919,16 +931,18 @@ bool LeadAdvanceAction::Execute(Event /*event*/)
         return false;
     }
 
+    // The stretch ends ADVANCE_STEP along the way, partway down a long straight leg between two corners
     float walked = 0.0f;
     G3D::Vector3 stop = points.back();
     for (size_t i = 1; i < points.size(); ++i)
     {
-        walked += (points[i] - points[i - 1]).length();
-        if (walked >= ADVANCE_STEP)
+        float const leg = (points[i] - points[i - 1]).length();
+        if (walked + leg >= ADVANCE_STEP)
         {
-            stop = points[i];
+            stop = points[i - 1] + (points[i] - points[i - 1]) * ((ADVANCE_STEP - walked) / leg);
             break;
         }
+        walked += leg;
     }
     if (bot->GetExactDist(stop.x, stop.y, stop.z) < SPOT_REACHED)
     {

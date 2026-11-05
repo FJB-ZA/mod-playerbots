@@ -5,19 +5,20 @@
  */
 
 // The role check (solo-wow): does a bot group do its job in an instance without being told? The GM gets a group of
-// level 80 addclass bots, each on its role's spec in epic gear, takes them into the instance and watches, the way a
-// player would see it:
+// addclass bots at the level cap of the instance's era (60, 70 or 80), each on its role's spec in that era's epics,
+// takes them into the instance and watches, the way a player would see it:
 //   - dungeon: the GM (GM mode on, so no mob fights it) only keeps up with the tank. The bot tank is to lead: pull pack
 //     by pack, hold the mobs and turn them away from the group, while the healer heals from range and the damage
-//     dealers kill the tank's target without opening fights of their own. Heroic, a party of the GM and four bots.
+//     dealers kill the tank's target without opening fights of their own. Heroic for a Wrath dungeon, else normal; a
+//     party of the GM and four bots.
 //   - raid: the GM (GM mode off once everyone is in, god mode on) pulls the nearest trash like a player and lets the
-//     tank pick it up. Ten player normal, the GM and nine bots.
+//     tank pick it up. Ten player normal for a Wrath raid, else the raid's only size; the GM and nine bots.
 // Twice a second in a fight, after its first five seconds, it counts who the mobs hit, which way they face, what the
 // damage dealers attack and where the healer stands; per fight, who opened it and whether the hurt were healed. The
 // rules are RoleCheckPolicy.h; the verdict goes to the GM's chat, the server log and <LogsDir>/rolecheck.md.
 //
-//   .rolecheck dungeon <map id> [minutes 10]
-//   .rolecheck raid <map id> [minutes 10]
+//   .rolecheck dungeon <map id> [minutes 10] [level: 60, 70 or 80; the map's expansion if left out]
+//   .rolecheck raid <map id> [minutes 10] [level]
 //   .rolecheck status
 //   .rolecheck stop
 
@@ -61,8 +62,30 @@ using namespace Acore::ChatCommands;
 
 namespace
 {
-constexpr uint8 Level = 80;
-constexpr uint32 GearItemLevel = 200;   // fresh heroic gear, epic quality
+// The era a map belongs to sets the group: its level cap, gear fresh from that era's raids (epic quality), and heroic
+// for a Wrath dungeon. A Burning Crusade heroic needs a key from its faction, which bots never earn, so those go in on
+// normal; classic dungeons have no heroic
+struct Era
+{
+    uint8 level;
+    uint32 gearItemLevel;
+    bool heroic;
+};
+
+// The level asked for (60, 70 or 80), or else the cap of the map's own expansion. Onyxia's Lair and Naxxramas are
+// classic maps that Wrath made level 80 raids, so their runs ask for 80
+Era EraOf(MapEntry const* map, uint32 level)
+{
+    if (!level)
+        level = map->Expansion() == EXPANSION_CLASSIC                 ? 60
+                : map->Expansion() == EXPANSION_THE_BURNING_CRUSADE ? 70
+                                                                     : 80;
+    if (level <= 60)
+        return Era{60, 66, false};  // Molten Core
+    if (level <= 70)
+        return Era{70, 115, false};  // Karazhan
+    return Era{80, 200, map->Expansion() == EXPANSION_WRATH_OF_THE_LICH_KING};  // fresh heroic gear
+}
 constexpr uint32 LoginTimeoutMs = 180000;  // just after a start the world thread is slow to log bots in
 constexpr uint32 SettleMs = 15000;      // after the teleport: everyone in, buffs up
 constexpr uint32 AwayMs = 20000;        // how long a bot may be out of the world (a far teleport) before the run stops
@@ -110,6 +133,7 @@ struct Run
     bool raid = false;
     ObjectGuid gm;
     uint32 mapId = 0;
+    Era era{80, 200, true};
     uint32 durationMs = 0;
     uint32 elapsed = 0;  // in the phase
     std::vector<Member> bots;
@@ -267,20 +291,36 @@ void Stop(std::string const& why)
     run = Run{};
 }
 
+// The creature the tank's lead heads for, by name: its next boss, or the trash it fell back on
+std::string GoalName(DungeonLead::State const& state)
+{
+    if (!state.hasGoal)
+        return "none";
+    CreatureData const* spawn = state.goalSpawn ? sObjectMgr->GetCreatureData(state.goalSpawn) : nullptr;
+    CreatureTemplate const* creature = spawn ? sObjectMgr->GetCreatureTemplate(spawn->id) : nullptr;
+    return creature ? creature->Name : "a spot";
+}
+
+// How the run went in, for its row and its word: "heroic 80", "normal 60", "raid 70"
+std::string Mode()
+{
+    return Acore::StringFormat("{} {}", run.raid ? "raid" : run.era.heroic ? "heroic" : "normal", run.era.level);
+}
+
 void Prepare(Player* bot, Seat const& seat)
 {
     LivingWorldMgr::instance().Exempt(bot, true);
     PlayerbotAI* ai = GET_PLAYERBOT_AI(bot);
-    // An explicit quality and gear score: the factory's default is the era's random-bot limit (item level 92 in
-    // vanilla), far under a heroic
-    uint32 const gearScore = PlayerbotFactory::CalcMixedGearScore(GearItemLevel, ITEM_QUALITY_EPIC);
-    if (bot->GetLevel() != Level)
-        PlayerbotFactory(bot, Level, ITEM_QUALITY_EPIC, gearScore).Randomize(false);
+    // An explicit quality and gear score: the factory's default is the phase's random-bot limit (item level 92 in
+    // vanilla), far under the run's
+    uint32 const gearScore = PlayerbotFactory::CalcMixedGearScore(run.era.gearItemLevel, ITEM_QUALITY_EPIC);
+    if (bot->GetLevel() != run.era.level)
+        PlayerbotFactory(bot, run.era.level, ITEM_QUALITY_EPIC, gearScore).Randomize(false);
     PlayerbotFactory::InitTalentsBySpecNo(bot, SpecNo(seat), true);
-    PlayerbotFactory(bot, Level, ITEM_QUALITY_EPIC, gearScore).InitGlyphs(false);
+    PlayerbotFactory(bot, run.era.level, ITEM_QUALITY_EPIC, gearScore).InitGlyphs(false);
     // Second chance: the old gear is destroyed, not put in the bags. With full bags a bot otherwise keeps its old item
     // in every slot, and an addclass bot made in an earlier era its vanilla gear
-    PlayerbotFactory::AutoGear(bot, ITEM_QUALITY_EPIC, GearItemLevel, false, true);
+    PlayerbotFactory::AutoGear(bot, ITEM_QUALITY_EPIC, run.era.gearItemLevel, false, true);
     LOG_INFO("playerbots", "Rolecheck: {} geared to item level {} ({} spec)", bot->GetName(),
              uint32(ai->GetEquipGearScore(bot)), seat.spec);
     Revive(bot, nullptr);
@@ -288,7 +328,8 @@ void Prepare(Player* bot, Seat const& seat)
     ai->ResetStrategies();
 }
 
-// Everyone in: the group set to heroic or ten normal, old lockouts dropped, all taken to the entrance
+// Everyone in: the group set to the era's difficulty (heroic, normal or the raid's ten), old lockouts dropped, all taken
+// to the entrance
 bool Enter(Player* gm)
 {
     Group* group = gm->GetGroup();
@@ -297,7 +338,9 @@ bool Enter(Player* gm)
         Stop("the GM must lead the bots' group");
         return false;
     }
-    Difficulty const difficulty = run.raid ? RAID_DIFFICULTY_10MAN_NORMAL : DUNGEON_DIFFICULTY_HEROIC;
+    Difficulty const difficulty = run.raid       ? RAID_DIFFICULTY_10MAN_NORMAL
+                                  : run.era.heroic ? DUNGEON_DIFFICULTY_HEROIC
+                                                   : DUNGEON_DIFFICULTY_NORMAL;
     if (run.raid)
         group->SetRaidDifficulty(difficulty);
     else
@@ -345,13 +388,15 @@ void Status()
             Player* gm = Gm();
             lead += Acore::StringFormat(
                 " (leading {}, {} pulls, wait {} on {} at {:.0f} yd, GM at {:.0f} yd, done {}, idle {}, pack {}, spot {} "
-                "at {:.0f} yd, pull spot {}, stepping {}, pulled {}, failed {}, skipped {})",
+                "at {:.0f} yd, pull spot {}, stepping {}, pulled {}, failed {}, skipped {}, goal {} at {:.0f} yd, "
+                "{} blocked)",
                 leader == tank ? "yes" : "no", state.pulls, uint32(state.wait), waitingOn ? waitingOn->GetName() : "-",
                 waitingOn && waitingOn->GetMap() == tank->GetMap() ? waitingOn->GetExactDist(tank) : -1.0f,
                 gm && gm->GetMap() == tank->GetMap() ? gm->GetExactDist(tank) : -1.0f,
                 state.done, state.idle, !state.pack.IsEmpty(), state.hasSpot,
                 state.hasSpot ? tank->GetExactDist(&state.spot) : 0.0f, state.hasPullSpot, state.stepping, state.pulled,
-                state.failedPulls, state.skipped.size());
+                state.failedPulls, state.skipped.size(), GoalName(state),
+                state.hasGoal ? tank->GetExactDist(&state.goal) : -1.0f, state.blockedGoals.size());
         }
     }
     if (tank)
@@ -786,7 +831,7 @@ void Report()
     std::vector<RoleCheck::Line> const lines = RoleCheck::Judge(run.tally, !run.raid);
     bool const passed = RoleCheck::Passed(lines);
     std::string row = Acore::StringFormat("| {} | {} | {} | {}m |", Acore::Time::TimeToTimestampStr(GameTime::GetGameTime()).substr(0, 10),
-                                          run.raid ? "raid 10" : "heroic", MapName(run.mapId), run.elapsed / 60000);
+                                          Mode(), MapName(run.mapId), run.elapsed / 60000);
     for (RoleCheck::Line const& line : lines)
     {
         bool const count = line.what == "fights";
@@ -855,8 +900,8 @@ void Tick(uint32 diff)
                     Prepare(BotOf(member), member.seat);
                 if (!Enter(gm))
                     return;
-                Say(Acore::StringFormat("{} bots ready at level {}; into {} ({})", run.bots.size(), Level,
-                                        MapName(run.mapId), run.raid ? "10 normal" : "heroic"));
+                Say(Acore::StringFormat("{} bots ready at level {}; into {} ({})", run.bots.size(), run.era.level,
+                                        MapName(run.mapId), Mode()));
                 run.phase = Phase::Settle;
                 run.elapsed = 0;
             }
@@ -985,7 +1030,7 @@ public:
         return commandTable;
     }
 
-    static bool Begin(ChatHandler* handler, bool raid, uint32 mapId, uint32 minutes)
+    static bool Begin(ChatHandler* handler, bool raid, uint32 mapId, uint32 minutes, uint32 level)
     {
         if (run.phase != Phase::Idle)
         {
@@ -1005,9 +1050,12 @@ public:
             handler->SendErrorMessage(Acore::StringFormat("No entrance known for map {}.", mapId), false);
             return false;
         }
-        if (gm->GetLevel() < Level)
+        Era const era = EraOf(map, level);
+        if (gm->GetLevel() < era.level)
         {
-            handler->SendErrorMessage("The GM needs level 80: the group goes in at the GM's level.", false);
+            handler->SendErrorMessage(Acore::StringFormat("The GM needs level {} or more for {}.", era.level,
+                                                          MapName(mapId)),
+                                      false);
             return false;
         }
         // GM mode on to get there: the progression gate keeps a player without the era behind it out of Northrend.
@@ -1033,6 +1081,7 @@ public:
         run.raid = raid;
         run.gm = gm->GetGUID();
         run.mapId = mapId;
+        run.era = era;
         run.durationMs = std::clamp<uint32>(minutes, 2, 60) * MINUTE * IN_MILLISECONDS;
         run.entrance = WorldLocation(door->target_mapId, door->target_X, door->target_Y, door->target_Z,
                                      door->target_Orientation);
@@ -1068,19 +1117,19 @@ public:
         run.instancesPerHour = sWorld->getIntConfig(CONFIG_MAX_INSTANCES_PER_HOUR);
         sWorld->setIntConfig(CONFIG_MAX_INSTANCES_PER_HOUR, std::numeric_limits<uint32>::max());
         run.phase = Phase::Login;
-        handler->PSendSysMessage("Rolecheck: {} in {} for {} minutes; logging in {} bots.", raid ? "raid" : "dungeon",
+        handler->PSendSysMessage("Rolecheck: {} in {} for {} minutes; logging in {} bots.", Mode(),
                                  MapName(mapId), run.durationMs / 60000, run.bots.size());
         return true;
     }
 
-    static bool HandleDungeon(ChatHandler* handler, uint32 mapId, Optional<uint32> minutes)
+    static bool HandleDungeon(ChatHandler* handler, uint32 mapId, Optional<uint32> minutes, Optional<uint32> level)
     {
-        return Begin(handler, false, mapId, minutes.value_or(10));
+        return Begin(handler, false, mapId, minutes.value_or(10), level.value_or(0));
     }
 
-    static bool HandleRaid(ChatHandler* handler, uint32 mapId, Optional<uint32> minutes)
+    static bool HandleRaid(ChatHandler* handler, uint32 mapId, Optional<uint32> minutes, Optional<uint32> level)
     {
-        return Begin(handler, true, mapId, minutes.value_or(10));
+        return Begin(handler, true, mapId, minutes.value_or(10), level.value_or(0));
     }
 
     static bool HandleStatus(ChatHandler* handler)
