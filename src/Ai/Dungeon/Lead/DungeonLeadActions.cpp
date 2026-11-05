@@ -934,12 +934,14 @@ bool LeadAdvanceAction::Execute(Event /*event*/)
     // The stretch ends ADVANCE_STEP along the way, partway down a long straight leg between two corners
     float walked = 0.0f;
     G3D::Vector3 stop = points.back();
+    G3D::Vector3 corner = points.back();  // the corner the stretch ends before: a point on the ground for certain
     for (size_t i = 1; i < points.size(); ++i)
     {
         float const leg = (points[i] - points[i - 1]).length();
         if (walked + leg >= ADVANCE_STEP)
         {
             stop = points[i - 1] + (points[i] - points[i - 1]) * ((ADVANCE_STEP - walked) / leg);
+            corner = points[i];
             break;
         }
         walked += leg;
@@ -949,8 +951,23 @@ bool LeadAdvanceAction::Execute(Event /*event*/)
         BlockGoal(state);
         return false;
     }
-    return MoveTo(bot->GetMapId(), stop.x, stop.y, stop.z, false, false, false, false,
-                  MovementPriority::MOVEMENT_NORMAL, true);
+    // Still on the way to the last stretch's end: no new move yet
+    if (IsWaitingForLastMove(MovementPriority::MOVEMENT_NORMAL))
+        return false;
+
+    // Partway down a leg the straight line between two corners can run under a rise or over a dip, where the move
+    // found no ground and failed, tick after tick: the tank stood there for the rest of the run (Ragefire Chasm, Pit of
+    // Saron). Onto the floor there, else to the corner itself; neither, and the way counts as blocked.
+    bot->UpdateAllowedPositionZ(stop.x, stop.y, stop.z);
+    if (MoveTo(bot->GetMapId(), stop.x, stop.y, stop.z, false, false, false, false, MovementPriority::MOVEMENT_NORMAL,
+               true))
+        return true;
+    if (bot->GetExactDist(corner.x, corner.y, corner.z) >= SPOT_REACHED &&
+        MoveTo(bot->GetMapId(), corner.x, corner.y, corner.z, false, false, false, false,
+               MovementPriority::MOVEMENT_NORMAL, true))
+        return true;
+    BlockGoal(state);
+    return false;
 }
 
 bool LeadPullAction::isUseful()

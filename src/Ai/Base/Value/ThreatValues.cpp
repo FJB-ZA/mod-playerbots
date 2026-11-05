@@ -5,6 +5,9 @@
  */
 
 #include "ThreatValues.h"
+
+#include <algorithm>
+
 #include "Playerbots.h"
 #include "ThreatManager.h"
 
@@ -78,5 +81,9 @@ uint8 ThreatValue::Calculate(Unit* target)
     if (hasTank && fleeing)
         return 0;
 
-    return botThreat * 100 / maxThreat;
+    // The tank not on it yet: any threat of ours is the most it has (and the share below would divide by nothing)
+    if (maxThreat <= 0)
+        return botThreat > 0 ? 100 : 0;
+
+    return uint8(std::min(100.0f, botThreat * 100 / maxThreat));
 }

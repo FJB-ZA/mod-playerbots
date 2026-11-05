@@ -423,6 +423,12 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
     if (PlayerbotAI::IsMelee(player, true) && PlayerbotAI::IsDps(player, true))
         engine->addStrategy("behind", false);
 
+    // A damage dealer holds back on a target whose threat nears its group tank's (ThreatMultiplier; nothing without a
+    // tank in the group). Nothing turned it on, so in the solo-wow role check (2026-11-05) the mage and rogue in era
+    // epics took a third of the mobs off the tank in Burning Crusade and classic dungeons.
+    if (PlayerbotAI::IsDps(player, true))
+        engine->addStrategy("threat", false);
+
     if (PlayerbotAI::IsHeal(player, true))
     {
         if (sPlayerbotAIConfig.AutoSaveMana)

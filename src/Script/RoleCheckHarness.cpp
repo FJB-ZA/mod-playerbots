@@ -5,19 +5,21 @@
  */
 
 // The role check (solo-wow): does a bot group do its job in an instance without being told? The GM gets a group of
-// addclass bots at the level cap of the instance's era (60, 70 or 80), each on its role's spec in that era's epics,
-// takes them into the instance and watches, the way a player would see it:
+// addclass bots at the level cap of the instance's era (60, 70 or 80) in that era's epics, or for a classic dungeon at
+// the dungeon's own level in blues, each on its role's spec and with the door's quests and keys, takes them into the
+// instance and watches, the way a player would see it:
 //   - dungeon: the GM (GM mode on, so no mob fights it) only keeps up with the tank. The bot tank is to lead: pull pack
 //     by pack, hold the mobs and turn them away from the group, while the healer heals from range and the damage
 //     dealers kill the tank's target without opening fights of their own. Heroic for a Wrath dungeon, else normal; a
 //     party of the GM and four bots.
 //   - raid: the GM (GM mode off once everyone is in, god mode on) pulls the nearest trash like a player and lets the
-//     tank pick it up. Ten player normal for a Wrath raid, else the raid's only size; the GM and nine bots.
+//     tank pick it up; with none in reach it goes on to the nearest left in the raid, then the bosses, taking the
+//     group along. Ten player normal for a Wrath raid, else the raid's only size; the GM and nine bots.
 // Twice a second in a fight, after its first five seconds, it counts who the mobs hit, which way they face, what the
 // damage dealers attack and where the healer stands; per fight, who opened it and whether the hurt were healed. The
 // rules are RoleCheckPolicy.h; the verdict goes to the GM's chat, the server log and <LogsDir>/rolecheck.md.
 //
-//   .rolecheck dungeon <map id> [minutes 10] [level: 60, 70 or 80; the map's expansion if left out]
+//   .rolecheck dungeon <map id> [minutes 10] [level: 60, 70, 80 or under 60; as above if left out]
 //   .rolecheck raid <map id> [minutes 10] [level]
 //   .rolecheck status
 //   .rolecheck stop
@@ -37,6 +39,7 @@
 #include "Config.h"
 #include "DBCStores.h"
 #include "DungeonLead.h"
+#include "Engine.h"
 #include "GameTime.h"
 #include "GridNotifiers.h"
 #include "GridNotifiersImpl.h"
@@ -70,17 +73,38 @@ struct Era
     uint8 level;
     uint32 gearItemLevel;
     bool heroic;
+    uint32 quality = ITEM_QUALITY_EPIC;
 };
 
-// The level asked for (60, 70 or 80), or else the cap of the map's own expansion. Onyxia's Lair and Naxxramas are
-// classic maps that Wrath made level 80 raids, so their runs ask for 80
+// A classic dungeon's own level: the top of the Dungeon Finder's recommended band for it (the lowest wing's, for a
+// dungeon in wings). At 60 the group killed every mob before it struck anyone, so nothing about the roles showed.
+uint32 DungeonLevel(uint32 mapId)
+{
+    uint32 level = 0;
+    for (uint32 id = 0; id < sLFGDungeonStore.GetNumRows(); ++id)
+    {
+        LFGDungeonEntry const* dungeon = sLFGDungeonStore.LookupEntry(id);
+        if (dungeon && dungeon->MapID == mapId && dungeon->TypeID == 1 /* LFG_TYPE_DUNGEON */ &&
+            dungeon->Difficulty == DUNGEON_DIFFICULTY_NORMAL && dungeon->TargetLevelMax)
+            level = level ? std::min(level, dungeon->TargetLevelMax) : dungeon->TargetLevelMax;
+    }
+    return level;
+}
+
+// The level asked for, or else: a classic dungeon's own level, or the cap of the map's own expansion. Onyxia's Lair
+// and Naxxramas are classic maps that Wrath made level 80 raids, so their runs ask for 80
 Era EraOf(MapEntry const* map, uint32 level)
 {
+    if (!level && map->IsNonRaidDungeon() && map->Expansion() == EXPANSION_CLASSIC)
+        level = DungeonLevel(map->MapID);
     if (!level)
         level = map->Expansion() == EXPANSION_CLASSIC                 ? 60
                 : map->Expansion() == EXPANSION_THE_BURNING_CRUSADE ? 70
                                                                      : 80;
-    if (level <= 60)
+    // Under the cap: dungeon blues of the level, what a group there would wear
+    if (level < 60)
+        return Era{uint8(level), level + 5, false, ITEM_QUALITY_RARE};
+    if (level == 60)
         return Era{60, 66, false};  // Molten Core
     if (level <= 70)
         return Era{70, 115, false};  // Karazhan
@@ -100,6 +124,7 @@ constexpr float CatchUpAt = 12.0f;
 constexpr uint32 GatherMs = 12000;      // raid: the group gathers behind the GM before it pulls
 constexpr float PullFrom = 32.0f;       // raid: where the GM waits, short of the mob's aggro
 constexpr float TrashReach = 150.0f;
+constexpr uint32 WalkMs = 3000;         // raid: after going on to mobs further in, before looking about
 
 enum class Phase : uint8 { Idle, Login, Settle, Observe };
 
@@ -161,6 +186,9 @@ struct Run
     // raid: the mob the GM pulls next
     ObjectGuid pullTarget;
     uint32 gathering = 0;
+    std::set<ObjectGuid::LowType> walkedTo;  // spawns the GM went on to
+    uint32 walkWait = 0;  // after going on: the teleport lands at the next session update, and the grid loads
+    std::set<ObjectGuid> tried;  // mobs pulled once: one that came back without a fight (no way to the GM) is let be
     uint32 away = 0;  // how long some bot has been out of the world
 
     // AccountInstancesPerHour before the run: lifted while it runs, since back-to-back runs (and each settle retry
@@ -313,19 +341,40 @@ void Prepare(Player* bot, Seat const& seat)
     PlayerbotAI* ai = GET_PLAYERBOT_AI(bot);
     // An explicit quality and gear score: the factory's default is the phase's random-bot limit (item level 92 in
     // vanilla), far under the run's
-    uint32 const gearScore = PlayerbotFactory::CalcMixedGearScore(run.era.gearItemLevel, ITEM_QUALITY_EPIC);
+    uint32 const gearScore = PlayerbotFactory::CalcMixedGearScore(run.era.gearItemLevel, run.era.quality);
     if (bot->GetLevel() != run.era.level)
-        PlayerbotFactory(bot, run.era.level, ITEM_QUALITY_EPIC, gearScore).Randomize(false);
+        PlayerbotFactory(bot, run.era.level, run.era.quality, gearScore).Randomize(false);
     PlayerbotFactory::InitTalentsBySpecNo(bot, SpecNo(seat), true);
-    PlayerbotFactory(bot, run.era.level, ITEM_QUALITY_EPIC, gearScore).InitGlyphs(false);
+    PlayerbotFactory(bot, run.era.level, run.era.quality, gearScore).InitGlyphs(false);
     // Second chance: the old gear is destroyed, not put in the bags. With full bags a bot otherwise keeps its old item
     // in every slot, and an addclass bot made in an earlier era its vanilla gear
-    PlayerbotFactory::AutoGear(bot, ITEM_QUALITY_EPIC, run.era.gearItemLevel, false, true);
+    PlayerbotFactory::AutoGear(bot, run.era.quality, run.era.gearItemLevel, false, true);
     LOG_INFO("playerbots", "Rolecheck: {} geared to item level {} ({} spec)", bot->GetName(),
              uint32(ai->GetEquipGearScore(bot)), seat.spec);
     Revive(bot, nullptr);
     ai->Reset(true);
     ai->ResetStrategies();
+}
+
+// What the door asks of a player who went the usual way: its quests done (Pit of Saron's "Echoes of Tortured Souls"),
+// its key in the bags. Addclass bots have done nothing, so the door turned them all away.
+void Attune(Player* bot, Difficulty difficulty)
+{
+    DungeonProgressionRequirements const* door = sObjectMgr->GetAccessRequirement(run.mapId, difficulty);
+    if (!door)
+        return;
+    auto forBot = [bot](ProgressionRequirement const* need)
+    { return need->faction == TEAM_NEUTRAL || need->faction == bot->GetTeamId(true); };
+    for (ProgressionRequirement const* quest : door->quests)
+        if (forBot(quest) && !bot->GetQuestRewardStatus(quest->id))
+            bot->SetRewardedQuest(quest->id);
+    for (ProgressionRequirement const* item : door->items)
+        if (forBot(item) && !bot->HasItemCount(item->id, 1, true))
+            bot->AddItem(item->id, 1);
+    for (ProgressionRequirement const* achievement : door->achievements)
+        if (forBot(achievement) && !bot->HasAchieved(achievement->id))
+            if (AchievementEntry const* entry = sAchievementStore.LookupEntry(achievement->id))
+                bot->CompletedAchievement(entry);
 }
 
 // Everyone in: the group set to the era's difficulty (heroic, normal or the raid's ten), old lockouts dropped, all taken
@@ -347,6 +396,8 @@ bool Enter(Player* gm)
         group->SetDungeonDifficulty(difficulty);
 
     std::vector<Player*> everyone = Bots();
+    for (Player* bot : everyone)
+        Attune(bot, difficulty);
     everyone.insert(everyone.begin(), gm);
     for (Player* member : everyone)
     {
@@ -397,6 +448,17 @@ void Status()
                 state.hasSpot ? tank->GetExactDist(&state.spot) : 0.0f, state.hasPullSpot, state.stepping, state.pulled,
                 state.failedPulls, state.skipped.size(), GoalName(state),
                 state.hasGoal ? tank->GetExactDist(&state.goal) : -1.0f, state.blockedGoals.size());
+            // A tank standing still out of a fight: what its engine last tried, to see what holds it
+            if (!tank->IsInCombat() && !tank->isMoving())
+                if (Engine* engine = ai->GetCurrentEngine())
+                {
+                    std::string trace = engine->GetLastAction();
+                    if (trace.size() > 400)
+                        trace = trace.substr(trace.size() - 400);
+                    LOG_INFO("playerbots", "Rolecheck: tank's last actions ({}, combat {}): {}",
+                             ai->GetState() == BOT_STATE_COMBAT ? "combat engine" : "non-combat engine",
+                             tank->IsInCombat(), trace);
+                }
         }
     }
     if (tank)
@@ -687,8 +749,18 @@ void Follow(Player* gm)
                        tank->GetPositionZ() + 0.5f, angle + float(M_PI));
 }
 
-// Raid: the nearest trash the GM can pull, not a boss and not already fighting
-Creature* NextTrash(Player* gm)
+bool Pullable(Creature const* mob, Player* gm)
+{
+    return mob->IsAlive() && !mob->IsInCombat() && mob->IsHostileTo(gm) && !mob->IsTotem() &&
+           !mob->GetCharmerOrOwnerGUID().IsPlayer() &&
+           !mob->HasUnitFlag(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE) && !mob->IsImmuneToPC() &&
+           mob->GetCreatureTemplate()->type != CREATURE_TYPE_CRITTER;
+}
+
+bool IsBoss(Creature const* mob) { return mob->IsDungeonBoss() || mob->isWorldBoss(); }
+
+// Raid: the nearest mob the GM can pull, not already fighting; trash, or a boss once no trash is left about
+Creature* NextTrash(Player* gm, bool bosses)
 {
     std::list<Creature*> near;
     Acore::AnyUnitInObjectRangeCheck check(gm, TrashReach);
@@ -697,10 +769,7 @@ Creature* NextTrash(Player* gm)
     Creature* best = nullptr;
     for (Creature* mob : near)
     {
-        if (!mob->IsAlive() || mob->IsInCombat() || !mob->IsHostileTo(gm) || mob->IsDungeonBoss() ||
-            mob->isWorldBoss() || mob->IsTotem() || mob->GetCharmerOrOwnerGUID().IsPlayer() ||
-            mob->HasUnitFlag(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE) ||
-            mob->GetCreatureTemplate()->type == CREATURE_TYPE_CRITTER)
+        if (!Pullable(mob, gm) || IsBoss(mob) != bosses || run.tried.count(mob->GetGUID()))
             continue;
         if (!best || gm->GetExactDist(mob) < gm->GetExactDist(best))
             best = mob;
@@ -708,12 +777,110 @@ Creature* NextTrash(Player* gm)
     return best;
 }
 
-void RaidPull(Player* gm, uint32 diff)
+struct RaidSpawn
 {
+    ObjectGuid::LowType spawnId;
+    Position pos;
+    uint8 spawnMask;
+    bool boss;
+};
+
+// Every hostile spawn of the raid, from the spawn data: the map only loads the grids near its players, so a raid with
+// nothing in reach of the door (Vault of Archavon's four bosses, Ulduar's long way in, Icecrown's ramparts) looked
+// empty and the run ended at once
+std::vector<RaidSpawn> const& RaidSpawns(uint32 mapId)
+{
+    static std::map<uint32, std::vector<RaidSpawn>> cache;
+    if (auto found = cache.find(mapId); found != cache.end())
+        return found->second;
+    std::vector<RaidSpawn>& spawns = cache[mapId];
+    uint32 const skipped = CREATURE_FLAG_EXTRA_TRIGGER | CREATURE_FLAG_EXTRA_CIVILIAN;
+    for (auto const& [spawnId, data] : sObjectMgr->GetAllCreatureData())
+    {
+        if (data.mapid != mapId)
+            continue;
+        CreatureTemplate const* info = sObjectMgr->GetCreatureTemplate(data.id);
+        FactionTemplateEntry const* faction = info ? sFactionTemplateStore.LookupEntry(info->faction) : nullptr;
+        if (!info || !faction || !faction->IsHostileToPlayers() || info->npcflag || (info->flags_extra & skipped) ||
+            info->type == CREATURE_TYPE_CRITTER || info->type == CREATURE_TYPE_NON_COMBAT_PET ||
+            (info->unit_flags & (UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE)))
+            continue;
+        bool const boss = (info->flags_extra & CREATURE_FLAG_EXTRA_DUNGEON_BOSS) || info->rank == CREATURE_ELITE_WORLDBOSS;
+        spawns.push_back({spawnId, Position(data.posX, data.posY, data.posZ), data.spawnMask, boss});
+    }
+    return spawns;
+}
+
+// Where the GM stands to pull a mob out of reach: PullFrom yards off it on open ground it can see, else nearer
+bool PullSpot(Map* map, Position const& mob, float facing, Position& spot)
+{
+    for (float const reach : {PullFrom, PullFrom / 2.0f, 8.0f})
+        for (int turn = 0; turn < 8; ++turn)
+        {
+            float const angle = facing + float(turn) * float(M_PI) / 4.0f;
+            float const x = mob.GetPositionX() + reach * std::cos(angle);
+            float const y = mob.GetPositionY() + reach * std::sin(angle);
+            float const z = map->GetHeight(PHASEMASK_NORMAL, x, y, mob.GetPositionZ() + 5.0f);
+            if (z <= INVALID_HEIGHT || std::fabs(z - mob.GetPositionZ()) > 6.0f ||
+                !map->isInLineOfSight(x, y, z + 2.0f, mob.GetPositionX(), mob.GetPositionY(), mob.GetPositionZ() + 2.0f,
+                                      PHASEMASK_NORMAL, LINEOFSIGHT_ALL_CHECKS, VMAP::ModelIgnoreFlags::Nothing))
+                continue;
+            spot.Relocate(x, y, z + 0.5f, angle + float(M_PI));
+            return true;
+        }
+    return false;
+}
+
+// Nothing to pull in reach: on to the nearest spawn still alive further in, trash before bosses, as a player walks the
+// raid. Each spawn is gone to once; one that turns out sealed or empty is passed over next time. The group comes along.
+bool WalkOn(Player* gm, std::vector<Player*> const& bots)
+{
+    Map* map = gm->GetMap();
+    RaidSpawn const* best = nullptr;
+    for (RaidSpawn const& spawn : RaidSpawns(run.mapId))
+    {
+        if (!(spawn.spawnMask & (1 << map->GetSpawnMode())) || run.walkedTo.count(spawn.spawnId))
+            continue;
+        auto const bounds = map->GetCreatureBySpawnIdStore().equal_range(spawn.spawnId);
+        bool alive = bounds.first == bounds.second ? map->GetCreatureRespawnTime(spawn.spawnId) <= time(nullptr) : false;
+        for (auto itr = bounds.first; itr != bounds.second; ++itr)
+            alive = alive || (itr->second && itr->second->IsInWorld() && Pullable(itr->second, gm));
+        if (!alive)
+            continue;
+        if (!best || best->boss > spawn.boss ||
+            (best->boss == spawn.boss && gm->GetExactDist(&spawn.pos) < gm->GetExactDist(&best->pos)))
+            best = &spawn;
+    }
+    if (!best)
+        return false;
+    run.walkedTo.insert(best->spawnId);
+    run.walkWait = WalkMs;
+    Position spot;
+    if (!PullSpot(map, best->pos, best->pos.GetAbsoluteAngle(gm), spot))
+        return true;  // no ground to stand on near it: the next one
+    LOG_INFO("playerbots", "Rolecheck: on to {} at {:.0f} yd", best->boss ? "a boss" : "trash", gm->GetExactDist(&spot));
+    gm->NearTeleportTo(spot.GetPositionX(), spot.GetPositionY(), spot.GetPositionZ(), spot.GetOrientation());
+    for (Player* bot : bots)
+        if (bot->IsAlive() && bot->GetMapId() == gm->GetMapId())
+            bot->NearTeleportTo(spot.GetPositionX(), spot.GetPositionY(), spot.GetPositionZ(), spot.GetOrientation());
+    return true;
+}
+
+void RaidPull(Player* gm, std::vector<Player*> const& bots, uint32 diff)
+{
+    if (run.walkWait)
+    {
+        run.walkWait = run.walkWait > diff ? run.walkWait - diff : 0;
+        return;
+    }
     Creature* mob = run.pullTarget.IsEmpty() ? nullptr : gm->GetMap()->GetCreature(run.pullTarget);
     if (!mob || !mob->IsAlive() || mob->IsInCombat())
     {
-        mob = NextTrash(gm);
+        mob = NextTrash(gm, false);
+        if (!mob && WalkOn(gm, bots))
+            return;
+        if (!mob)
+            mob = NextTrash(gm, true);
         if (!mob)
         {
             Report();
@@ -736,6 +903,7 @@ void RaidPull(Player* gm, uint32 diff)
         opener = gm->GetGUID();
         openerHow = "the pull";
     }
+    run.tried.insert(mob->GetGUID());
     mob->AI()->AttackStart(gm);
     mob->CallAssistance();
     run.pullTarget.Clear();
@@ -809,7 +977,7 @@ void Observe(Player* gm, uint32 diff)
         Follow(gm);
     }
     if (run.raid && !run.inFight && run.calm >= ReviveMs)
-        RaidPull(gm, diff);
+        RaidPull(gm, bots, diff);
     if (run.phase != Phase::Observe)
         return;
 
