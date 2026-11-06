@@ -2737,7 +2737,7 @@ bool SetBehindTargetAction::InFrontOfMobs(PlayerbotAI* botAI, Unit* target, floa
 {
     Player* bot = botAI->GetBot();
     std::vector<BotMove::FacingMob> mobs;
-    mobs.push_back({target->GetPositionX(), target->GetPositionY(), target->GetOrientation()});
+    mobs.push_back({target->GetPositionX(), target->GetPositionY(), target->GetOrientation(), target->GetCombatReach()});
     // The rest of the pack: what attacks the bot itself faces it anyway, and is the tank's to take
     for (ObjectGuid const& guid : botAI->GetAiObjectContext()->GetValue<GuidVector>("attackers")->Get())
     {
@@ -2745,7 +2745,7 @@ bool SetBehindTargetAction::InFrontOfMobs(PlayerbotAI* botAI, Unit* target, floa
         if (!mob || mob == target || !mob->IsAlive() || mob->GetVictim() == bot ||
             mob->GetExactDist2d(target) > 2.0f * BotMove::FrontReach)
             continue;
-        mobs.push_back({mob->GetPositionX(), mob->GetPositionY(), mob->GetOrientation()});
+        mobs.push_back({mob->GetPositionX(), mob->GetPositionY(), mob->GetOrientation(), mob->GetCombatReach()});
     }
     return BotMove::InFrontOfAny(mobs.data(), mobs.size(), x, y);
 }
@@ -2762,7 +2762,10 @@ bool SetBehindTargetAction::Execute(Event /*event*/)
     if (!bot->IsWithinMeleeRange(target) || target->isMoving())
         return false;
 
-    if (!InFrontOfMobs(botAI, target, bot->GetPositionX(), bot->GetPositionY()))
+    // Move when not behind the target (what Backstab and Shred need), or behind it but in front of a pack mob: the
+    // trigger's two cases
+    if (AI_VALUE2(bool, "behind", "current target") &&
+        !InFrontOfMobs(botAI, target, bot->GetPositionX(), bot->GetPositionY()))
         return false;
 
     // Behind the target and clear of every mob's front (MeleeSpotPolicy.h), the nearest such spot

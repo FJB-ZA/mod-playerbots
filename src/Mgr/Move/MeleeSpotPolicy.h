@@ -24,6 +24,7 @@ struct FacingMob
     float x = 0.0f;
     float y = 0.0f;
     float orientation = 0.0f;
+    float reach = 0.0f;  // the mob's combat reach: a big mob's front starts at its edge, not its centre
 };
 
 inline float RelativeAngle(FacingMob const& mob, float x, float y)
@@ -43,7 +44,7 @@ inline bool InFront(FacingMob const& mob, float x, float y)
     float const dx = x - mob.x;
     float const dy = y - mob.y;
     float const distance = std::sqrt(dx * dx + dy * dy);
-    if (distance > FrontReach)
+    if (distance > FrontReach + mob.reach)
         return false;
     return distance < 0.01f || std::fabs(RelativeAngle(mob, x, y)) <= FrontArc / 2.0f;
 }

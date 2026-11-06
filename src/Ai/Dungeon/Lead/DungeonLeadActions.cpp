@@ -813,9 +813,15 @@ float LeadHoldMultiplier::GetValue(Action* action)
 
     // The tank opens every fight: until it is fighting, the others start none. Their assist picks the skull as soon as
     // it is marked, so a ranged opener beat the tank's pull to the pack, and kept shooting a pack the tank could not
-    // reach. A member something attacks fights back.
+    // reach. A member something attacks fights back, and the player's own "attack" (or a fight of theirs) is obeyed.
     if (attack)
-        return !leader->IsInCombat() && !bot->IsInCombat() && !PlayerbotAI::IsTank(bot) ? 0.0f : 1.0f;
+    {
+        if (dynamic_cast<AttackMyTargetAction*>(action) || PlayerbotAI::IsTank(bot) || leader->IsInCombat() ||
+            bot->IsInCombat())
+            return 1.0f;
+        Player* master = botAI->GetMaster();
+        return master && master != bot && master->IsInCombat() ? 1.0f : 0.0f;
+    }
 
     if (StateOf(leaderAI).stepping)
         return 0.0f;

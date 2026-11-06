@@ -1142,7 +1142,8 @@ public:
             return damage;
         Player* striker = RunPlayerOf(attacker);
         Player* struck = RunPlayerOf(victim);
-        if (striker && struck)
+        // Only a hit between the run and the world counts; anything else stays off the lock every map thread shares
+        if ((striker && struck) || (!striker && !struck))
             return damage;
         std::lock_guard<std::mutex> guard(hookLock);
         if (!run.inFight && opener.IsEmpty() && (striker || struck))
@@ -1256,23 +1257,25 @@ public:
         for (auto itr = mgr->GetPlayerBotsBegin(); itr != mgr->GetPlayerBotsEnd(); ++itr)
             run.before.push_back(itr->first);
         if (raid)
-        {
-            gm->SetCommandStatusOn(CHEAT_GOD);
             for (Seat const& seat : RaidSeats)
                 run.bots.push_back(Member{seat});
-        }
         else
             for (Seat const& seat : DungeonSeats)
                 run.bots.push_back(Member{seat});
+        // Every seat's spec first: a refused start leaves no god mode on and no bots logged in
         for (Member const& member : run.bots)
-        {
             if (SpecNo(member.seat) < 0)
             {
+                std::string const error = Acore::StringFormat("No premade spec '{}' for class {}.", member.seat.spec,
+                                                              member.seat.classId);
                 run = Run{};
-                handler->SendErrorMessage(Acore::StringFormat("No premade spec '{}' for class {}.", member.seat.spec,
-                                                              member.seat.classId), false);
+                handler->SendErrorMessage(error, false);
                 return false;
             }
+        if (raid)
+            gm->SetCommandStatusOn(CHEAT_GOD);
+        for (Member const& member : run.bots)
+        {
             std::string add = Acore::StringFormat("addclass {}", member.seat.name);
             for (std::string const& reply : mgr->HandlePlayerbotCommand(add.data(), gm))
                 LOG_INFO("playerbots", "Rolecheck: {}", reply);
