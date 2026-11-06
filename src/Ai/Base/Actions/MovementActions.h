@@ -9,8 +9,10 @@
 
 #include "Action.h"
 #include "LastMovementValue.h"
+#include "MeleeSpotPolicy.h"
 #include "PlayerbotAIConfig.h"
 #include <cmath>
+#include <vector>
 
 class Player;
 class PlayerbotAI;
@@ -248,13 +250,18 @@ public:
 
     // Is (x, y) in front of the target, or of another mob fighting the group near it and not the bot itself?
     static bool InFrontOfMobs(PlayerbotAI* botAI, Unit* target, float x, float y);
+
+private:
+    // The target and the rest of its pack whose fronts a melee spot keeps out of
+    static std::vector<BotMove::FacingMob> PackFronts(PlayerbotAI* botAI, Unit* target);
 };
 
-// A healer to its spot: back from the mobs others hold, out of their fronts, near the tank (HealerSpotPolicy.h)
-class HealerTakeSpotAction : public CombatFormationMoveAction
+// A healer or ranged damage dealer to its spot: back from the mobs others hold, out of their fronts, near the tank
+// (HealerSpotPolicy.h)
+class BackLineTakeSpotAction : public CombatFormationMoveAction
 {
 public:
-    HealerTakeSpotAction(PlayerbotAI* botAI) : CombatFormationMoveAction(botAI, "healer take spot") {}
+    BackLineTakeSpotAction(PlayerbotAI* botAI) : CombatFormationMoveAction(botAI, "back line take spot") {}
 
     bool Execute(Event event) override;
 };

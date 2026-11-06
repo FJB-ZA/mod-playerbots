@@ -49,18 +49,26 @@ inline bool InFront(FacingMob const& mob, float x, float y)
     return distance < 0.01f || std::fabs(RelativeAngle(mob, x, y)) <= FrontArc / 2.0f;
 }
 
-inline bool InFrontOfAny(FacingMob const* mobs, size_t count, float x, float y)
+inline size_t CountInFront(FacingMob const* mobs, size_t count, float x, float y)
 {
+    size_t fronts = 0;
     for (size_t i = 0; i < count; ++i)
         if (InFront(mobs[i], x, y))
-            return true;
-    return false;
+            ++fronts;
+    return fronts;
 }
 
-// The angles around its target, from the target's facing, a melee bot tries in turn: straight behind first, then
-// further round toward either flank
-constexpr float SpotAngles[] = {3.14159265f, 3.14159265f * 0.8f, -3.14159265f * 0.8f, 3.14159265f * 0.6f,
-                                -3.14159265f * 0.6f};
+inline bool InFrontOfAny(FacingMob const* mobs, size_t count, float x, float y)
+{
+    return CountInFront(mobs, count, x, y) > 0;
+}
+
+// The angles around its target, from the target's facing, a melee bot tries: straight behind first, then round toward
+// either flank, to just outside the target's own front. Five spots at one distance left a rogue on a pack spread round
+// the tank with none clear, so it stood where it was, in front of the next mob (solo-wow role check, 2026-11-06).
+constexpr float SpotAngles[] = {3.14159265f,         3.14159265f * 0.9f,  -3.14159265f * 0.9f, 3.14159265f * 0.8f,
+                                -3.14159265f * 0.8f, 3.14159265f * 0.7f,  -3.14159265f * 0.7f, 3.14159265f * 0.6f,
+                                -3.14159265f * 0.6f, 3.14159265f * 0.45f, -3.14159265f * 0.45f};
 }  // namespace BotMove
 
 #endif

@@ -183,7 +183,7 @@ public:
         creators["move out of enemy contact"] = &ActionContext::move_out_of_enemy_contact;
         creators["set facing"] = &ActionContext::set_facing;
         creators["set behind"] = &ActionContext::set_behind;
-        creators["healer take spot"] = &ActionContext::healer_take_spot;
+        creators["back line take spot"] = &ActionContext::back_line_take_spot;
         creators["attack duel opponent"] = &ActionContext::attack_duel_opponent;
         creators["drop target"] = &ActionContext::drop_target;
         creators["check mail"] = &ActionContext::check_mail;
@@ -436,7 +436,7 @@ private:
     static Action* move_out_of_enemy_contact(PlayerbotAI* botAI) { return new MoveOutOfEnemyContactAction(botAI); }
     static Action* set_facing(PlayerbotAI* botAI) { return new SetFacingTargetAction(botAI); }
     static Action* set_behind(PlayerbotAI* botAI) { return new SetBehindTargetAction(botAI); }
-    static Action* healer_take_spot(PlayerbotAI* botAI) { return new HealerTakeSpotAction(botAI); }
+    static Action* back_line_take_spot(PlayerbotAI* botAI) { return new BackLineTakeSpotAction(botAI); }
     static Action* say(PlayerbotAI* botAI) { return new SayAction(botAI); }
     static Action* reveal_gathering_item(PlayerbotAI* botAI) { return new RevealGatheringItemAction(botAI); }
     static Action* outfit(PlayerbotAI* botAI) { return new OutfitAction(botAI); }

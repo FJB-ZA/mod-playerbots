@@ -51,16 +51,19 @@ bool EnemyTooCloseForSpellTrigger::IsActive()
     //     combatReach / 2));
 }
 
-bool HealerOutOfPlaceTrigger::IsActive()
+bool BackLineOutOfPlaceTrigger::IsActive()
 {
-    // Not mid-cast (a step back would cut the heal short) and not while a step is under way
-    if (!PlayerbotAI::IsHeal(bot) || PlayerbotAI::IsTank(bot) || !bot->IsInCombat() || bot->isMoving() ||
+    // The back line: healers and ranged damage dealers. Not mid-cast (a step back would cut the cast short) and not
+    // while a step is under way
+    bool const backLine = PlayerbotAI::IsHeal(bot) || (PlayerbotAI::IsRanged(bot) && PlayerbotAI::IsDps(bot));
+    if (!backLine || PlayerbotAI::IsTank(bot) || !bot->IsInCombat() || bot->isMoving() ||
         bot->IsNonMeleeSpellCast(false))
         return false;
     Unit* tank = AI_VALUE(Unit*, "main tank");
-    // Too far back is as wrong as too close: a healer left with the puller, out of the tank's reach
+    // Too far back is as wrong as too close: a healer left with the puller, out of the tank's reach or round a corner
+    // from it (in Karazhan a healer stood out of the tank's sight for most of a fight, solo-wow role check 2026-11-06)
     if (tank && tank != bot && tank->IsAlive() && tank->IsInCombat() && tank->GetMap() == bot->GetMap() &&
-        bot->GetExactDist2d(tank) > BotMove::HealerNearTank)
+        (bot->GetExactDist2d(tank) > BotMove::HealerNearTank || !bot->IsWithinLOSInMap(tank)))
         return true;
     for (ObjectGuid const& guid : AI_VALUE(GuidVector, "attackers"))
     {

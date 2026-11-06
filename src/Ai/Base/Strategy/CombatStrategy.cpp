@@ -95,5 +95,5 @@ std::vector<NextAction> CombatFormationStrategy::getDefaultActions()
 void CombatFormationStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
     // Under a critical heal (30), over the lighter ones: the tank about to die comes first, a few steps second
-    triggers.push_back(new TriggerNode("healer out of place", { NextAction("healer take spot", ACTION_HIGH + 8) }));
+    triggers.push_back(new TriggerNode("back line out of place", { NextAction("back line take spot", ACTION_HIGH + 8) }));
 }
