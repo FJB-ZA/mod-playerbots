@@ -5,6 +5,7 @@
  */
 
 #include "RangeTriggers.h"
+#include "HealerSpotPolicy.h"
 #include "MoveSplineInit.h"
 #include "PlayerbotAIConfig.h"
 #include "Playerbots.h"
@@ -48,6 +49,35 @@ bool EnemyTooCloseForSpellTrigger::IsActive()
 
     //     return ServerFacade::instance().IsDistanceLessOrEqualThan(targetDistance, (sPlayerbotAIConfig.TooCloseDistance +
     //     combatReach / 2));
+}
+
+bool HealerOutOfPlaceTrigger::IsActive()
+{
+    // Not mid-cast (a step back would cut the heal short) and not while a step is under way
+    if (!PlayerbotAI::IsHeal(bot) || PlayerbotAI::IsTank(bot) || !bot->IsInCombat() || bot->isMoving() ||
+        bot->IsNonMeleeSpellCast(false))
+        return false;
+    Unit* tank = AI_VALUE(Unit*, "main tank");
+    // Too far back is as wrong as too close: a healer left with the puller, out of the tank's reach
+    if (tank && tank != bot && tank->IsAlive() && tank->IsInCombat() && tank->GetMap() == bot->GetMap() &&
+        bot->GetExactDist2d(tank) > BotMove::HealerNearTank)
+        return true;
+    for (ObjectGuid const& guid : AI_VALUE(GuidVector, "attackers"))
+    {
+        Unit* mob = botAI->GetUnit(guid);
+        if (!mob || !mob->IsAlive() || !mob->GetVictim())
+            continue;
+        // A mob on the healer itself: to the tank, whose taunt takes it back. Standing still, it beat on the healer
+        if (mob->GetVictim() == bot)
+        {
+            if (tank && tank != bot && tank->IsAlive() && bot->GetExactDist2d(tank) > BotMove::HealerToTank)
+                return true;
+            continue;
+        }
+        if (bot->GetExactDist2d(mob) < BotMove::HealerTooClose)
+            return true;
+    }
+    return false;
 }
 
 bool EnemyTooCloseForAutoShotTrigger::IsActive()

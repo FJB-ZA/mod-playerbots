@@ -932,7 +932,10 @@ RandomItemList const& RandomItemMgr::GetEquipmentNew(uint32 level, InventoryType
 {
     static RandomItemList const empty;
 
-    level = NormalizeLevel(level);
+    // This cache holds every level, so no random-bot level cap here: a bot above it (an addclass or mentor bot at a
+    // GM's level) would otherwise be geared from the cap's items, level 60 gear on a level 80 bot in a vanilla phase.
+    // The era's gear score limit still keeps random bots to their era.
+    level = std::min<uint32>(level, DEFAULT_MAX_LEVEL);
 
     auto const levelItr = equipCacheNew.find(level);
     if (levelItr == equipCacheNew.end())

@@ -8,6 +8,7 @@
 #include "DungeonLead.h"
 #include "Event.h"
 #include "Formations.h"
+#include "Group.h"
 #include "LastMovementValue.h"
 #include "Map.h"
 #include "MotionMaster.h"
@@ -15,6 +16,7 @@
 #include "PlayerbotAI.h"
 #include "Playerbots.h"
 #include "ServerFacade.h"
+#include "TrailPolicy.h"
 #include "Transport.h"
 #include <algorithm>
 #include <array>
@@ -212,11 +214,26 @@ bool FollowAction::Execute(Event /*event*/)
 
     bool moved = false;
     Player* leader = DungeonLead::Leader(botAI);
-    if (!target.empty() && leader)
+    if (leader)
     {
         if (leader == bot)
             return false;
-        moved = Follow(leader);
+        // Whatever the formation: behind the tank, casters and healers further back (TrailPolicy.h); players in the group walk where they like
+        uint32 slot = 0;
+        uint32 count = 0;
+        if (Group* group = leader->GetGroup())
+            for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+            {
+                Player* member = ref->GetSource();
+                if (!member || member == leader || !GET_PLAYERBOT_AI(member))
+                    continue;
+                if (member == bot)
+                    slot = count;
+                ++count;
+            }
+        bool const ranged = PlayerbotAI::IsRanged(bot) || PlayerbotAI::IsHeal(bot);
+        DungeonLead::Trail const trail = DungeonLead::TrailFor(ranged, slot, count);
+        moved = Follow(leader, trail.distance, trail.angle);
     }
     else if (!target.empty())
     {
@@ -288,7 +305,7 @@ bool FollowAction::isUseful()
     }
 
     float distance = 0.f;
-    if (!target.empty() && leader)
+    if (leader)
     {
         distance = bot->GetDistance(leader);
     }

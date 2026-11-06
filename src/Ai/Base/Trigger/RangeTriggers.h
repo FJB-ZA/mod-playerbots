@@ -20,6 +20,16 @@ public:
     bool IsActive() override;
 };
 
+// A healer too near a mob on someone else, with a mob on itself away from the tank, or too far from a fighting tank
+// (HealerSpotPolicy.h)
+class HealerOutOfPlaceTrigger : public Trigger
+{
+public:
+    HealerOutOfPlaceTrigger(PlayerbotAI* botAI) : Trigger(botAI, "healer out of place") {}
+
+    bool IsActive() override;
+};
+
 class EnemyTooCloseForShootTrigger : public Trigger
 {
 public:

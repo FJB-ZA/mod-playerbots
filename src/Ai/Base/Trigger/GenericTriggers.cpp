@@ -10,6 +10,7 @@
 #include "GenericBuffUtils.h"
 #include "ItemVisitors.h"
 #include "LastSpellCastValue.h"
+#include "MovementActions.h"
 #include "ObjectGuid.h"
 #include "Player.h"
 #include "PlayerbotAI.h"
@@ -519,7 +520,13 @@ bool IsNotBehindTargetTrigger::IsActive()
         return false;
 
     Unit* target = AI_VALUE(Unit*, "current target");
-    return target && !AI_VALUE2(bool, "behind", "current target");
+    if (!target)
+        return false;
+    if (!AI_VALUE2(bool, "behind", "current target"))
+        return true;
+    // Behind its own target, but in front of the next mob in the pack
+    return target->GetVictim() != bot &&
+           SetBehindTargetAction::InFrontOfMobs(botAI, target, bot->GetPositionX(), bot->GetPositionY());
 }
 
 bool IsNotFacingTargetTrigger::IsActive()

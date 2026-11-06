@@ -245,6 +245,18 @@ public:
     SetBehindTargetAction(PlayerbotAI* botAI) : CombatFormationMoveAction(botAI, "set behind") {}
 
     bool Execute(Event event) override;
+
+    // Is (x, y) in front of the target, or of another mob fighting the group near it and not the bot itself?
+    static bool InFrontOfMobs(PlayerbotAI* botAI, Unit* target, float x, float y);
+};
+
+// A healer to its spot: back from the mobs others hold, out of their fronts, near the tank (HealerSpotPolicy.h)
+class HealerTakeSpotAction : public CombatFormationMoveAction
+{
+public:
+    HealerTakeSpotAction(PlayerbotAI* botAI) : CombatFormationMoveAction(botAI, "healer take spot") {}
+
+    bool Execute(Event event) override;
 };
 
 class MoveOutOfCollisionAction : public MovementAction

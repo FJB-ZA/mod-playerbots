@@ -646,6 +646,7 @@ public:
 void AddPlayerbotsSecureLoginScripts();
 void AddPlayerbotsSelfBotAfkScripts();
 void AddSubclassBalanceScripts();
+void AddRoleCheckScripts();
 void AddSC_MagtheridonBotScripts();
 void AddSC_SerpentshrineCavernBotScripts();
 void AddSC_TempestKeepBotScripts();
@@ -673,6 +674,7 @@ void AddPlayerbotsScripts()
     AddPlayerbotsSelfBotAfkScripts();
     AddPlayerbotsCommandscripts();
     AddSubclassBalanceScripts();
+    AddRoleCheckScripts();
     PlayerBotsGuildValidationScript();
     AddSC_MagtheridonBotScripts();
     AddSC_SerpentshrineCavernBotScripts();

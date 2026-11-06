@@ -571,10 +571,11 @@ void PlayerbotHolder::OnBotLogin(Player* const bot)
             }
         }
 
-        if (!groupValid)
-        {
-            botAI->LeaveOrDisbandGroup();
-        }
+        // Leave now, not by a queued disband packet: the invite below goes to a bot with no group, and with the
+        // packet still queued an addclass bot that logged out in its last master's group never joined the new one
+        // (this runs on the world thread)
+        if (!groupValid && !bot->InBattleground())
+            bot->RemoveFromGroup(GROUP_REMOVEMETHOD_LEAVE);
     }
 
     group = bot->GetGroup();

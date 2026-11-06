@@ -14,6 +14,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "AttackAction.h"
 #include "AttackersValue.h"
 #include "Creature.h"
 #include "DBCStores.h"
@@ -166,6 +167,15 @@ std::vector<BossSpawn> const& TrashSpawns(uint32 mapId)
     return spawns;
 }
 
+// A boss held out of the fight until its turn comes (Keristrasza in her prison until the other three die, a Violet
+// Hold cell, an event's speaker): the tank standing by it waits for a pull that cannot happen
+bool Sealed(Creature const* creature)
+{
+    return creature->HasUnitFlag(UNIT_FLAG_NON_ATTACKABLE) || creature->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE) ||
+           creature->IsImmuneToPC();
+}
+
+// Alive and open to a pull: the next goal. pos is where it stands now.
 bool BossAlive(Map* map, BossSpawn const& spawn, Position& pos)
 {
     auto const bounds = map->GetCreatureBySpawnIdStore().equal_range(spawn.spawnId);
@@ -175,19 +185,21 @@ bool BossAlive(Map* map, BossSpawn const& spawn, Position& pos)
         if (!creature || !creature->IsInWorld())
             continue;
         pos.Relocate(creature->GetPositionX(), creature->GetPositionY(), creature->GetPositionZ());
-        return creature->IsAlive();
+        return creature->IsAlive() && !Sealed(creature);
     }
     pos = spawn.pos;
     return map->GetCreatureRespawnTime(spawn.spawnId) <= time(nullptr);
 }
 
-bool NearestAlive(Player* bot, std::vector<BossSpawn> const& spawns, State& state)
+bool NearestAlive(Player* bot, std::vector<BossSpawn> const& spawns, State& state, bool skipBlocked = true)
 {
     Map* map = bot->GetMap();
     float best = 0.0f;
     for (BossSpawn const& spawn : spawns)
     {
         if (!(spawn.spawnMask & (1 << map->GetSpawnMode())))
+            continue;
+        if (skipBlocked && state.blockedGoals.count(spawn.spawnId))
             continue;
         Position pos;
         if (!BossAlive(map, spawn, pos))
@@ -197,6 +209,7 @@ bool NearestAlive(Player* bot, std::vector<BossSpawn> const& spawns, State& stat
         {
             best = distance;
             state.goal = pos;
+            state.goalSpawn = spawn.spawnId;
             state.hasGoal = true;
         }
     }
@@ -204,18 +217,39 @@ bool NearestAlive(Player* bot, std::vector<BossSpawn> const& spawns, State& stat
 }
 
 // The nearest living boss is the next one on the way; a bot Mythic+ run then clears trash until its forces are met.
+// A boss whose way the tank cannot find from here (a long winding route the path search gives up on) waits: the
+// nearest living trash is next, pack by pack, and every fight lets the bosses be tried again.
 bool FindGoal(PlayerbotAI* botAI, State& state)
 {
     if (!Elapsed(state.goalCheckedAt, GOAL_RESCAN_MS))
         return state.hasGoal;
     state.goalCheckedAt = getMSTime();
     state.hasGoal = false;
+    state.goalSpawn = 0;
 
     Player* bot = botAI->GetBot();
     uint32 const mapId = bot->GetMapId();
     if (NearestAlive(bot, BossSpawns(mapId), state))
         return true;
-    return MythicPlusBotMgr::instance().IsRunGroup(bot->GetGroup()) && NearestAlive(bot, TrashSpawns(mapId), state);
+    bool const keyRun = MythicPlusBotMgr::instance().IsRunGroup(bot->GetGroup());
+    if ((keyRun || !state.blockedGoals.empty()) && NearestAlive(bot, TrashSpawns(mapId), state))
+        return true;
+    // Every way blocked: the bosses again, the way the tank first went
+    if (!state.blockedGoals.empty() && NearestAlive(bot, BossSpawns(mapId), state, false))
+    {
+        state.blockedGoals.clear();
+        return true;
+    }
+    return false;
+}
+
+// The advance found no way on toward the goal: try another for a while
+void BlockGoal(State& state)
+{
+    state.goalBlockedAt = getMSTime();
+    if (state.goalSpawn)
+        state.blockedGoals.insert(state.goalSpawn);
+    state.goalCheckedAt = 0;
 }
 
 // Hostile mobs nobody is fighting yet, near enough to belong to a pack in scan range.
@@ -406,6 +440,22 @@ void SkipPack(PlayerbotAI* botAI, State& state, Creature* seed)
     for (Creature* mob : PackAround(seed, Hostiles(botAI)))
         state.skipped.insert(mob->GetGUID().GetRawValue());
     ForgetPack(state);
+
+    // Let go of it too: with one of the pack still its target, the tank's combat engine kept walking it back toward
+    // the pack while the advance walked it on, and the run stood there for minutes
+    Player* bot = botAI->GetBot();
+    if (PullStrategy* strategy = PullStrategy::Get(botAI))
+        strategy->OnPullEnded();
+    Value<Unit*>* current = botAI->GetAiObjectContext()->GetValue<Unit*>("current target");
+    Unit* target = current->Get();
+    if (target && state.skipped.count(target->GetGUID().GetRawValue()) && !bot->IsInCombat())
+    {
+        current->Set(nullptr);
+        bot->AttackStop();
+        bot->SetTarget(ObjectGuid::Empty);
+        bot->SetSelection(ObjectGuid());
+        botAI->ChangeEngine(BOT_STATE_NON_COMBAT);
+    }
 }
 
 void EndPull(PlayerbotAI* botAI, State& state)
@@ -419,6 +469,9 @@ void EndPull(PlayerbotAI* botAI, State& state)
     {
         state.restFrom = getMSTime();
         state.restMs = RestAfterFightMs(TierOf(bot));
+        // Somewhere new: the ways that were blocked may be open from here
+        state.blockedGoals.clear();
+        state.goalCheckedAt = 0;
         // Every fight gives slow drinkers a fresh wait.
         state.waitStart.clear();
         ForgetPack(state);
@@ -534,6 +587,30 @@ bool ReadyToLead(PlayerbotAI* botAI, State& state)
     return CheckReady(botAI, state) == Wait::None;
 }
 
+// The walk on toward the boss as the tank would take it, a point every few yards, as far as the pack scan reaches
+std::vector<G3D::Vector3> WayAhead(Player* bot, Position const& goal)
+{
+    std::vector<G3D::Vector3> way;
+    PathGenerator path(bot);
+    path.CalculatePath(goal.GetPositionX(), goal.GetPositionY(), goal.GetPositionZ(), false);
+    Movement::PointsArray const& points = path.GetPath();
+    if ((path.GetPathType() & PATHFIND_NOPATH) || points.empty())
+        return way;
+
+    float walked = 0.0f;
+    way.push_back(points[0]);
+    for (size_t i = 1; i < points.size() && walked < ScanRange; ++i)
+    {
+        G3D::Vector3 const leg = points[i] - points[i - 1];
+        float const length = leg.length();
+        for (float along = SAMPLE_STEP; along < length && walked + along < ScanRange; along += SAMPLE_STEP)
+            way.push_back(points[i - 1] + leg * (along / length));
+        walked += length;
+        way.push_back(points[i]);
+    }
+    return way;
+}
+
 Creature* CurrentPack(PlayerbotAI* botAI, State& state)
 {
     Player* bot = botAI->GetBot();
@@ -554,6 +631,7 @@ Creature* CurrentPack(PlayerbotAI* botAI, State& state)
     std::vector<Creature*> mobs = Hostiles(botAI);
     std::erase_if(mobs, [&state](Creature* mob) { return state.skipped.count(mob->GetGUID().GetRawValue()) > 0; });
     std::vector<std::vector<Creature*>> packs = SplitPacks(mobs);
+    std::vector<G3D::Vector3> const way = hasGoal ? WayAhead(bot, state.goal) : std::vector<G3D::Vector3>();
     std::vector<PackCandidate> candidates;
     for (std::vector<Creature*> const& pack : packs)
     {
@@ -573,6 +651,14 @@ Creature* CurrentPack(PlayerbotAI* botAI, State& state)
         candidate.distToLeader = bot->GetExactDist(Nearest(bot, pack));
         candidate.distToGoal = hasGoal ? state.goal.GetExactDist(&center) : 0.0f;
         candidate.heightDiff = center.GetPositionZ() - bot->GetPositionZ();
+        for (Creature* mob : pack)
+        {
+            float const reach = mob->GetAggroRange(bot) + AggroSlack;
+            candidate.aggroReach = std::max(candidate.aggroReach, reach);
+            candidate.onPath = candidate.onPath ||
+                               std::any_of(way.begin(), way.end(), [&](G3D::Vector3 const& point)
+                                           { return mob->GetExactDist(point.x, point.y, point.z) <= reach; });
+        }
         candidates.push_back(candidate);
     }
 
@@ -582,9 +668,12 @@ Creature* CurrentPack(PlayerbotAI* botAI, State& state)
         if (index < 0)
             break;
         Creature* seed = Nearest(bot, packs[index]);
+        // Only no path at all rules a pack out. An incomplete one is a long way round (up a ramp, past the path's point
+        // limit) that the advance, which walks the same way, takes all the same: skipping that pack walked the tank
+        // into it unpulled.
         PathGenerator path(bot);
         path.CalculatePath(seed->GetPositionX(), seed->GetPositionY(), seed->GetPositionZ(), false);
-        if (path.GetPathType() & (PATHFIND_NOPATH | PATHFIND_INCOMPLETE))
+        if (path.GetPathType() & PATHFIND_NOPATH)
         {
             candidates[index].reachable = false;
             continue;
@@ -712,13 +801,28 @@ bool LeadNeedsManaTrigger::IsActive()
 
 float LeadHoldMultiplier::GetValue(Action* action)
 {
-    if (!dynamic_cast<FollowAction*>(action))
+    bool const follow = dynamic_cast<FollowAction*>(action) != nullptr;
+    bool const attack = !follow && dynamic_cast<AttackAction*>(action) != nullptr;
+    if (!follow && !attack)
         return 1.0f;
 
     Player* leader = Leader(botAI);
     PlayerbotAI* leaderAI = leader && leader != bot ? GET_PLAYERBOT_AI(leader) : nullptr;
     if (!leaderAI)
         return 1.0f;
+
+    // The tank opens every fight: until it is fighting, the others start none. Their assist picks the skull as soon as
+    // it is marked, so a ranged opener beat the tank's pull to the pack, and kept shooting a pack the tank could not
+    // reach. A member something attacks fights back, and the player's own "attack" (or a fight of theirs) is obeyed.
+    if (attack)
+    {
+        if (dynamic_cast<AttackMyTargetAction*>(action) || PlayerbotAI::IsTank(bot) || leader->IsInCombat() ||
+            bot->IsInCombat())
+            return 1.0f;
+        Player* master = botAI->GetMaster();
+        return master && master != bot && master->IsInCombat() ? 1.0f : 0.0f;
+    }
+
     if (StateOf(leaderAI).stepping)
         return 0.0f;
 
@@ -793,8 +897,9 @@ bool LeadAdvanceAction::isUseful()
         return bot->GetExactDist(&state.pullSpot) > SPOT_REACHED;
     }
 
-    // Nothing to pull and nowhere to go: the group follows its master until a pack turns up.
-    state.idle = !state.hasGoal || !Elapsed(state.goalBlockedAt, GOAL_BLOCKED_MS) ||
+    // Nothing to pull and nowhere to go: the group follows its master until a pack turns up. A blocked goal with
+    // another to head for instead is no reason to stop.
+    state.idle = !state.hasGoal || (state.blockedGoals.empty() && !Elapsed(state.goalBlockedAt, GOAL_BLOCKED_MS)) ||
                  bot->GetExactDist(&state.goal) <= GOAL_REACHED;
     return !state.idle;
 }
@@ -809,34 +914,66 @@ bool LeadAdvanceAction::Execute(Event /*event*/)
                       false, MovementPriority::MOVEMENT_NORMAL, true);
     }
 
-    // No pack on the way: walk a stretch toward the boss, then look again.
+    // No pack on the way: walk a stretch toward the boss, then look again. The corners of the way, not the smoothed
+    // path: a smoothed point every few yards ran out of points on a long winding route (Utgarde Keep's to Prince
+    // Keleseth), the search called that no path, and the tank set every boss aside in turn.
     PathGenerator path(bot);
+    path.SetUseStraightPath(true);
     path.CalculatePath(state.goal.GetPositionX(), state.goal.GetPositionY(), state.goal.GetPositionZ(), false);
     Movement::PointsArray const& points = path.GetPath();
     if ((path.GetPathType() & PATHFIND_NOPATH) || points.size() < 2)
     {
-        state.goalBlockedAt = getMSTime();
+        BlockGoal(state);
         return false;
     }
 
+    float length = 0.0f;
+    for (size_t i = 1; i < points.size(); ++i)
+        length += (points[i] - points[i - 1]).length();
+    // A long way round the path search gives up on ends in a dead end close by: the tank would shuffle there for good
+    if ((path.GetPathType() & PATHFIND_INCOMPLETE) && length < ADVANCE_STEP)
+    {
+        BlockGoal(state);
+        return false;
+    }
+
+    // The stretch ends ADVANCE_STEP along the way, partway down a long straight leg between two corners
     float walked = 0.0f;
     G3D::Vector3 stop = points.back();
+    G3D::Vector3 corner = points.back();  // the corner the stretch ends before: a point on the ground for certain
     for (size_t i = 1; i < points.size(); ++i)
     {
-        walked += (points[i] - points[i - 1]).length();
-        if (walked >= ADVANCE_STEP)
+        float const leg = (points[i] - points[i - 1]).length();
+        if (walked + leg >= ADVANCE_STEP)
         {
-            stop = points[i];
+            stop = points[i - 1] + (points[i] - points[i - 1]) * ((ADVANCE_STEP - walked) / leg);
+            corner = points[i];
             break;
         }
+        walked += leg;
     }
     if (bot->GetExactDist(stop.x, stop.y, stop.z) < SPOT_REACHED)
     {
-        state.goalBlockedAt = getMSTime();
+        BlockGoal(state);
         return false;
     }
-    return MoveTo(bot->GetMapId(), stop.x, stop.y, stop.z, false, false, false, false,
-                  MovementPriority::MOVEMENT_NORMAL, true);
+    // Still on the way to the last stretch's end: no new move yet
+    if (IsWaitingForLastMove(MovementPriority::MOVEMENT_NORMAL))
+        return false;
+
+    // Partway down a leg the straight line between two corners can run under a rise or over a dip, where the move
+    // found no ground and failed, tick after tick: the tank stood there for the rest of the run (Ragefire Chasm, Pit of
+    // Saron). Onto the floor there, else to the corner itself; neither, and the way counts as blocked.
+    bot->UpdateAllowedPositionZ(stop.x, stop.y, stop.z);
+    if (MoveTo(bot->GetMapId(), stop.x, stop.y, stop.z, false, false, false, false, MovementPriority::MOVEMENT_NORMAL,
+               true))
+        return true;
+    if (bot->GetExactDist(corner.x, corner.y, corner.z) >= SPOT_REACHED &&
+        MoveTo(bot->GetMapId(), corner.x, corner.y, corner.z, false, false, false, false,
+               MovementPriority::MOVEMENT_NORMAL, true))
+        return true;
+    BlockGoal(state);
+    return false;
 }
 
 bool LeadPullAction::isUseful()

@@ -5,6 +5,9 @@
  */
 
 #include "ThreatValues.h"
+
+#include <algorithm>
+
 #include "Playerbots.h"
 #include "ThreatManager.h"
 
@@ -44,6 +47,10 @@ uint8 ThreatValue::Calculate(Unit* target)
     if (!group)
         return 0;
 
+    // Already on us: holding back only stops us fighting back
+    if (target->GetVictim() == bot)
+        return 0;
+
     float botThreat = target->GetThreatMgr().GetThreat(bot);
     float maxThreat = -1.0f;
     bool hasTank = false;
@@ -52,6 +59,10 @@ uint8 ThreatValue::Calculate(Unit* target)
     {
         Player* player = gref->GetSource();
         if (!player || !player->IsAlive() || player == bot)
+            continue;
+        // Only a tank here to take the mob: not one in a city, another zone or the far end of the instance
+        if (!player->IsInWorld() || player->GetMap() != bot->GetMap() ||
+            !player->IsWithinDistInMap(bot, sPlayerbotAIConfig.SightDistance))
             continue;
 
         if (PlayerbotAI::IsTank(player))
@@ -78,5 +89,9 @@ uint8 ThreatValue::Calculate(Unit* target)
     if (hasTank && fleeing)
         return 0;
 
-    return botThreat * 100 / maxThreat;
+    // The tank not on it yet: any threat of ours is the most it has (and the share below would divide by nothing)
+    if (maxThreat <= 0)
+        return botThreat > 0 ? 100 : 0;
+
+    return uint8(std::min(100.0f, botThreat * 100 / maxThreat));
 }
