@@ -41,6 +41,7 @@
 #include <algorithm>
 #include <array>
 #include <mutex>
+#include <optional>
 #include <span>
 
 // Per battleground positions, paths and objectives live in src/Ai/Battleground/<Name>Tactics.cpp
@@ -392,6 +393,10 @@ bool BGTactics::Execute(Event /*event*/)
         // EotS routes meet at the bases, bridges and center: head straight to the objective instead of a random route
         if (bgType == BATTLEGROUND_EY)
             return moveToObjective(true);
+
+        // The move above already heads for the objective; a random route here turns AV bots around at junctions
+        if (bgType == BATTLEGROUND_AV)
+            return true;
 
         if (!startNewPathBegin(*vPaths))
             return moveToObjective(true);

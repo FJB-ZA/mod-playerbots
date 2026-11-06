@@ -26,6 +26,8 @@
 
 namespace
 {
+constexpr uint32 BG_JOIN_LOGIN_DELAY_MS = 120 * IN_MILLISECONDS;
+
 // Living-world bots fill a match with real players in it according to a gear-score spread
 // around those players: teammates close to them (LivingWorld::GearMatchChance), opponents
 // mostly greener (LivingBattleground::EnemyGearChance).
@@ -374,8 +376,8 @@ bool BGJoinAction::isUseful()
     if (bot->InBattlegroundQueue())
         return false;
 
-    // do not try right after login (currently not working)
-    if ((time(nullptr) - bot->GetInGameTime()) < 120)
+    // do not try right after login
+    if (getMSTimeDiff(bot->GetInGameTime(), GameTime::GetGameTimeMS().count()) < BG_JOIN_LOGIN_DELAY_MS)
         return false;
 
     // check level
