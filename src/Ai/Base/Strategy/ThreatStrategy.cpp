@@ -5,9 +5,11 @@
  */
 
 #include "ThreatStrategy.h"
+#include "AttackAction.h"
 #include "GenericSpellActions.h"
 #include "Map.h"
 #include "Playerbots.h"
+#include "Timer.h"
 
 float ThreatMultiplier::GetValue(Action* action)
 {
@@ -16,10 +18,26 @@ float ThreatMultiplier::GetValue(Action* action)
         return 1.0f;
     }
 
-    if (!action || action->getThreatType() == Action::ActionThreatType::None)
+    // The swing that starts auto attack makes threat too, though it is no spell
+    bool const melee = dynamic_cast<MeleeAction*>(action) != nullptr;
+    if (!action || (action->getThreatType() == Action::ActionThreatType::None && !melee))
         return 1.0f;
 
     if (!AI_VALUE(bool, "group"))
+        return 1.0f;
+
+    // Hold off a mob the tank has only just taken, until its first swings put some threat between them
+    // (ThreatHoldPolicy.h)
+    if (Unit* target = AI_VALUE(Unit*, "current target"))
+    {
+        Player* holder = target->IsAlive() && target->GetVictim() ? target->GetVictim()->ToPlayer() : nullptr;
+        bool const tankHolds =
+            holder && holder != bot && PlayerbotAI::IsTank(holder) && holder->IsInSameGroupWith(bot);
+        if (!tankHold.MayOpen(target->GetGUID().GetRawValue(), tankHolds, getMSTime()))
+            return 0.0f;
+    }
+
+    if (melee)
         return 1.0f;
 
     if (action->getThreatType() == Action::ActionThreatType::Aoe)

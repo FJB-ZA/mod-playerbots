@@ -2735,6 +2735,12 @@ bool SetFacingTargetAction::isPossible()
 
 bool SetBehindTargetAction::InFrontOfMobs(PlayerbotAI* botAI, Unit* target, float x, float y)
 {
+    std::vector<BotMove::FacingMob> const mobs = PackFronts(botAI, target);
+    return BotMove::InFrontOfAny(mobs.data(), mobs.size(), x, y);
+}
+
+std::vector<BotMove::FacingMob> SetBehindTargetAction::PackFronts(PlayerbotAI* botAI, Unit* target)
+{
     Player* bot = botAI->GetBot();
     std::vector<BotMove::FacingMob> mobs;
     mobs.push_back({target->GetPositionX(), target->GetPositionY(), target->GetOrientation(), target->GetCombatReach()});
@@ -2747,7 +2753,7 @@ bool SetBehindTargetAction::InFrontOfMobs(PlayerbotAI* botAI, Unit* target, floa
             continue;
         mobs.push_back({mob->GetPositionX(), mob->GetPositionY(), mob->GetOrientation(), mob->GetCombatReach()});
     }
-    return BotMove::InFrontOfAny(mobs.data(), mobs.size(), x, y);
+    return mobs;
 }
 
 bool SetBehindTargetAction::Execute(Event /*event*/)
@@ -2764,30 +2770,50 @@ bool SetBehindTargetAction::Execute(Event /*event*/)
 
     // Move when not behind the target (what Backstab and Shred need), or behind it but in front of a pack mob: the
     // trigger's two cases
-    if (AI_VALUE2(bool, "behind", "current target") &&
-        !InFrontOfMobs(botAI, target, bot->GetPositionX(), bot->GetPositionY()))
+    std::vector<BotMove::FacingMob> const mobs = PackFronts(botAI, target);
+    size_t const frontsHere = BotMove::CountInFront(mobs.data(), mobs.size(), bot->GetPositionX(), bot->GetPositionY());
+    if (AI_VALUE2(bool, "behind", "current target") && !frontsHere)
         return false;
 
-    // Behind the target and clear of every mob's front (MeleeSpotPolicy.h), the nearest such spot
-    float dist = std::max(bot->GetExactDist(target), bot->GetMeleeRange(target) / 2) - bot->GetCombatReach() -
-                 target->GetCombatReach();
+    // Behind the target and clear of every mob's front (MeleeSpotPolicy.h), the nearest such spot; at the bot's own
+    // distance from the target and at the edge of melee reach, where a pack spread round the tank leaves more room
+    float const reach = bot->GetCombatReach() + target->GetCombatReach();
+    float const dist = std::max(bot->GetExactDist(target), bot->GetMeleeRange(target) / 2) - reach;
+    float const edge = bot->GetMeleeRange(target) - target->GetCombatReach() - 1.0f;
+    std::vector<float> distances{dist};
+    if (edge > dist + 0.5f)
+        distances.push_back(edge);
     std::list<FleeInfo>& infoList = AI_VALUE(std::list<FleeInfo>&, "recently flee info");
     std::vector<Position> availablePos;
-    for (float relative : BotMove::SpotAngles)
-    {
-        float x, y, z;
-        target->GetNearPoint(bot, x, y, z, 0.0f, dist,
-                             Position::NormalizeOrientation(target->GetOrientation() + relative));
-        if (!bot->GetMap()->CheckCollisionAndGetValidCoords(bot, bot->GetPositionX(), bot->GetPositionY(),
-                                                            bot->GetPositionZ(), x, y, z))
-            continue;
-        if (InFrontOfMobs(botAI, target, x, y))
-            continue;
-        Position pos(x, y, z);
-        /// @todo: movement control now is a mess, prepare to rewrite
-        if (CheckLastFlee(bot->GetAngle(&pos), infoList))
-            availablePos.push_back(pos);
-    }
+    // With no spot clear of every front, the one in front of the fewest mobs, if that is fewer than here
+    std::vector<Position> fewestPos;
+    size_t fewest = frontsHere;
+    for (float distance : distances)
+        for (float relative : BotMove::SpotAngles)
+        {
+            float x, y, z;
+            target->GetNearPoint(bot, x, y, z, 0.0f, distance,
+                                 Position::NormalizeOrientation(target->GetOrientation() + relative));
+            if (!bot->GetMap()->CheckCollisionAndGetValidCoords(bot, bot->GetPositionX(), bot->GetPositionY(),
+                                                                bot->GetPositionZ(), x, y, z))
+                continue;
+            Position pos(x, y, z);
+            /// @todo: movement control now is a mess, prepare to rewrite
+            if (!CheckLastFlee(bot->GetAngle(&pos), infoList))
+                continue;
+            size_t const fronts = BotMove::CountInFront(mobs.data(), mobs.size(), x, y);
+            if (!fronts)
+                availablePos.push_back(pos);
+            else if (fronts < fewest)
+            {
+                fewest = fronts;
+                fewestPos.assign(1, pos);
+            }
+            else if (fronts == fewest && fronts < frontsHere)
+                fewestPos.push_back(pos);
+        }
+    if (availablePos.empty())
+        availablePos = fewestPos;
     if (availablePos.empty())
         return false;
     Position nearest = GetNearestPosition(availablePos);
@@ -2795,7 +2821,7 @@ bool SetBehindTargetAction::Execute(Event /*event*/)
                   false, true, MovementPriority::MOVEMENT_COMBAT);
 }
 
-bool HealerTakeSpotAction::Execute(Event /*event*/)
+bool BackLineTakeSpotAction::Execute(Event /*event*/)
 {
     Unit* tank = AI_VALUE(Unit*, "main tank");
     if (!tank || tank == bot || !tank->IsAlive() || tank->GetMap() != bot->GetMap())
@@ -2820,9 +2846,14 @@ bool HealerTakeSpotAction::Execute(Event /*event*/)
         if (mob == held || !anchor || bot->GetExactDist2d(mob) < bot->GetExactDist2d(anchor))
             anchor = mob;
     }
+    bool const inSight = bot->IsWithinLOSInMap(tank);
+    bool const outOfReach = bot->GetExactDist2d(tank) > BotMove::HealerNearTank || !inSight;
+    // Back toward the tank: to HealerBack from it, or out of its sight, a few yards nearer than now
+    float const backTo = inSight ? BotMove::HealerBack
+                                 : std::max(BotMove::HealerToTank,
+                                            std::min(BotMove::HealerBack, bot->GetExactDist(tank) - 5.0f));
     if (!anchor)
-        return bot->GetExactDist2d(tank) > BotMove::HealerNearTank &&
-               MoveTo(tank, BotMove::HealerBack, MovementPriority::MOVEMENT_COMBAT);
+        return outOfReach && MoveTo(tank, backTo, MovementPriority::MOVEMENT_COMBAT);
 
     BotMove::FacingMob const around{anchor->GetPositionX(), anchor->GetPositionY(), anchor->GetOrientation()};
     BotMove::Spot const tankAt{tank->GetPositionX(), tank->GetPositionY()};
@@ -2852,9 +2883,9 @@ bool HealerTakeSpotAction::Execute(Event /*event*/)
     }
     if (availablePos.empty())
     {
-        // No clear spot in sight: at least back in the tank's reach
-        if (bot->GetExactDist2d(tank) > BotMove::HealerNearTank)
-            return MoveTo(tank, BotMove::HealerBack, MovementPriority::MOVEMENT_COMBAT);
+        // No clear spot in sight: at least back in the tank's reach and sight
+        if (outOfReach)
+            return MoveTo(tank, backTo, MovementPriority::MOVEMENT_COMBAT);
         return false;
     }
     Position nearest = GetNearestPosition(availablePos);

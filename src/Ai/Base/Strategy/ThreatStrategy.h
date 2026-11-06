@@ -8,6 +8,7 @@
 #define PLAYERBOTS_THREATSTRATEGY_H
 
 #include "Strategy.h"
+#include "ThreatHoldPolicy.h"
 
 class PlayerbotAI;
 
@@ -17,6 +18,9 @@ public:
     ThreatMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "threat") {}
 
     float GetValue(Action* action) override;
+
+private:
+    BotThreat::TankHoldClock tankHold;  // how long the tank has held each mob, before this damage dealer opens on it
 };
 
 class ThreatStrategy : public Strategy

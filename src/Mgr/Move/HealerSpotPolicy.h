@@ -4,9 +4,11 @@
  * or (at your option) any later version.
  */
 
-// Where a healer stands while the tank holds the mobs: back from all of them, out of every mob's front, and still near
-// the tank. Nothing else moved a healer in a fight: its flee only answers its own target, and a healer has none, so a
-// healer stayed wherever the pull caught it, often a few yards from the pack the tank brought back.
+// Where a healer, or a ranged damage dealer, stands while the tank holds the mobs: back from all of them, out of every
+// mob's front, and still near the tank. Nothing else moved a healer in a fight: its flee only answers its own target,
+// and a healer has none, so a healer stayed wherever the pull caught it, often a few yards from the pack the tank
+// brought back. A caster's flee only answers a mob in melee reach, so a mage trailing the tank stood in the pack's
+// front when it reached the tank (solo-wow role check, 2026-11-06).
 
 #ifndef _PLAYERBOTS_HEALER_SPOT_POLICY_H
 #define _PLAYERBOTS_HEALER_SPOT_POLICY_H
@@ -23,11 +25,12 @@ constexpr float HealerBack = 15.0f;      // yards from every mob the step back g
 constexpr float HealerToTank = 6.0f;     // a healer a mob turned on runs to within this of the tank, for its taunt
 constexpr float HealerNearTank = 28.0f;  // the furthest from the tank a step back goes, well inside heal range
 
-// Around the tank's mob, from that mob's facing: behind it first, then round toward either side. The mob faces the
-// tank, so these are the angles away from the tank's front and its cleave
+// Around the tank's mob, from that mob's facing: behind it, round either side, and on past the tank. At HealerBack every
+// one is past a cleave's reach. Without the spots past the tank, a healer in a corridor had only walls to step to.
 constexpr float HealerSpotAngles[] = {3.14159265f,         3.14159265f * 0.75f, -3.14159265f * 0.75f,
                                       3.14159265f * 0.5f,  -3.14159265f * 0.5f, 3.14159265f * 0.35f,
-                                      -3.14159265f * 0.35f};
+                                      -3.14159265f * 0.35f, 3.14159265f * 0.2f, -3.14159265f * 0.2f,
+                                      0.0f};
 
 struct Spot
 {
