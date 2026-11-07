@@ -32,11 +32,13 @@
 #include "SpellAuraEffects.h"
 #include "SpellInfo.h"
 #include "Stances.h"
+#include "StringFormat.h"
 #include "Timer.h"
 #include "Unit.h"
 #include "Vehicle.h"
 #include "WaypointMovementGenerator.h"
 #include "G3D/Vector3.h"
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <iomanip>
@@ -2440,6 +2442,72 @@ Player* CombatFormationMoveAction::NearestGroupMember(float dis)
     return result;
 }
 
+bool TankFaceAction::GatherPack()
+{
+    uint32 const now = getMSTime();
+    if (lastGather && getMSTimeDiff(lastGather, now) < BotMove::GatherEveryMs)
+        return false;
+    // The mobs on the tank in melee and settled; one still on its way says nothing of the ring yet
+    float headings[BotMove::GatherMaxMobs];
+    size_t count = 0;
+    for (ObjectGuid const& guid : AI_VALUE(GuidVector, "attackers"))
+    {
+        Unit* mob = botAI->GetUnit(guid);
+        if (!mob || !mob->IsAlive() || mob->GetVictim() != bot || !bot->IsWithinMeleeRange(mob))
+            continue;
+        if (mob->isMoving() || count == BotMove::GatherMaxMobs)
+            return false;
+        headings[count++] = bot->GetAngle(mob);
+    }
+    if (!BotMove::PackRings(headings, count))
+        return false;
+
+    // Out through the widest gap, or a little to either side of it where a wall or the next pack is in the way
+    BotMove::Gap const gap = BotMove::WidestGap(headings, count);
+    std::vector<BotMove::IdleMob> idle;
+    for (ObjectGuid const& guid : AI_VALUE(GuidVector, "possible targets no los"))
+    {
+        Creature* mob = botAI->GetCreature(guid);
+        if (!mob || !mob->IsAlive() || mob->IsInCombat() || !mob->IsHostileTo(bot) || bot->GetExactDist2d(mob) > 60.0f)
+            continue;
+        idle.push_back({mob->GetPositionX(), mob->GetPositionY(), mob->GetAggroRange(bot)});
+    }
+    // The back line keeps the tank in sight: a step round a corner would leave the healer out of reach
+    std::vector<Player*> backLine;
+    if (Group* group = bot->GetGroup())
+        for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+        {
+            Player* member = ref->GetSource();
+            if (member && member != bot && member->IsAlive() && member->GetMap() == bot->GetMap() &&
+                bot->GetExactDist2d(member) < 40.0f && (PlayerbotAI::IsHeal(member) || PlayerbotAI::IsRanged(member)))
+                backLine.push_back(member);
+        }
+    lastGather = now;
+    for (float offset : {0.0f, 0.4f, -0.4f})
+    {
+        if (std::fabs(offset) * 2.0f > gap.width)
+            continue;
+        float const heading = gap.heading + offset;
+        float x = bot->GetPositionX() + BotMove::GatherStep * std::cos(heading);
+        float y = bot->GetPositionY() + BotMove::GatherStep * std::sin(heading);
+        float z = bot->GetPositionZ();
+        bot->UpdateAllowedPositionZ(x, y, z);
+        if (!BotMove::OutOfIdleAggro(idle.data(), idle.size(), x, y))
+            continue;
+        if (!bot->GetMap()->CheckCollisionAndGetValidCoords(bot, bot->GetPositionX(), bot->GetPositionY(),
+                                                            bot->GetPositionZ(), x, y, z))
+            continue;
+        // A step a wall cut short gathers nothing
+        if (bot->GetExactDist2d(x, y) < BotMove::GatherStep / 2.0f)
+            continue;
+        if (std::any_of(backLine.begin(), backLine.end(), [&](Player* member)
+                        { return !member->IsWithinLOS(x, y, z + bot->GetCollisionHeight()); }))
+            continue;
+        return MoveTo(bot->GetMapId(), x, y, z, false, false, false, true, MovementPriority::MOVEMENT_COMBAT);
+    }
+    return false;
+}
+
 bool TankFaceAction::Execute(Event /*event*/)
 {
     Unit* target = AI_VALUE(Unit*, "current target");
@@ -2448,6 +2516,9 @@ bool TankFaceAction::Execute(Event /*event*/)
 
     if (!bot->GetGroup())
         return false;
+
+    if (!bot->isMoving() && GatherPack())
+        return true;
 
     if (!bot->IsWithinMeleeRange(target) || target->isMoving())
         return false;
@@ -2821,6 +2892,18 @@ bool SetBehindTargetAction::Execute(Event /*event*/)
                   false, true, MovementPriority::MOVEMENT_COMBAT);
 }
 
+BotMove::FacingMob StandingOf(Unit* mob)
+{
+    float const reach = mob->GetCombatReach();
+    Unit* victim = mob->GetVictim();
+    if (!mob->isMoving() || !victim || victim->GetMap() != mob->GetMap())
+        return {mob->GetPositionX(), mob->GetPositionY(), mob->GetOrientation(), reach};
+    BotMove::FacingMob standing = BotMove::Arriving(mob->GetPositionX(), mob->GetPositionY(), victim->GetPositionX(),
+                                                    victim->GetPositionY(), reach + victim->GetCombatReach());
+    standing.reach = reach;
+    return standing;
+}
+
 bool BackLineTakeSpotAction::Execute(Event /*event*/)
 {
     Unit* tank = AI_VALUE(Unit*, "main tank");
@@ -2829,7 +2912,10 @@ bool BackLineTakeSpotAction::Execute(Event /*event*/)
 
     // A mob turned on the healer: into the tank's arms, for its taunt and its swings
     if (bot->GetExactDist2d(tank) > BotMove::HealerToTank && !bot->getAttackers().empty())
+    {
+        Note("struck: to the tank");
         return MoveTo(tank, BotMove::HealerToTank / 2.0f, MovementPriority::MOVEMENT_COMBAT);
+    }
 
     // The mobs on the rest of the group; the one to stand around is the tank's own target, or else the nearest
     std::vector<BotMove::FacingMob> mobs;
@@ -2840,7 +2926,7 @@ bool BackLineTakeSpotAction::Execute(Event /*event*/)
         Unit* mob = botAI->GetUnit(guid);
         if (!mob || !mob->IsAlive() || mob->GetVictim() == bot)
             continue;
-        mobs.push_back({mob->GetPositionX(), mob->GetPositionY(), mob->GetOrientation()});
+        mobs.push_back(StandingOf(mob));
         if (held && anchor == held)
             continue;
         if (mob == held || !anchor || bot->GetExactDist2d(mob) < bot->GetExactDist2d(anchor))
@@ -2853,12 +2939,16 @@ bool BackLineTakeSpotAction::Execute(Event /*event*/)
                                  : std::max(BotMove::HealerToTank,
                                             std::min(BotMove::HealerBack, bot->GetExactDist(tank) - 5.0f));
     if (!anchor)
+    {
+        Note(outOfReach ? "no mobs: back to the tank" : "no mobs, in reach");
         return outOfReach && MoveTo(tank, backTo, MovementPriority::MOVEMENT_COMBAT);
+    }
 
-    BotMove::FacingMob const around{anchor->GetPositionX(), anchor->GetPositionY(), anchor->GetOrientation()};
+    BotMove::FacingMob const around = StandingOf(anchor);
     BotMove::Spot const tankAt{tank->GetPositionX(), tank->GetPositionY()};
     // The packs not in the fight yet, whose aggro range a spot keeps out of
     std::vector<BotMove::IdleMob> idle;
+    std::vector<Creature*> idleMobs;
     for (ObjectGuid const& guid : AI_VALUE(GuidVector, "possible targets no los"))
     {
         Creature* mob = botAI->GetCreature(guid);
@@ -2866,32 +2956,61 @@ bool BackLineTakeSpotAction::Execute(Event /*event*/)
             bot->GetExactDist2d(mob) > BotMove::HealerNearTank + 2.0f * BotMove::HealerBack)
             continue;
         idle.push_back({mob->GetPositionX(), mob->GetPositionY(), mob->GetAggroRange(bot)});
+        idleMobs.push_back(mob);
     }
+    // A mob only aggroes on what it sees: one behind a wall or on the floor below leaves a spot free. Counting those,
+    // every spot in the Deadmines' tunnels was in some pack's range and the healer stayed by the mobs (2026-11-07)
+    auto idleSees = [&](float x, float y, float z)
+    {
+        for (size_t k = 0; k < idle.size(); ++k)
+            if (!BotMove::OutOfIdleAggro(&idle[k], 1, x, y) &&
+                idleMobs[k]->IsWithinLOS(x, y, z + bot->GetCollisionHeight()))
+                return true;
+        return false;
+    };
     std::vector<Position> availablePos;
     // With no clear spot, the roomiest one that is a clear gain on here (HealerSpotRoomier)
     float const nearestHere = BotMove::NearestMob(mobs.data(), mobs.size(), bot->GetPositionX(), bot->GetPositionY());
     Position roomiest;
     float roomiestNearest = 0.0f;
+    // Why the spots tried were turned down, for the role check's log
+    struct
+    {
+        uint32 tried = 0, idle = 0, crowded = 0, walls = 0, unseen = 0;
+    } rejects;
     for (float radius : {BotMove::HealerBack + 2.0f, BotMove::HealerBack + 6.0f})
     {
         for (size_t i = 0; i < BotMove::HealerSpotCount; ++i)
         {
+            ++rejects.tried;
             BotMove::Spot const spot = BotMove::HealerSpot(around, i, radius);
-            if (!BotMove::OutOfIdleAggro(idle.data(), idle.size(), spot.x, spot.y))
-                continue;
             bool const clear = BotMove::HealerSpotClear(mobs.data(), mobs.size(), tankAt, spot.x, spot.y);
             if (!clear && !BotMove::HealerSpotRoomier(mobs.data(), mobs.size(), tankAt, spot.x, spot.y, nearestHere))
+            {
+                ++rejects.crowded;
                 continue;
+            }
             float x = spot.x;
             float y = spot.y;
             float z = bot->GetPositionZ();
             bot->UpdateAllowedPositionZ(x, y, z);
             if (!bot->GetMap()->CheckCollisionAndGetValidCoords(bot, bot->GetPositionX(), bot->GetPositionY(),
                                                                 bot->GetPositionZ(), x, y, z))
+            {
+                ++rejects.walls;
                 continue;
+            }
+            if (idleSees(x, y, z))
+            {
+                ++rejects.idle;
+                continue;
+            }
             // Still a good spot once the walls had their say, and the tank in sight from it
             if (!tank->IsWithinLOS(x, y, z + bot->GetCollisionHeight()))
+            {
+                ++rejects.unseen;
                 continue;
+            }
             if (BotMove::HealerSpotClear(mobs.data(), mobs.size(), tankAt, x, y))
                 availablePos.emplace_back(x, y, z);
             else if (BotMove::HealerSpotRoomier(mobs.data(), mobs.size(), tankAt, x, y, nearestHere))
@@ -2903,22 +3022,44 @@ bool BackLineTakeSpotAction::Execute(Event /*event*/)
                     roomiest.Relocate(x, y, z);
                 }
             }
+            else
+                ++rejects.walls;  // the wall cut the step short of a good spot
         }
         if (!availablePos.empty())
             break;
     }
-    if (availablePos.empty() && roomiestNearest > 0.0f)
+    bool const toRoomiest = availablePos.empty() && roomiestNearest > 0.0f;
+    if (toRoomiest)
         availablePos.push_back(roomiest);
     if (availablePos.empty())
     {
         // No clear spot in sight: at least back in the tank's reach and sight
-        if (outOfReach)
-            return MoveTo(tank, backTo, MovementPriority::MOVEMENT_COMBAT);
-        return false;
+        bool const moved = outOfReach && MoveTo(tank, backTo, MovementPriority::MOVEMENT_COMBAT);
+        Note(Acore::StringFormat("no spot of {} (idle aggro {}, fronts or crowded {}, walls {}, tank unseen {}); {} "
+                                 "mobs, nearest {:.1f} yd; {}",
+                                 rejects.tried, rejects.idle, rejects.crowded, rejects.walls, rejects.unseen,
+                                 mobs.size(), nearestHere, moved ? "to the tank" : "stays"));
+        return moved;
     }
     Position nearest = GetNearestPosition(availablePos);
-    return MoveTo(bot->GetMapId(), nearest.GetPositionX(), nearest.GetPositionY(), nearest.GetPositionZ(), false, false,
-                  false, true, MovementPriority::MOVEMENT_COMBAT);
+    bool const moved = MoveTo(bot->GetMapId(), nearest.GetPositionX(), nearest.GetPositionY(), nearest.GetPositionZ(),
+                              false, false, false, true, MovementPriority::MOVEMENT_COMBAT);
+    Note(Acore::StringFormat("{} spot {:.1f} yd away, {}", toRoomiest ? "roomiest" : "clear",
+                             bot->GetExactDist(&nearest), moved ? "moving" : "move refused"));
+    return moved;
+}
+
+void BackLineTakeSpotAction::Note(std::string const& why)
+{
+    lastNote = why;
+    lastNoteAt = getMSTime();
+}
+
+std::string BackLineTakeSpotAction::LastNote() const
+{
+    if (!lastNoteAt)
+        return "never ran";
+    return Acore::StringFormat("{:.1f}s ago: {}", getMSTimeDiff(lastNoteAt, getMSTime()) / 1000.0f, lastNote);
 }
 
 bool MoveOutOfCollisionAction::Execute(Event /*event*/)

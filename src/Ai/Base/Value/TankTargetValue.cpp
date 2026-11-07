@@ -89,9 +89,23 @@ public:
 
         int32_t interval = GetIntervalLevel(new_unit);
         if (interval == 2)
+        {
+            // Of the mobs off the tank, the one on a healer first: nearest first left a mob beating on the healer
+            // while the tank took back the ones by its feet, ten seconds on average and over a minute in big pulls
+            // (solo-wow role check rerun, 2026-11-07)
+            bool const newOnHealer = OnHealer(new_unit);
+            if (newOnHealer != OnHealer(old_unit))
+                return newOnHealer;
             return new_dis < old_dis;
+        }
 
         return new_threat < old_threat;
+    }
+    static bool OnHealer(Unit* unit)
+    {
+        Unit* victim = unit->GetVictim();
+        Player* player = victim ? victim->ToPlayer() : nullptr;
+        return player && PlayerbotAI::IsHeal(player) && !PlayerbotAI::IsTank(player);
     }
     int32_t GetIntervalLevel(Unit* unit)
     {

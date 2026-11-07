@@ -85,6 +85,43 @@ private:
     };
     std::unordered_map<uint64_t, Clock> clocks_;
 };
+
+// Past the hold, holding back at 80% of the tank's threat still lets through a hit bigger than the gap. At level 20 a
+// tank has 8-25 threat at five seconds and one frostbolt is 60-170: the mob turned on the mage in fight after fight of
+// the solo-wow role check (Deadmines, 2026-11-07). A damage dealer holds a hit that would carry its threat past the mark a
+// mob turns at, judged by what its hits have come to.
+constexpr float TurnsAt = 1.1f;    // a mob turns from its victim at 110% of its threat in melee, 130% at range
+constexpr float HitWeight = 0.3f;  // how far each new hit moves the usual hit
+
+// A damage dealer's usual hit, in threat, from what its threat on the mob it hits has risen by
+class UsualHit
+{
+public:
+    // Its threat on the mob it hits now
+    void Saw(uint64_t mob, float threat)
+    {
+        if (mob == mob_ && threat > threat_)
+        {
+            float const gain = threat - threat_;
+            usual_ = usual_ <= 0.0f ? gain : usual_ + HitWeight * (gain - usual_);
+        }
+        mob_ = mob;
+        threat_ = threat;
+    }
+
+    float Threat() const { return usual_; }
+
+private:
+    uint64_t mob_ = 0;
+    float threat_ = 0.0f;
+    float usual_ = 0.0f;
+};
+
+// Would one more usual hit take the mob off the tank? With the tank at no threat, there is nothing to measure against.
+inline bool WouldTurnIt(float tankThreat, float ownThreat, float hit)
+{
+    return tankThreat > 0.0f && ownThreat + hit >= tankThreat * TurnsAt;
+}
 }  // namespace BotThreat
 
 #endif

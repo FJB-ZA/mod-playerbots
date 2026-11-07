@@ -108,10 +108,22 @@ void AttackersValue::AddAttackersOf(Player* player, std::unordered_set<Unit*>& t
 
 void AttackersValue::RemoveNonThreating(std::unordered_set<Unit*>& targets)
 {
+    // A tank also keeps what beats on a member out of its own sight: it walks round the corner to it. Seeing only mobs
+    // in its sight, a tank went back out of combat while a mob round a corner beat on the healer for a minute (solo-wow
+    // role check, Deadmines, 2026-11-07)
+    bool const tank = PlayerbotAI::IsTank(bot);
+    Group* group = bot->GetGroup();
+    auto onMember = [&](Unit* unit)
+    {
+        Unit* victim = unit->GetVictim();
+        Player* player = victim ? victim->ToPlayer() : nullptr;
+        return player && player != bot && group && player->GetGroup() == group;
+    };
     for (std::unordered_set<Unit*>::iterator tIter = targets.begin(); tIter != targets.end();)
     {
         Unit* unit = *tIter;
-        if (bot->GetMapId() != unit->GetMapId() || !hasRealThreat(unit) || !IsValidTarget(unit, bot))
+        bool const valid = IsValidTarget(unit, bot) || (tank && onMember(unit) && IsPossibleTarget(unit, bot));
+        if (bot->GetMapId() != unit->GetMapId() || !hasRealThreat(unit) || !valid)
         {
             std::unordered_set<Unit*>::iterator tIter2 = tIter;
             ++tIter;
