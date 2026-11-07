@@ -978,7 +978,8 @@ bool LeadAdvanceAction::Execute(Event /*event*/)
 
 bool LeadPullAction::isUseful()
 {
-    if (!IsLeader(botAI) || bot->IsInCombat())
+    // Not with a mob already on someone: that fight is the tank's first (PullEndTrigger)
+    if (!IsLeader(botAI) || bot->IsInCombat() || PullStrategy::FightOnMember(bot))
         return false;
 
     State& state = StateOf(botAI);

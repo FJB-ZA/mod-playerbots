@@ -108,21 +108,10 @@ void AttackersValue::AddAttackersOf(Player* player, std::unordered_set<Unit*>& t
 
 void AttackersValue::RemoveNonThreating(std::unordered_set<Unit*>& targets)
 {
-    // A tank also keeps what beats on a member out of its own sight: it walks round the corner to it. Seeing only mobs
-    // in its sight, a tank went back out of combat while a mob round a corner beat on the healer for a minute (solo-wow
-    // role check, Deadmines, 2026-11-07)
-    bool const tank = PlayerbotAI::IsTank(bot);
-    Group* group = bot->GetGroup();
-    auto onMember = [&](Unit* unit)
-    {
-        Unit* victim = unit->GetVictim();
-        Player* player = victim ? victim->ToPlayer() : nullptr;
-        return player && player != bot && group && player->GetGroup() == group;
-    };
     for (std::unordered_set<Unit*>::iterator tIter = targets.begin(); tIter != targets.end();)
     {
         Unit* unit = *tIter;
-        bool const valid = IsValidTarget(unit, bot) || (tank && onMember(unit) && IsPossibleTarget(unit, bot));
+        bool const valid = IsValidTarget(unit, bot) || TankGoesFor(unit, bot);
         if (bot->GetMapId() != unit->GetMapId() || !hasRealThreat(unit) || !valid)
         {
             std::unordered_set<Unit*>::iterator tIter2 = tIter;
@@ -260,6 +249,27 @@ bool AttackersValue::IsPossibleTarget(Unit* attacker, Player* bot, float /*range
 bool AttackersValue::IsValidTarget(Unit* attacker, Player* bot)
 {
     return IsPossibleTarget(attacker, bot) && bot->IsWithinLOSInMap(attacker);
+}
+
+// Seeing only mobs in its sight, a tank went back out of combat while a mob round a corner beat on the healer for a
+// minute (solo-wow role check, Deadmines, 2026-11-07). The attackers list, the attack itself and the combat engine's
+// "invalid target" check all take this, or the tank picks the mob, then drops it, tick after tick.
+// Only a tank with nothing on it goes: one holding a pack dragged it round corners into the next packs, 18-20 mobs and
+// a wipe in Steamvault; it holds where it is, and the rest come to it. And only round a corner, not across the
+// instance: a Naxxramas tank fixed on a slime 60-100 yards off with no way there, its own mobs left to the rest.
+bool AttackersValue::TankGoesFor(Unit* attacker, Player* bot)
+{
+    constexpr float RoundTheCorner = 35.0f;
+    if (!attacker || !bot || !PlayerbotAI::IsTank(bot) || attacker->GetVictim() == bot ||
+        !bot->IsWithinDist(attacker, RoundTheCorner))
+        return false;
+    for (Unit* holding : bot->getAttackers())
+        if (holding && holding->IsAlive() && holding->GetVictim() == bot)
+            return false;
+    Group* group = bot->GetGroup();
+    Unit* victim = attacker->GetVictim();
+    Player* player = victim ? victim->ToPlayer() : nullptr;
+    return group && player && player != bot && player->GetGroup() == group && IsPossibleTarget(attacker, bot);
 }
 
 bool PossibleAddsValue::Calculate()
