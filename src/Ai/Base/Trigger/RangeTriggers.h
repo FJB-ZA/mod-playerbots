@@ -20,12 +20,12 @@ public:
     bool IsActive() override;
 };
 
-// A healer too near a mob on someone else, with a mob on itself away from the tank, or too far from a fighting tank
-// (HealerSpotPolicy.h)
-class HealerOutOfPlaceTrigger : public Trigger
+// A healer or ranged damage dealer too near a mob on someone else, with a mob on itself away from the tank, or too far
+// from a fighting tank (HealerSpotPolicy.h)
+class BackLineOutOfPlaceTrigger : public Trigger
 {
 public:
-    HealerOutOfPlaceTrigger(PlayerbotAI* botAI) : Trigger(botAI, "healer out of place") {}
+    BackLineOutOfPlaceTrigger(PlayerbotAI* botAI) : Trigger(botAI, "back line out of place") {}
 
     bool IsActive() override;
 };

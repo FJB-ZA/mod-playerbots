@@ -28,7 +28,7 @@ bool InvalidTargetValue::Calculate()
                (target->IsCharmed() && target->IsPlayer() &&  // only a mind-controlled teammate is off limits
                 target->ToPlayer()->GetTeamId(true) == bot->GetTeamId(true)) ||
                target->HasFearAura() || target->HasUnitState(UNIT_STATE_ISOLATED) || target->IsFriendlyTo(bot) ||
-               !AttackersValue::IsValidTarget(target, bot);
+               (!AttackersValue::IsValidTarget(target, bot) && !AttackersValue::TankGoesFor(target, bot));
     }
 
     return !target;

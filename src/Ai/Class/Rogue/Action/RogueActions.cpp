@@ -63,6 +63,28 @@ bool CastVanishAction::isUseful()
            !bot->HasAura(BG_EY_NETHERSTORM_FLAG_SPELL);
 }
 
+bool CastKillingSpreeAction::isUseful()
+{
+    if (!CastMeleeSpellAction::isUseful())
+        return false;
+    // With a tank in the fight, only when every enemy in its reach is the tank's already: it jumps to random nearby
+    // enemies, and pulled mobs the tank had not taken (solo-wow role check 2026-11-06: 49 mobs went to the rogue right
+    // after a Killing Spree, most with no threat on the tank)
+    Unit* tank = AI_VALUE(Unit*, "main tank");
+    if (!tank || tank == bot || !tank->IsAlive() || !tank->IsInCombat() || tank->GetMap() != bot->GetMap())
+        return true;
+    for (ObjectGuid const& guid : AI_VALUE(GuidVector, "possible targets"))
+    {
+        Unit* mob = botAI->GetUnit(guid);
+        if (!mob || !mob->IsAlive() || bot->GetExactDist2d(mob) > 12.0f)
+            continue;
+        Player* holder = mob->GetVictim() ? mob->GetVictim()->ToPlayer() : nullptr;
+        if (!holder || !PlayerbotAI::IsTank(holder) || !holder->IsInSameGroupWith(bot))
+            return false;
+    }
+    return true;
+}
+
 bool CastEnvenomAction::isUseful()
 {
     return AI_VALUE2(uint8, "energy", "self target") >= 35;

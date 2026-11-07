@@ -48,4 +48,15 @@ public:
     void InitTriggers(std::vector<TriggerNode*>& triggers) override;
 };
 
+// Out of combat, the back line's step to the tank once the tank is fighting. A healer is in combat only once something
+// hits it or it heals, so it stayed where the pull left it, often round a corner from the tank: in the solo-wow role
+// check (2026-11-07) a healer out of the tank's sight at 8-20 yards was not in combat, held still by the lead's hold
+class BackLineStrategy : public Strategy
+{
+public:
+    BackLineStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
+    const std::string getName() override { return "back line"; }
+    void InitTriggers(std::vector<TriggerNode*>& triggers) override;
+};
+
 #endif

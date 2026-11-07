@@ -5,9 +5,11 @@
  */
 
 #include "ThreatStrategy.h"
+#include "AttackAction.h"
 #include "GenericSpellActions.h"
 #include "Map.h"
 #include "Playerbots.h"
+#include "Timer.h"
 
 float ThreatMultiplier::GetValue(Action* action)
 {
@@ -16,10 +18,46 @@ float ThreatMultiplier::GetValue(Action* action)
         return 1.0f;
     }
 
-    if (!action || action->getThreatType() == Action::ActionThreatType::None)
+    // The swing that starts auto attack makes threat too, though it is no spell
+    bool const melee = dynamic_cast<MeleeAction*>(action) != nullptr;
+    if (!action || (action->getThreatType() == Action::ActionThreatType::None && !melee))
         return 1.0f;
 
     if (!AI_VALUE(bool, "group"))
+        return 1.0f;
+
+    // Hold off a mob until the tank has taken it and its first swings put some threat between them
+    // (ThreatHoldPolicy.h)
+    Unit* target = AI_VALUE(Unit*, "current target");
+    if (target && target->IsAlive() && !PlayerbotAI::IsTank(bot))
+    {
+        Unit* tank = AI_VALUE(Unit*, "main tank");
+        bool const tankInFight = tank && tank != bot && tank->IsAlive() && tank->IsInCombat() &&
+                                 tank->GetMap() == bot->GetMap() && tank->GetExactDist2d(bot) < 60.0f;
+        Unit* victim = target->GetVictim();
+        Player* holder = victim ? victim->ToPlayer() : nullptr;
+        BotThreat::MobOn on = BotThreat::MobOn::Other;
+        if (!tankInFight)
+            on = BotThreat::MobOn::NoTankInFight;
+        else if (victim == bot)
+            on = BotThreat::MobOn::Self;
+        // The tank's hold starts once the mob is at the tank, or stands (a caster): one still running in from the pull
+        // has only the pull's threat on the tank, and a rogue that opened on it as it ran took it, 2000-5000 threat to
+        // the tank's 20-300 at five seconds (solo-wow role check, Ramparts and Deadmines, 2026-11-07)
+        else if (holder && PlayerbotAI::IsTank(holder) && holder->IsInSameGroupWith(bot) &&
+                 (!target->isMoving() || target->IsWithinMeleeRange(holder)))
+            on = BotThreat::MobOn::Tank;
+        if (!tankHold.MayOpen(target->GetGUID().GetRawValue(), on, getMSTime()))
+            return 0.0f;
+        // Held long enough, but not with threat enough to take the next hit (ThreatHoldPolicy.h)
+        float const own = target->GetThreatMgr().GetThreat(bot);
+        usualHit.Saw(target->GetGUID().GetRawValue(), own);
+        if (!melee && on == BotThreat::MobOn::Tank &&
+            BotThreat::WouldTurnIt(target->GetThreatMgr().GetThreat(holder), own, usualHit.Threat()))
+            return 0.0f;
+    }
+
+    if (melee)
         return 1.0f;
 
     if (action->getThreatType() == Action::ActionThreatType::Aoe)

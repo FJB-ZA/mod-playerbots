@@ -5,6 +5,7 @@
  */
 
 #include "AttackAction.h"
+#include "AttackersValue.h"
 #include "CreatureAI.h"
 #include "Event.h"
 #include "LastMovementValue.h"
@@ -125,7 +126,10 @@ bool AttackAction::Attack(Unit* target, bool /*with_pet*/ /*true*/)
     if (IsUnavailableCombatTarget(bot, target))
         return false;
 
-    if (!bot->IsWithinLOSInMap(target))
+    // A tank goes round the corner for a mob on a group member: its combat engine walks it there. Kept as an attacker
+    // but refused here, the tank stood out of combat for 40 s while two mobs beat on the rogue out of its sight
+    // (solo-wow role check, Ramparts, 2026-11-07)
+    if (!AttackersValue::TankGoesFor(target, bot) && !bot->IsWithinLOSInMap(target))
     {
         if (verbose)
             botAI->TellError(PlayerbotTextMgr::instance().GetBotTextOrDefault(
@@ -143,6 +147,16 @@ bool AttackAction::Attack(Unit* target, bool /*with_pet*/ /*true*/)
 
     Unit* oldTarget = context->GetValue<Unit*>("current target")->Get();
     bool shouldMelee = bot->IsWithinMeleeRange(target) || PlayerbotAI::IsMelee(bot);
+    // Picking a target is not swinging at it. A damage dealer minding threat leaves the first swing to its "melee"
+    // action, which the tank's hold gates (ThreatMultiplier): started here by its assist, a rogue's auto attack took
+    // mobs off the tank before the tank had hit them (solo-wow role check, 2026-11-07)
+    if (shouldMelee && !dynamic_cast<MeleeAction*>(this) && !PlayerbotAI::IsTank(bot) && target->GetVictim() != bot &&
+        botAI->HasStrategy("threat", BOT_STATE_COMBAT))
+    {
+        Unit* tank = AI_VALUE(Unit*, "main tank");
+        if (tank && tank != bot && tank->IsAlive() && tank->IsInCombat() && tank->GetMap() == bot->GetMap())
+            shouldMelee = false;
+    }
 
     bool sameTarget = oldTarget == target && bot->GetVictim() == target;
     bool inCombat = botAI->GetState() == BOT_STATE_COMBAT;

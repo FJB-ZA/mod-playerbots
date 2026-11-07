@@ -30,7 +30,16 @@ bool PullEndTrigger::IsActive()
 {
     PullStrategy const* strategy = PullStrategy::Get(botAI);
 
-    if (!strategy || !strategy->HasPullStarted())
+    if (!strategy)
+        return false;
+
+    // The fight came to the group before the pull did: a mob on another member. Pulling on, the tank held off its
+    // swings, taunts and charges (the pull multiplier) and walked to its pull target while mobs beat on the healer
+    // and the mage, in a third of the Deadmines fights of the solo-wow role check (2026-11-07)
+    if ((strategy->HasPullStarted() || strategy->IsPullPendingToStart()) && PullStrategy::FightOnMember(bot))
+        return true;
+
+    if (!strategy->HasPullStarted())
         return false;
 
     Unit* target = strategy->GetTarget();

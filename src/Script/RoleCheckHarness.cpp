@@ -48,6 +48,7 @@
 #include "LivingWorldMgr.h"
 #include "Log.h"
 #include "Map.h"
+#include "MovementActions.h"
 #include "MapMgr.h"
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
@@ -122,6 +123,10 @@ constexpr uint32 FollowMs = 2000;       // dungeon: how often the GM looks where
 // player who is further away
 constexpr float CatchUpAt = 12.0f;
 constexpr uint32 GatherMs = 12000;      // raid: the group gathers behind the GM before it pulls
+// raid: the GM pulls only with the tank this near, as a player waits for the tank; past GatherMaxMs the group is brought
+// over. Pulling after GatherMs whatever, the GM held Naxxramas trash 110-180 yards from the tank, a quarter of the samples
+constexpr float GatherReach = 40.0f;
+constexpr uint32 GatherMaxMs = 60000;
 constexpr float PullFrom = 32.0f;       // raid: where the GM waits, short of the mob's aggro
 constexpr float TrashReach = 150.0f;
 constexpr uint32 WalkMs = 3000;         // raid: after going on to mobs further in, before looking about
@@ -176,6 +181,11 @@ struct Run
     uint32 fightMobCount = 0, fightMobSamples = 0, fightOnTank = 0;
     std::map<ObjectGuid, uint32> fightOffTank;
     std::map<ObjectGuid, uint32> fightFaced;  // samples each member stood in front of a mob on the tank
+    // healer samples not standing back, by why: a mob on the healer near it, a mob on another near it, out of reach
+    uint32 fightHealerHit = 0, fightHealerNear = 0, fightHealerFar = 0;
+    // each mob's victim at the last sample, to log what took a mob off the tank (a few a fight)
+    std::map<ObjectGuid, ObjectGuid> mobVictim;
+    uint32 fightSwitchLogs = 0;
     ObjectGuid fightOpener;
     std::string fightOpenerHow;  // how: what the opener hit, or what struck it
     std::set<ObjectGuid> dead;  // mobs counted as killed
@@ -204,11 +214,21 @@ ObjectGuid opener;  // who started the fight: a member who struck first, or the 
 std::string openerHow;
 bool fightHurt = false;
 bool fightHealed = false;
+ObjectGuid fightHurtWho;  // the first member hurt in the fight, for the log of a hurt fight left unhealed
 bool fightStruck = false;  // a mob struck a member: a real fight
 
 void Report();
 
 Player* Gm() { return ObjectAccessor::FindConnectedPlayer(run.gm); }
+
+// What a back-line member's step to its spot last did, or why no spot would do
+std::string BackLineNote(PlayerbotAI* ai)
+{
+    if (!ai || !(PlayerbotAI::IsHeal(ai->GetBot()) || PlayerbotAI::IsRanged(ai->GetBot())))
+        return "-";
+    auto* action = dynamic_cast<BackLineTakeSpotAction*>(ai->GetAiObjectContext()->GetAction("back line take spot"));
+    return action ? action->LastNote() : "-";
+}
 
 Player* BotOf(Member const& member)
 {
@@ -515,6 +535,46 @@ void Sample(Player* gm, std::vector<Player*> const& bots)
             continue;
         ++t.mobSamples;
         ++run.fightMobSamples;
+        // A mob that goes to someone other than the tank, first or off it: the threat on both, and what the one it
+        // went to last did
+        ObjectGuid& was = run.mobVictim[mob->GetGUID()];
+        if (victim->GetGUID() != was)
+        {
+            if (hit && !PlayerbotAI::IsTank(hit, true) && (was.IsEmpty() || was == tank->GetGUID()) &&
+                run.fightSwitchLogs < 12)
+            {
+                ++run.fightSwitchLogs;
+                std::string trace;
+                if (PlayerbotAI* hitAi = GET_PLAYERBOT_AI(hit))
+                    if (Engine* engine = hitAi->GetCurrentEngine())
+                    {
+                        trace = engine->GetLastAction();
+                        if (trace.size() > 200)
+                            trace = trace.substr(trace.size() - 200);
+                    }
+                // And what the tank was at: a low-level tank's threat is what it does with little rage
+                std::string tankTrace;
+                if (PlayerbotAI* tankAi = GET_PLAYERBOT_AI(tank))
+                    if (Engine* engine = tankAi->GetCurrentEngine())
+                    {
+                        tankTrace = engine->GetLastAction();
+                        if (tankTrace.size() > 300)
+                            tankTrace = tankTrace.substr(tankTrace.size() - 300);
+                    }
+                Unit* tankOn = tank->GetVictim();
+                LOG_INFO("playerbots",
+                         "Rolecheck: {} {} {} ({}) at {}s into the fight: threat tank {:.0f}, {} {:.0f}, {:.0f} yd "
+                         "from the tank; its last actions: {}; the tank on {} ({} mobs on it), rage {}, {:.0f} yd from "
+                         "this mob, moving {}, melee {}; its last actions: {}",
+                         mob->GetName(), was.IsEmpty() ? "went first to" : "left the tank for", hit->GetName(),
+                         Role(hit), (run.elapsed - run.fightAt) / 1000, mob->GetThreatMgr().GetThreat(tank),
+                         hit->GetName(), mob->GetThreatMgr().GetThreat(hit), hit->GetExactDist(tank), trace,
+                         tankOn ? tankOn->GetName() : "-", uint32(tank->getAttackers().size()),
+                         tank->GetPower(POWER_RAGE) / 10, tank->GetExactDist(mob), tank->isMoving(),
+                         tank->HasUnitState(UNIT_STATE_MELEE_ATTACKING), tankTrace);
+            }
+            was = victim->GetGUID();
+        }
         if (hit && PlayerbotAI::IsTank(hit, true))
         {
             ++t.onTank;
@@ -532,7 +592,30 @@ void Sample(Player* gm, std::vector<Player*> const& bots)
                 mob->GetExactDist(bot) <= RoleCheck::FrontReach && mob->HasInArc(float(M_PI) / 2.0f, bot))
             {
                 exposed = true;
-                ++run.fightFaced[bot->GetGUID()];
+                uint32 const faced = ++run.fightFaced[bot->GetGUID()];
+                // Why, a few times a fight for each member: what it is on, and what it last did
+                if (faced == 1 || faced == 25 || faced == 100)
+                {
+                    PlayerbotAI* ai = GET_PLAYERBOT_AI(bot);
+                    Unit* target = ai ? ai->GetAiObjectContext()->GetValue<Unit*>("current target")->Get() : nullptr;
+                    std::string trace;
+                    if (Engine* engine = ai ? ai->GetCurrentEngine() : nullptr)
+                    {
+                        trace = engine->GetLastAction();
+                        if (trace.size() > 240)
+                            trace = trace.substr(trace.size() - 240);
+                    }
+                    LOG_INFO("playerbots",
+                             "Rolecheck: {} ({}) in front of {} at {}s into the fight (sample {}): {:.1f} yd from it; "
+                             "its target {}{}, {:.1f} yd away, in melee {}, moving {}, behind it {}; it is moving {}, "
+                             "casting {}; back line {}; its last actions: {}",
+                             bot->GetName(), Role(bot), mob->GetName(), (run.elapsed - run.fightAt) / 1000, faced,
+                             mob->GetExactDist(bot), target ? target->GetName() : "-",
+                             target == mob ? " (this mob)" : "", target ? bot->GetExactDist(target) : -1.0f,
+                             target && bot->IsWithinMeleeRange(target), target && target->isMoving(),
+                             target && !target->HasInArc(float(M_PI), bot), bot->isMoving(),
+                             bot->IsNonMeleeSpellCast(false), BackLineNote(ai), trace);
+                }
             }
         if (exposed)
             ++t.facedAtGroup;
@@ -550,13 +633,60 @@ void Sample(Player* gm, std::vector<Player*> const& bots)
         {
             ++t.healerSamples;
             float nearest = 1000.0f;
+            Creature* nearestMob = nullptr;
             for (Creature* mob : mobs)
-                nearest = std::min(nearest, bot->GetExactDist(mob));
+                if (bot->GetExactDist(mob) < nearest)
+                {
+                    nearest = bot->GetExactDist(mob);
+                    nearestMob = mob;
+                }
             // Back from the mobs, but still in reach of the tank: a healer left at the door is not standing back
             bool const inReach = tank && tank->GetMap() == bot->GetMap() &&
                                  bot->GetExactDist(tank) <= RoleCheck::HealReach && bot->IsWithinLOSInMap(tank);
             if (nearest >= RoleCheck::HealerRange && inReach)
                 ++t.healerAtRange;
+            else if (!inReach)
+            {
+                ++run.fightHealerFar;
+                // Why, a few times a fight: how far, whether the tank is in sight, and what the healer is doing
+                uint32 const far = run.fightHealerFar;
+                if (tank && (far == 1 || far == 20 || far == 100 || far == 400))
+                {
+                    std::string trace;
+                    if (Engine* engine = ai ? ai->GetCurrentEngine() : nullptr)
+                    {
+                        trace = engine->GetLastAction();
+                        if (trace.size() > 200)
+                            trace = trace.substr(trace.size() - 200);
+                    }
+                    Player* master = ai ? ai->GetMaster() : nullptr;
+                    bool const sameMap = tank->GetMap() == bot->GetMap();
+                    LOG_INFO("playerbots",
+                             "Rolecheck: healer {} out of reach at {}s into the fight (sample {}): {:.0f} yd from the "
+                             "tank, tank in sight {}, moving {}, motion {}, {:.0f} yd from its master {}; in combat "
+                             "{}; back line {}; its last actions: {}",
+                             bot->GetName(), (run.elapsed - run.fightAt) / 1000, far,
+                             sameMap ? bot->GetExactDist(tank) : -1.0f, sameMap && bot->IsWithinLOSInMap(tank),
+                             bot->isMoving(), uint32(bot->GetMotionMaster()->GetCurrentMovementGeneratorType()),
+                             master ? bot->GetExactDist(master) : -1.0f, master ? master->GetName() : "-",
+                             bot->IsInCombat(), BackLineNote(ai), trace);
+                }
+            }
+            else if (nearestMob && nearestMob->GetVictim() == bot)
+                ++run.fightHealerHit;
+            else
+            {
+                // Why, a few times a fight: the mob, and what the healer's step back last found
+                uint32 const near = ++run.fightHealerNear;
+                if (nearestMob && (near == 1 || near == 20 || near == 100))
+                    LOG_INFO("playerbots",
+                             "Rolecheck: healer {} near {} at {}s into the fight (sample {}): {:.1f} yd, it on {}, "
+                             "moving {}; healer in combat {}, moving {}, casting {}; back line {}",
+                             bot->GetName(), nearestMob->GetName(), (run.elapsed - run.fightAt) / 1000, near,
+                             nearest, nearestMob->GetVictim() ? nearestMob->GetVictim()->GetName() : "-",
+                             nearestMob->isMoving(), bot->IsInCombat(), bot->isMoving(),
+                             bot->IsNonMeleeSpellCast(false), BackLineNote(ai));
+            }
             continue;
         }
         if (PlayerbotAI::IsTank(bot, true) || !tankTarget || !tankTarget->IsAlive())
@@ -593,6 +723,9 @@ void StartFight(std::vector<Player*> const& members)
     run.fightMobCount = run.fightMobSamples = run.fightOnTank = 0;
     run.fightOffTank.clear();
     run.fightFaced.clear();
+    run.fightHealerHit = run.fightHealerNear = run.fightHealerFar = 0;
+    run.mobVictim.clear();
+    run.fightSwitchLogs = 0;
     run.fightOpener = first;
     if (Player* tank = MainTank())
     {
@@ -659,18 +792,44 @@ void EndFight()
     for (auto const& [guid, samples] : run.fightFaced)
         if (Player* who = ObjectAccessor::FindConnectedPlayer(guid))
             faced += Acore::StringFormat("{}{} ({}) {}", faced.empty() ? "" : ", ", who->GetName(), Role(who), samples);
+    std::string healer;
+    if (run.fightHealerHit + run.fightHealerNear + run.fightHealerFar)
+        healer = Acore::StringFormat("; healer not back: struck {}, near a mob on another {}, out of reach {}",
+                                     run.fightHealerHit, run.fightHealerNear, run.fightHealerFar);
     Player* opened = ObjectAccessor::FindConnectedPlayer(run.fightOpener);
-    LOG_INFO("playerbots", "Rolecheck: fight {}: {}s, up to {} mobs, opened by {} ({}), on the tank {}/{} samples{}{}{}{}",
+    LOG_INFO("playerbots", "Rolecheck: fight {}: {}s, up to {} mobs, opened by {} ({}), on the tank {}/{} samples{}{}{}{}{}",
              run.tally.fights, (run.elapsed - run.fightAt) / 1000, run.fightMobCount,
              opened ? opened->GetName() : "?", run.fightOpenerHow, run.fightOnTank, run.fightMobSamples,
              offTank.empty() ? "" : "; off the tank on ", offTank, faced.empty() ? "" : "; in front of a mob: ",
-             faced);
+             faced, healer);
     std::lock_guard<std::mutex> guard(hookLock);
     if (fightHurt)
     {
         ++run.tally.hurtFights;
         if (fightHealed)
             ++run.tally.healedFights;
+        else if (Player* hurt = ObjectAccessor::FindConnectedPlayer(fightHurtWho))
+            // Hurt and not healed: where the healer was to the one hurt, and what it last did
+            for (Player* healer : Bots())
+            {
+                PlayerbotAI* ai = GET_PLAYERBOT_AI(healer);
+                if (!ai || !PlayerbotAI::IsHeal(healer, true) || healer->GetMap() != hurt->GetMap())
+                    continue;
+                std::string trace;
+                if (Engine* engine = ai->GetCurrentEngine())
+                {
+                    trace = engine->GetLastAction();
+                    if (trace.size() > 300)
+                        trace = trace.substr(trace.size() - 300);
+                }
+                LOG_INFO("playerbots",
+                         "Rolecheck: fight {} hurt {} ({}, {} now at {:.0f}%) and no heal landed; healer {} {:.0f} yd "
+                         "from it, in sight {}, alive {}, mana {:.0f}%, in combat {}; its last actions: {}",
+                         run.tally.fights, hurt->GetName(), Role(hurt), hurt->IsAlive() ? "alive" : "dead",
+                         hurt->GetHealthPct(), healer->GetName(), healer->GetExactDist(hurt),
+                         healer->IsWithinLOSInMap(hurt), healer->IsAlive(), healer->GetPowerPct(POWER_MANA),
+                         healer->IsInCombat(), trace);
+            }
     }
     fightHurt = fightHealed = false;
     opener.Clear();
@@ -886,17 +1045,34 @@ void RaidPull(Player* gm, std::vector<Player*> const& bots, uint32 diff)
             Report();
             return;
         }
+        // On ground it can see, as WalkOn: at the mob's height off a ledge the GM hung in the air (the driver does not
+        // fall), and the bots brought over fell and walked back 175 yards below it, minute after minute (Naxxramas)
+        Position spot;
+        run.tried.insert(mob->GetGUID());
+        if (!PullSpot(gm->GetMap(), mob->GetPosition(), mob->GetAngle(gm), spot))
+            return;
         run.pullTarget = mob->GetGUID();
         run.gathering = 0;
-        float const angle = mob->GetAngle(gm);
-        float const reach = std::min(PullFrom, gm->GetExactDist(mob));
-        gm->NearTeleportTo(mob->GetPositionX() + reach * std::cos(angle), mob->GetPositionY() + reach * std::sin(angle),
-                           mob->GetPositionZ() + 0.5f, angle + float(M_PI));
+        gm->NearTeleportTo(spot.GetPositionX(), spot.GetPositionY(), spot.GetPositionZ(), spot.GetOrientation());
         return;
     }
     run.gathering += diff;
     if (run.gathering < GatherMs)
         return;
+    Player* tank = MainTank();
+    if (tank && tank->IsAlive() && (tank->GetMap() != gm->GetMap() || tank->GetExactDist(gm) > GatherReach))
+    {
+        if (run.gathering < GatherMaxMs)
+            return;
+        LOG_INFO("playerbots", "Rolecheck: the tank is {:.0f} yd behind the pull ({:.0f} yd below); the group is brought over",
+                 tank->GetMap() == gm->GetMap() ? tank->GetExactDist(gm) : -1.0f,
+                 gm->GetPositionZ() - tank->GetPositionZ());
+        for (Player* bot : bots)
+            if (bot->IsAlive() && bot->GetMapId() == gm->GetMapId())
+                bot->NearTeleportTo(gm->GetPositionX(), gm->GetPositionY(), gm->GetPositionZ(), gm->GetOrientation());
+        run.gathering = 0;
+        return;
+    }
     // The player's pull: the mob comes for the GM, and its pack with it
     {
         std::lock_guard<std::mutex> guard(hookLock);
@@ -1158,7 +1334,11 @@ public:
         // Hurt: under the health a bot healer heals at, not a scratch it rightly leaves alone
         if (struck && (victim->GetHealth() <= damage || float(victim->GetHealth() - damage) * 100.0f <
                                                             float(victim->GetMaxHealth()) * RoleCheck::HurtHealthPct))
+        {
+            if (!fightHurt)
+                fightHurtWho = struck->GetGUID();
             fightHurt = true;
+        }
         return damage;
     }
 
