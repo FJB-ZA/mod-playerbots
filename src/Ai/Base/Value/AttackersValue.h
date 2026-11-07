@@ -23,6 +23,8 @@ public:
     GuidVector Calculate();
     static bool IsPossibleTarget(Unit* attacker, Player* bot, float range = sPlayerbotAIConfig.SightDistance);
     static bool IsValidTarget(Unit* attacker, Player* bot);
+    // A tank keeps a mob on another group member even out of its sight: it walks round the corner to it
+    static bool TankGoesFor(Unit* attacker, Player* bot);
 
 private:
     void AddAttackersOf(Group* group, std::unordered_set<Unit*>& targets);

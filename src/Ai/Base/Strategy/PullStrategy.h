@@ -20,6 +20,7 @@
 
 class Action;
 class Multiplier;
+class Player;
 class Unit;
 
 class PlayerbotAI;
@@ -37,6 +38,9 @@ public:
 
     static PullStrategy* Get(PlayerbotAI* botAI);
     static uint8 GetMaxPullTime() { return 15; }
+    // Is a mob on another member of the bot's group? Then the fight has come to the group, and there is no pull left
+    // to make
+    static bool FightOnMember(Player* bot);
 
     time_t GetPullStartTime() const { return pullStartTime; }
     bool IsPullPendingToStart() const { return pendingToStart; }

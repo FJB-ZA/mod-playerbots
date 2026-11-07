@@ -214,6 +214,7 @@ ObjectGuid opener;  // who started the fight: a member who struck first, or the 
 std::string openerHow;
 bool fightHurt = false;
 bool fightHealed = false;
+ObjectGuid fightHurtWho;  // the first member hurt in the fight, for the log of a hurt fight left unhealed
 bool fightStruck = false;  // a mob struck a member: a real fight
 
 void Report();
@@ -551,12 +552,26 @@ void Sample(Player* gm, std::vector<Player*> const& bots)
                         if (trace.size() > 200)
                             trace = trace.substr(trace.size() - 200);
                     }
+                // And what the tank was at: a low-level tank's threat is what it does with little rage
+                std::string tankTrace;
+                if (PlayerbotAI* tankAi = GET_PLAYERBOT_AI(tank))
+                    if (Engine* engine = tankAi->GetCurrentEngine())
+                    {
+                        tankTrace = engine->GetLastAction();
+                        if (tankTrace.size() > 300)
+                            tankTrace = tankTrace.substr(tankTrace.size() - 300);
+                    }
+                Unit* tankOn = tank->GetVictim();
                 LOG_INFO("playerbots",
                          "Rolecheck: {} {} {} ({}) at {}s into the fight: threat tank {:.0f}, {} {:.0f}, {:.0f} yd "
-                         "from the tank; its last actions: {}",
+                         "from the tank; its last actions: {}; the tank on {} ({} mobs on it), rage {}, {:.0f} yd from "
+                         "this mob, moving {}, melee {}; its last actions: {}",
                          mob->GetName(), was.IsEmpty() ? "went first to" : "left the tank for", hit->GetName(),
                          Role(hit), (run.elapsed - run.fightAt) / 1000, mob->GetThreatMgr().GetThreat(tank),
-                         hit->GetName(), mob->GetThreatMgr().GetThreat(hit), hit->GetExactDist(tank), trace);
+                         hit->GetName(), mob->GetThreatMgr().GetThreat(hit), hit->GetExactDist(tank), trace,
+                         tankOn ? tankOn->GetName() : "-", uint32(tank->getAttackers().size()),
+                         tank->GetPower(POWER_RAGE) / 10, tank->GetExactDist(mob), tank->isMoving(),
+                         tank->HasUnitState(UNIT_STATE_MELEE_ATTACKING), tankTrace);
             }
             was = victim->GetGUID();
         }
@@ -793,6 +808,28 @@ void EndFight()
         ++run.tally.hurtFights;
         if (fightHealed)
             ++run.tally.healedFights;
+        else if (Player* hurt = ObjectAccessor::FindConnectedPlayer(fightHurtWho))
+            // Hurt and not healed: where the healer was to the one hurt, and what it last did
+            for (Player* healer : Bots())
+            {
+                PlayerbotAI* ai = GET_PLAYERBOT_AI(healer);
+                if (!ai || !PlayerbotAI::IsHeal(healer, true) || healer->GetMap() != hurt->GetMap())
+                    continue;
+                std::string trace;
+                if (Engine* engine = ai->GetCurrentEngine())
+                {
+                    trace = engine->GetLastAction();
+                    if (trace.size() > 300)
+                        trace = trace.substr(trace.size() - 300);
+                }
+                LOG_INFO("playerbots",
+                         "Rolecheck: fight {} hurt {} ({}, {} now at {:.0f}%) and no heal landed; healer {} {:.0f} yd "
+                         "from it, in sight {}, alive {}, mana {:.0f}%, in combat {}; its last actions: {}",
+                         run.tally.fights, hurt->GetName(), Role(hurt), hurt->IsAlive() ? "alive" : "dead",
+                         hurt->GetHealthPct(), healer->GetName(), healer->GetExactDist(hurt),
+                         healer->IsWithinLOSInMap(hurt), healer->IsAlive(), healer->GetPowerPct(POWER_MANA),
+                         healer->IsInCombat(), trace);
+            }
     }
     fightHurt = fightHealed = false;
     opener.Clear();
@@ -1297,7 +1334,11 @@ public:
         // Hurt: under the health a bot healer heals at, not a scratch it rightly leaves alone
         if (struck && (victim->GetHealth() <= damage || float(victim->GetHealth() - damage) * 100.0f <
                                                             float(victim->GetMaxHealth()) * RoleCheck::HurtHealthPct))
+        {
+            if (!fightHurt)
+                fightHurtWho = struck->GetGUID();
             fightHurt = true;
+        }
         return damage;
     }
 

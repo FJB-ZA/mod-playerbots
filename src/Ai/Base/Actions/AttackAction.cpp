@@ -5,6 +5,7 @@
  */
 
 #include "AttackAction.h"
+#include "AttackersValue.h"
 #include "CreatureAI.h"
 #include "Event.h"
 #include "LastMovementValue.h"
@@ -125,7 +126,10 @@ bool AttackAction::Attack(Unit* target, bool /*with_pet*/ /*true*/)
     if (IsUnavailableCombatTarget(bot, target))
         return false;
 
-    if (!bot->IsWithinLOSInMap(target))
+    // A tank goes round the corner for a mob on a group member: its combat engine walks it there. Kept as an attacker
+    // but refused here, the tank stood out of combat for 40 s while two mobs beat on the rogue out of its sight
+    // (solo-wow role check, Ramparts, 2026-11-07)
+    if (!AttackersValue::TankGoesFor(target, bot) && !bot->IsWithinLOSInMap(target))
     {
         if (verbose)
             botAI->TellError(PlayerbotTextMgr::instance().GetBotTextOrDefault(
