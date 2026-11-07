@@ -12,6 +12,7 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 #include "LeadChatPolicy.h"
 #include "LeadTierPolicy.h"
@@ -44,7 +45,9 @@ struct State
     Position spot;  // where the group gathers
     bool hasPullSpot = false;
     Position pullSpot;      // where the tank pulls from, in sight of the pack
+    std::vector<Position> trail;  // where the tank walked out of a fight, newest last (WaitSpotPolicy.h TrailSpot)
     bool stepping = false;  // the tank has left the group to pull
+    uint32 spotStuckAt = 0;  // since when the tank, standing still, has failed to move to its spot
     bool pulled = false;
     uint32 pulledAt = 0;
     bool fought = false;  // the pull turned into a fight

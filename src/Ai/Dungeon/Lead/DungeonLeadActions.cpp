@@ -54,6 +54,7 @@ uint32 constexpr WAIT_CALL_DELAY_MS = 4000;
 uint32 constexpr OVERPULL_WINDOW_MS = 8000;
 // A tank running in without a pull spell is not in combat until it reaches the pack.
 uint32 constexpr PULL_GRACE_MS = 6000;
+uint32 constexpr SPOT_STUCK_MS = 5000;
 uint32 constexpr MAX_FAILED_PULLS = 3;
 uint32 constexpr MAX_PATH_TRIES = 4;
 uint32 constexpr SKULL_CALL_CHANCE = 25;
@@ -373,6 +374,7 @@ void PlanSpot(PlayerbotAI* botAI, State& state, Creature* seed, bool boss)
     state.hasSpot = false;
     state.hasPullSpot = false;
     state.stepping = false;
+    state.spotStuckAt = 0;
     PullStyle style = StyleFor(TierOf(bot));
     // Bosses do not follow around corners; they are pulled in sight.
     if (boss && style == PullStyle::Corner)
@@ -390,13 +392,29 @@ void PlanSpot(PlayerbotAI* botAI, State& state, Creature* seed, bool boss)
     if (path.GetPathType() & PATHFIND_NOPATH)
         return;
 
+    // The other packs not yet pulled: the group does not gather inside their reach, or the pull brings them too
+    std::vector<Creature*> others = Hostiles(botAI);
+    std::vector<Creature*> const pack = PackAround(seed, others);
+    std::erase_if(others, [&pack](Creature* mob) { return std::find(pack.begin(), pack.end(), mob) != pack.end(); });
+    auto nearOther = [&](float x, float y, float z)
+    {
+        return std::any_of(others.begin(), others.end(), [&](Creature* mob)
+                           { return mob->GetExactDist(x, y, z) <= mob->GetAggroRange(bot) + AggroSlack; });
+    };
+    auto inAggro = [&](float x, float y, float z)
+    {
+        auto const within = [&](Creature* mob) { return mob->GetExactDist(x, y, z) <= mob->GetAggroRange(bot); };
+        return std::any_of(pack.begin(), pack.end(), within) || std::any_of(others.begin(), others.end(), within);
+    };
+
     std::vector<PathSpot> spots;
     std::vector<G3D::Vector3> where;
     auto sample = [&](G3D::Vector3 const& point)
     {
         float const distance = seed->GetExactDist(point.x, point.y, point.z);
         bool const sees = distance <= MaxCornerDistance && seed->IsWithinLOS(point.x, point.y, point.z + EYE_HEIGHT);
-        spots.push_back({distance, sees});
+        spots.push_back(
+            {distance, sees, nearOther(point.x, point.y, point.z), inAggro(point.x, point.y, point.z)});
         where.push_back(point);
     };
 
@@ -414,7 +432,25 @@ void PlanSpot(PlayerbotAI* botAI, State& state, Creature* seed, bool boss)
 
     int const index = WaitSpot(spots.data(), spots.size(), style);
     if (index < 0)
+    {
+        // Nowhere on the way: back along the trail, and the tank steps out from there to pull
+        std::vector<PathSpot> trail;
+        for (Position const& point : state.trail)
+            trail.push_back({seed->GetExactDist(&point), false,
+                             nearOther(point.GetPositionX(), point.GetPositionY(), point.GetPositionZ())});
+        int const back = TrailSpot(trail.data(), trail.size());
+        if (back < 0)
+            return;
+        state.hasSpot = true;
+        state.spot = state.trail[back];
+        int const pullIndex = PullSpot(spots.data(), spots.size(), 0);
+        if (pullIndex >= 0)
+        {
+            state.hasPullSpot = true;
+            state.pullSpot.Relocate(where[pullIndex].x, where[pullIndex].y, where[pullIndex].z);
+        }
         return;
+    }
     state.hasSpot = true;
     state.spot.Relocate(where[index].x, where[index].y, where[index].z);
 
@@ -495,6 +531,14 @@ void Refresh(PlayerbotAI* botAI, State& state)
     {
         state = State();
         state.instanceId = bot->GetInstanceId();
+    }
+    // The ground walked, for a wait spot behind the tank: only out of a fight, and not the step out to pull
+    if (!bot->IsInCombat() && !state.stepping && bot->IsAlive() &&
+        (state.trail.empty() || bot->GetExactDist(&state.trail.back()) >= TrailStep))
+    {
+        state.trail.push_back(bot->GetPosition());
+        if (state.trail.size() > TrailPoints)
+            state.trail.erase(state.trail.begin());
     }
     if ((state.pulled || state.fought) && !bot->IsInCombat())
     {
@@ -632,6 +676,12 @@ Creature* CurrentPack(PlayerbotAI* botAI, State& state)
     std::erase_if(mobs, [&state](Creature* mob) { return state.skipped.count(mob->GetGUID().GetRawValue()) > 0; });
     std::vector<std::vector<Creature*>> packs = SplitPacks(mobs);
     std::vector<G3D::Vector3> const way = hasGoal ? WayAhead(bot, state.goal) : std::vector<G3D::Vector3>();
+    std::vector<Player*> members;
+    if (Group* group = bot->GetGroup())
+        for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+            if (Player* member = ref->GetSource())
+                if (member != bot && member->IsAlive() && member->GetMap() == bot->GetMap())
+                    members.push_back(member);
     std::vector<PackCandidate> candidates;
     for (std::vector<Creature*> const& pack : packs)
     {
@@ -658,6 +708,11 @@ Creature* CurrentPack(PlayerbotAI* botAI, State& state)
             candidate.onPath = candidate.onPath ||
                                std::any_of(way.begin(), way.end(), [&](G3D::Vector3 const& point)
                                            { return mob->GetExactDist(point.x, point.y, point.z) <= reach; });
+            // A pack by any member is on the group's way too: the back line trails the tank by 30 yards on its own
+            // route, and walked into goblins the tank's walk passed by (Deadmines foundry, 2026-11-07)
+            candidate.onPath = candidate.onPath ||
+                               std::any_of(members.begin(), members.end(),
+                                           [&](Player* member) { return mob->GetExactDist(member) <= reach; });
         }
         candidates.push_back(candidate);
     }
@@ -910,8 +965,30 @@ bool LeadAdvanceAction::Execute(Event /*event*/)
     if (!state.pack.IsEmpty() && state.hasSpot)
     {
         Position const& to = state.stepping ? state.pullSpot : state.spot;
-        return MoveTo(bot->GetMapId(), to.GetPositionX(), to.GetPositionY(), to.GetPositionZ(), false, false, false,
-                      false, MovementPriority::MOVEMENT_NORMAL, true);
+        if (MoveTo(bot->GetMapId(), to.GetPositionX(), to.GetPositionY(), to.GetPositionZ(), false, false, false,
+                   false, MovementPriority::MOVEMENT_NORMAL, true))
+        {
+            state.spotStuckAt = 0;
+            return true;
+        }
+        if (bot->isMoving())
+            return false;
+        if (!state.spotStuckAt)
+        {
+            state.spotStuckAt = getMSTime();
+            return false;
+        }
+        if (!Elapsed(state.spotStuckAt, SPOT_STUCK_MS))
+            return false;
+        // A spot off the walkable ground (deep water, past a ledge) failed every move, and the tank stood at the
+        // gathering spot for the rest of the run (Steamvault, solo-wow role check 2026-11-07): pull from here instead
+        state.spotStuckAt = 0;
+        if (state.stepping)
+            state.stepping = false;
+        else
+            state.hasSpot = false;
+        state.hasPullSpot = false;
+        return false;
     }
 
     // No pack on the way: walk a stretch toward the boss, then look again. The corners of the way, not the smoothed
