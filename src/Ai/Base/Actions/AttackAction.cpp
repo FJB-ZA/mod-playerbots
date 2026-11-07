@@ -143,6 +143,16 @@ bool AttackAction::Attack(Unit* target, bool /*with_pet*/ /*true*/)
 
     Unit* oldTarget = context->GetValue<Unit*>("current target")->Get();
     bool shouldMelee = bot->IsWithinMeleeRange(target) || PlayerbotAI::IsMelee(bot);
+    // Picking a target is not swinging at it. A damage dealer minding threat leaves the first swing to its "melee"
+    // action, which the tank's hold gates (ThreatMultiplier): started here by its assist, a rogue's auto attack took
+    // mobs off the tank before the tank had hit them (solo-wow role check, 2026-11-07)
+    if (shouldMelee && !dynamic_cast<MeleeAction*>(this) && !PlayerbotAI::IsTank(bot) && target->GetVictim() != bot &&
+        botAI->HasStrategy("threat", BOT_STATE_COMBAT))
+    {
+        Unit* tank = AI_VALUE(Unit*, "main tank");
+        if (tank && tank != bot && tank->IsAlive() && tank->IsInCombat() && tank->GetMap() == bot->GetMap())
+            shouldMelee = false;
+    }
 
     bool sameTarget = oldTarget == target && bot->GetVictim() == target;
     bool inCombat = botAI->GetState() == BOT_STATE_COMBAT;

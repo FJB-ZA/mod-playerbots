@@ -41,9 +41,19 @@ float ThreatMultiplier::GetValue(Action* action)
             on = BotThreat::MobOn::NoTankInFight;
         else if (victim == bot)
             on = BotThreat::MobOn::Self;
-        else if (holder && PlayerbotAI::IsTank(holder) && holder->IsInSameGroupWith(bot))
+        // The tank's hold starts once the mob is at the tank, or stands (a caster): one still running in from the pull
+        // has only the pull's threat on the tank, and a rogue that opened on it as it ran took it, 2000-5000 threat to
+        // the tank's 20-300 at five seconds (solo-wow role check, Ramparts and Deadmines, 2026-11-07)
+        else if (holder && PlayerbotAI::IsTank(holder) && holder->IsInSameGroupWith(bot) &&
+                 (!target->isMoving() || target->IsWithinMeleeRange(holder)))
             on = BotThreat::MobOn::Tank;
         if (!tankHold.MayOpen(target->GetGUID().GetRawValue(), on, getMSTime()))
+            return 0.0f;
+        // Held long enough, but not with threat enough to take the next hit (ThreatHoldPolicy.h)
+        float const own = target->GetThreatMgr().GetThreat(bot);
+        usualHit.Saw(target->GetGUID().GetRawValue(), own);
+        if (!melee && on == BotThreat::MobOn::Tank &&
+            BotThreat::WouldTurnIt(target->GetThreatMgr().GetThreat(holder), own, usualHit.Threat()))
             return 0.0f;
     }
 

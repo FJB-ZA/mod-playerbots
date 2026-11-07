@@ -21,6 +21,7 @@ public:
 
 private:
     BotThreat::TankHoldClock tankHold;  // how long the tank has held each mob, before this damage dealer opens on it
+    BotThreat::UsualHit usualHit;       // what this damage dealer's hits come to, in threat
 };
 
 class ThreatStrategy : public Strategy

@@ -98,6 +98,21 @@ inline bool OutOfIdleAggro(IdleMob const* idle, size_t count, float x, float y)
     return true;
 }
 
+// Where a mob running at its victim will stand once it gets there: its melee reach short of the victim, on the side it
+// comes from, facing the victim. A back line that answered only where the mob stood stayed put as the pack ran in from
+// the pull and stood in its front when it reached the tank; in the solo-wow role check (2026-11-07) most samples in
+// front of a mob were the first seconds of a fight
+inline FacingMob Arriving(float mobX, float mobY, float victimX, float victimY, float reach)
+{
+    float const dx = mobX - victimX;
+    float const dy = mobY - victimY;
+    float const distance = std::sqrt(dx * dx + dy * dy);
+    float const facing = std::atan2(-dy, -dx);
+    if (distance <= reach || distance < 0.01f)
+        return {mobX, mobY, facing, 0.0f};
+    return {victimX + dx / distance * reach, victimY + dy / distance * reach, facing, 0.0f};
+}
+
 // The candidate spot at HealerSpotAngles[index] around the tank's mob, far enough out to clear it
 inline Spot HealerSpot(FacingMob const& anchor, size_t index, float radius = HealerBack + 2.0f)
 {

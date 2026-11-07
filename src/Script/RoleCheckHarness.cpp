@@ -48,6 +48,7 @@
 #include "LivingWorldMgr.h"
 #include "Log.h"
 #include "Map.h"
+#include "MovementActions.h"
 #include "MapMgr.h"
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
@@ -122,6 +123,10 @@ constexpr uint32 FollowMs = 2000;       // dungeon: how often the GM looks where
 // player who is further away
 constexpr float CatchUpAt = 12.0f;
 constexpr uint32 GatherMs = 12000;      // raid: the group gathers behind the GM before it pulls
+// raid: the GM pulls only with the tank this near, as a player waits for the tank; past GatherMaxMs the group is brought
+// over. Pulling after GatherMs whatever, the GM held Naxxramas trash 110-180 yards from the tank, a quarter of the samples
+constexpr float GatherReach = 40.0f;
+constexpr uint32 GatherMaxMs = 60000;
 constexpr float PullFrom = 32.0f;       // raid: where the GM waits, short of the mob's aggro
 constexpr float TrashReach = 150.0f;
 constexpr uint32 WalkMs = 3000;         // raid: after going on to mobs further in, before looking about
@@ -214,6 +219,15 @@ bool fightStruck = false;  // a mob struck a member: a real fight
 void Report();
 
 Player* Gm() { return ObjectAccessor::FindConnectedPlayer(run.gm); }
+
+// What a back-line member's step to its spot last did, or why no spot would do
+std::string BackLineNote(PlayerbotAI* ai)
+{
+    if (!ai || !(PlayerbotAI::IsHeal(ai->GetBot()) || PlayerbotAI::IsRanged(ai->GetBot())))
+        return "-";
+    auto* action = dynamic_cast<BackLineTakeSpotAction*>(ai->GetAiObjectContext()->GetAction("back line take spot"));
+    return action ? action->LastNote() : "-";
+}
 
 Player* BotOf(Member const& member)
 {
@@ -578,13 +592,14 @@ void Sample(Player* gm, std::vector<Player*> const& bots)
                     }
                     LOG_INFO("playerbots",
                              "Rolecheck: {} ({}) in front of {} at {}s into the fight (sample {}): {:.1f} yd from it; "
-                             "its target {}{}, {:.1f} yd away, in melee {}, moving {}, behind it {}; it is moving {}; "
-                             "its last actions: {}",
+                             "its target {}{}, {:.1f} yd away, in melee {}, moving {}, behind it {}; it is moving {}, "
+                             "casting {}; back line {}; its last actions: {}",
                              bot->GetName(), Role(bot), mob->GetName(), (run.elapsed - run.fightAt) / 1000, faced,
                              mob->GetExactDist(bot), target ? target->GetName() : "-",
                              target == mob ? " (this mob)" : "", target ? bot->GetExactDist(target) : -1.0f,
                              target && bot->IsWithinMeleeRange(target), target && target->isMoving(),
-                             target && !target->HasInArc(float(M_PI), bot), bot->isMoving(), trace);
+                             target && !target->HasInArc(float(M_PI), bot), bot->isMoving(),
+                             bot->IsNonMeleeSpellCast(false), BackLineNote(ai), trace);
                 }
             }
         if (exposed)
@@ -633,18 +648,30 @@ void Sample(Player* gm, std::vector<Player*> const& bots)
                     bool const sameMap = tank->GetMap() == bot->GetMap();
                     LOG_INFO("playerbots",
                              "Rolecheck: healer {} out of reach at {}s into the fight (sample {}): {:.0f} yd from the "
-                             "tank, tank in sight {}, moving {}, motion {}, {:.0f} yd from its master {}; its last "
-                             "actions: {}",
+                             "tank, tank in sight {}, moving {}, motion {}, {:.0f} yd from its master {}; in combat "
+                             "{}; back line {}; its last actions: {}",
                              bot->GetName(), (run.elapsed - run.fightAt) / 1000, far,
                              sameMap ? bot->GetExactDist(tank) : -1.0f, sameMap && bot->IsWithinLOSInMap(tank),
                              bot->isMoving(), uint32(bot->GetMotionMaster()->GetCurrentMovementGeneratorType()),
-                             master ? bot->GetExactDist(master) : -1.0f, master ? master->GetName() : "-", trace);
+                             master ? bot->GetExactDist(master) : -1.0f, master ? master->GetName() : "-",
+                             bot->IsInCombat(), BackLineNote(ai), trace);
                 }
             }
             else if (nearestMob && nearestMob->GetVictim() == bot)
                 ++run.fightHealerHit;
             else
-                ++run.fightHealerNear;
+            {
+                // Why, a few times a fight: the mob, and what the healer's step back last found
+                uint32 const near = ++run.fightHealerNear;
+                if (nearestMob && (near == 1 || near == 20 || near == 100))
+                    LOG_INFO("playerbots",
+                             "Rolecheck: healer {} near {} at {}s into the fight (sample {}): {:.1f} yd, it on {}, "
+                             "moving {}; healer in combat {}, moving {}, casting {}; back line {}",
+                             bot->GetName(), nearestMob->GetName(), (run.elapsed - run.fightAt) / 1000, near,
+                             nearest, nearestMob->GetVictim() ? nearestMob->GetVictim()->GetName() : "-",
+                             nearestMob->isMoving(), bot->IsInCombat(), bot->isMoving(),
+                             bot->IsNonMeleeSpellCast(false), BackLineNote(ai));
+            }
             continue;
         }
         if (PlayerbotAI::IsTank(bot, true) || !tankTarget || !tankTarget->IsAlive())
@@ -981,17 +1008,34 @@ void RaidPull(Player* gm, std::vector<Player*> const& bots, uint32 diff)
             Report();
             return;
         }
+        // On ground it can see, as WalkOn: at the mob's height off a ledge the GM hung in the air (the driver does not
+        // fall), and the bots brought over fell and walked back 175 yards below it, minute after minute (Naxxramas)
+        Position spot;
+        run.tried.insert(mob->GetGUID());
+        if (!PullSpot(gm->GetMap(), mob->GetPosition(), mob->GetAngle(gm), spot))
+            return;
         run.pullTarget = mob->GetGUID();
         run.gathering = 0;
-        float const angle = mob->GetAngle(gm);
-        float const reach = std::min(PullFrom, gm->GetExactDist(mob));
-        gm->NearTeleportTo(mob->GetPositionX() + reach * std::cos(angle), mob->GetPositionY() + reach * std::sin(angle),
-                           mob->GetPositionZ() + 0.5f, angle + float(M_PI));
+        gm->NearTeleportTo(spot.GetPositionX(), spot.GetPositionY(), spot.GetPositionZ(), spot.GetOrientation());
         return;
     }
     run.gathering += diff;
     if (run.gathering < GatherMs)
         return;
+    Player* tank = MainTank();
+    if (tank && tank->IsAlive() && (tank->GetMap() != gm->GetMap() || tank->GetExactDist(gm) > GatherReach))
+    {
+        if (run.gathering < GatherMaxMs)
+            return;
+        LOG_INFO("playerbots", "Rolecheck: the tank is {:.0f} yd behind the pull ({:.0f} yd below); the group is brought over",
+                 tank->GetMap() == gm->GetMap() ? tank->GetExactDist(gm) : -1.0f,
+                 gm->GetPositionZ() - tank->GetPositionZ());
+        for (Player* bot : bots)
+            if (bot->IsAlive() && bot->GetMapId() == gm->GetMapId())
+                bot->NearTeleportTo(gm->GetPositionX(), gm->GetPositionY(), gm->GetPositionZ(), gm->GetOrientation());
+        run.gathering = 0;
+        return;
+    }
     // The player's pull: the mob comes for the GM, and its pack with it
     {
         std::lock_guard<std::mutex> guard(hookLock);

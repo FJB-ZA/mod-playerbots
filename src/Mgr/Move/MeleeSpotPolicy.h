@@ -13,6 +13,7 @@
 
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 
 namespace BotMove
 {
@@ -69,6 +70,62 @@ inline bool InFrontOfAny(FacingMob const* mobs, size_t count, float x, float y)
 constexpr float SpotAngles[] = {3.14159265f,         3.14159265f * 0.9f,  -3.14159265f * 0.9f, 3.14159265f * 0.8f,
                                 -3.14159265f * 0.8f, 3.14159265f * 0.7f,  -3.14159265f * 0.7f, 3.14159265f * 0.6f,
                                 -3.14159265f * 0.6f, 3.14159265f * 0.45f, -3.14159265f * 0.45f};
+
+// A pack round the tank. Mobs the tank holds from many sides each face it, so every spot behind one is in the front of
+// another across the tank: a rogue on such a pack had no clear spot and stood in a front for whole fights (solo-wow role
+// check, 2026-11-07). The tank steps out through the widest gap between them, and the pack, chasing it, closes up on one
+// side of it with their backs free.
+constexpr float PackSpreadLimit = 3.14159265f / 2.0f;  // at 90 degrees apart the spot behind one clears the other's front
+constexpr float GatherStep = 6.0f;                     // yards the tank steps: the far mobs end up within 60 degrees
+constexpr uint32_t GatherEveryMs = 6000;               // one step per few seconds, so the pack settles between them
+constexpr size_t GatherMaxMobs = 16;
+
+struct Gap
+{
+    float heading = 0.0f;  // the direction from the tank through the middle of the gap
+    float width = 0.0f;    // radians free of mobs
+};
+
+// The widest gap between the directions from the tank to its mobs (radians, any range; at most GatherMaxMobs are
+// looked at); the full circle with fewer than two
+inline Gap WidestGap(float const* headings, size_t count)
+{
+    constexpr float pi = 3.14159265f;
+    if (count < 2)
+        return {count ? std::fmod(headings[0] + pi, 2.0f * pi) : 0.0f, 2.0f * pi};
+    float sorted[GatherMaxMobs];
+    size_t const n = count < GatherMaxMobs ? count : GatherMaxMobs;
+    for (size_t i = 0; i < n; ++i)
+    {
+        float angle = std::fmod(headings[i], 2.0f * pi);
+        if (angle < 0.0f)
+            angle += 2.0f * pi;
+        size_t j = i;
+        while (j > 0 && sorted[j - 1] > angle)
+        {
+            sorted[j] = sorted[j - 1];
+            --j;
+        }
+        sorted[j] = angle;
+    }
+    float const wrap = sorted[0] + 2.0f * pi - sorted[n - 1];
+    Gap widest{sorted[n - 1] + wrap / 2.0f, wrap};
+    for (size_t i = 1; i < n; ++i)
+    {
+        float const width = sorted[i] - sorted[i - 1];
+        if (width > widest.width)
+            widest = {sorted[i - 1] + width / 2.0f, width};
+    }
+    if (widest.heading >= 2.0f * pi)
+        widest.heading -= 2.0f * pi;
+    return widest;
+}
+
+// Do the mobs ring the tank: spread round it wider than PackSpreadLimit?
+inline bool PackRings(float const* headings, size_t count)
+{
+    return count >= 2 && 2.0f * 3.14159265f - WidestGap(headings, count).width > PackSpreadLimit;
+}
 }  // namespace BotMove
 
 #endif

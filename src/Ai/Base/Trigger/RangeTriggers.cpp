@@ -7,6 +7,7 @@
 #include "RangeTriggers.h"
 #include "HealerSpotPolicy.h"
 #include "MoveSplineInit.h"
+#include "MovementActions.h"
 #include "PlayerbotAIConfig.h"
 #include "Playerbots.h"
 #include "ServerFacade.h"
@@ -53,11 +54,25 @@ bool EnemyTooCloseForSpellTrigger::IsActive()
 
 bool BackLineOutOfPlaceTrigger::IsActive()
 {
-    // The back line: healers and ranged damage dealers. Not mid-cast (a step back would cut the cast short) and not
-    // while a step is under way
+    // The back line: healers and ranged damage dealers. Not while a step is under way, and mid-cast (a step cuts the cast
+    // short) only out of a mob's front it stands in: a mage casting back to back never stepped out of the pack the tank
+    // brought in (solo-wow role check, 2026-11-07)
     bool const backLine = PlayerbotAI::IsHeal(bot) || (PlayerbotAI::IsRanged(bot) && PlayerbotAI::IsDps(bot));
-    if (!backLine || PlayerbotAI::IsTank(bot) || bot->isMoving() || bot->IsNonMeleeSpellCast(false))
+    if (!backLine || PlayerbotAI::IsTank(bot) || bot->isMoving())
         return false;
+    if (bot->IsNonMeleeSpellCast(false))
+    {
+        for (ObjectGuid const& guid : AI_VALUE(GuidVector, "attackers"))
+        {
+            Unit* mob = botAI->GetUnit(guid);
+            if (!mob || !mob->IsAlive() || !mob->GetVictim() || mob->GetVictim() == bot || mob->isMoving())
+                continue;
+            BotMove::FacingMob const standing = StandingOf(mob);
+            if (BotMove::InFront(standing, bot->GetPositionX(), bot->GetPositionY()))
+                return true;
+        }
+        return false;
+    }
     Unit* tank = AI_VALUE(Unit*, "main tank");
     // In the fight, or not yet but the tank is (out of combat, BackLineStrategy): the healer's combat starts with its
     // first heal, and until then it stood where the pull left it
@@ -82,7 +97,11 @@ bool BackLineOutOfPlaceTrigger::IsActive()
                 return true;
             continue;
         }
-        if (bot->GetExactDist2d(mob) < BotMove::HealerTooClose)
+        // Where it stands, or will once it reaches whoever it runs at (StandingOf): step aside before the pack arrives
+        BotMove::FacingMob const standing = StandingOf(mob);
+        if (BotMove::FlatDistance(bot->GetPositionX(), bot->GetPositionY(), standing.x, standing.y) <
+                BotMove::HealerTooClose ||
+            BotMove::InFront(standing, bot->GetPositionX(), bot->GetPositionY()))
             return true;
     }
     return false;
