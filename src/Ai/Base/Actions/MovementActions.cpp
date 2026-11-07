@@ -2857,13 +2857,30 @@ bool BackLineTakeSpotAction::Execute(Event /*event*/)
 
     BotMove::FacingMob const around{anchor->GetPositionX(), anchor->GetPositionY(), anchor->GetOrientation()};
     BotMove::Spot const tankAt{tank->GetPositionX(), tank->GetPositionY()};
+    // The packs not in the fight yet, whose aggro range a spot keeps out of
+    std::vector<BotMove::IdleMob> idle;
+    for (ObjectGuid const& guid : AI_VALUE(GuidVector, "possible targets no los"))
+    {
+        Creature* mob = botAI->GetCreature(guid);
+        if (!mob || !mob->IsAlive() || mob->IsInCombat() || !mob->IsHostileTo(bot) ||
+            bot->GetExactDist2d(mob) > BotMove::HealerNearTank + 2.0f * BotMove::HealerBack)
+            continue;
+        idle.push_back({mob->GetPositionX(), mob->GetPositionY(), mob->GetAggroRange(bot)});
+    }
     std::vector<Position> availablePos;
+    // With no clear spot, the roomiest one that is a clear gain on here (HealerSpotRoomier)
+    float const nearestHere = BotMove::NearestMob(mobs.data(), mobs.size(), bot->GetPositionX(), bot->GetPositionY());
+    Position roomiest;
+    float roomiestNearest = 0.0f;
     for (float radius : {BotMove::HealerBack + 2.0f, BotMove::HealerBack + 6.0f})
     {
         for (size_t i = 0; i < BotMove::HealerSpotCount; ++i)
         {
             BotMove::Spot const spot = BotMove::HealerSpot(around, i, radius);
-            if (!BotMove::HealerSpotClear(mobs.data(), mobs.size(), tankAt, spot.x, spot.y))
+            if (!BotMove::OutOfIdleAggro(idle.data(), idle.size(), spot.x, spot.y))
+                continue;
+            bool const clear = BotMove::HealerSpotClear(mobs.data(), mobs.size(), tankAt, spot.x, spot.y);
+            if (!clear && !BotMove::HealerSpotRoomier(mobs.data(), mobs.size(), tankAt, spot.x, spot.y, nearestHere))
                 continue;
             float x = spot.x;
             float y = spot.y;
@@ -2872,15 +2889,26 @@ bool BackLineTakeSpotAction::Execute(Event /*event*/)
             if (!bot->GetMap()->CheckCollisionAndGetValidCoords(bot, bot->GetPositionX(), bot->GetPositionY(),
                                                                 bot->GetPositionZ(), x, y, z))
                 continue;
-            // Still a clear spot once the walls had their say, and the tank in sight from it
-            if (!BotMove::HealerSpotClear(mobs.data(), mobs.size(), tankAt, x, y) ||
-                !tank->IsWithinLOS(x, y, z + bot->GetCollisionHeight()))
+            // Still a good spot once the walls had their say, and the tank in sight from it
+            if (!tank->IsWithinLOS(x, y, z + bot->GetCollisionHeight()))
                 continue;
-            availablePos.emplace_back(x, y, z);
+            if (BotMove::HealerSpotClear(mobs.data(), mobs.size(), tankAt, x, y))
+                availablePos.emplace_back(x, y, z);
+            else if (BotMove::HealerSpotRoomier(mobs.data(), mobs.size(), tankAt, x, y, nearestHere))
+            {
+                float const nearest = BotMove::NearestMob(mobs.data(), mobs.size(), x, y);
+                if (nearest > roomiestNearest)
+                {
+                    roomiestNearest = nearest;
+                    roomiest.Relocate(x, y, z);
+                }
+            }
         }
         if (!availablePos.empty())
             break;
     }
+    if (availablePos.empty() && roomiestNearest > 0.0f)
+        availablePos.push_back(roomiest);
     if (availablePos.empty())
     {
         // No clear spot in sight: at least back in the tank's reach and sight

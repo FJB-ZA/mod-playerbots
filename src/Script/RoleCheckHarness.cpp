@@ -563,7 +563,29 @@ void Sample(Player* gm, std::vector<Player*> const& bots)
                 mob->GetExactDist(bot) <= RoleCheck::FrontReach && mob->HasInArc(float(M_PI) / 2.0f, bot))
             {
                 exposed = true;
-                ++run.fightFaced[bot->GetGUID()];
+                uint32 const faced = ++run.fightFaced[bot->GetGUID()];
+                // Why, a few times a fight for each member: what it is on, and what it last did
+                if (faced == 1 || faced == 25 || faced == 100)
+                {
+                    PlayerbotAI* ai = GET_PLAYERBOT_AI(bot);
+                    Unit* target = ai ? ai->GetAiObjectContext()->GetValue<Unit*>("current target")->Get() : nullptr;
+                    std::string trace;
+                    if (Engine* engine = ai ? ai->GetCurrentEngine() : nullptr)
+                    {
+                        trace = engine->GetLastAction();
+                        if (trace.size() > 240)
+                            trace = trace.substr(trace.size() - 240);
+                    }
+                    LOG_INFO("playerbots",
+                             "Rolecheck: {} ({}) in front of {} at {}s into the fight (sample {}): {:.1f} yd from it; "
+                             "its target {}{}, {:.1f} yd away, in melee {}, moving {}, behind it {}; it is moving {}; "
+                             "its last actions: {}",
+                             bot->GetName(), Role(bot), mob->GetName(), (run.elapsed - run.fightAt) / 1000, faced,
+                             mob->GetExactDist(bot), target ? target->GetName() : "-",
+                             target == mob ? " (this mob)" : "", target ? bot->GetExactDist(target) : -1.0f,
+                             target && bot->IsWithinMeleeRange(target), target && target->isMoving(),
+                             target && !target->HasInArc(float(M_PI), bot), bot->isMoving(), trace);
+                }
             }
         if (exposed)
             ++t.facedAtGroup;
@@ -594,7 +616,31 @@ void Sample(Player* gm, std::vector<Player*> const& bots)
             if (nearest >= RoleCheck::HealerRange && inReach)
                 ++t.healerAtRange;
             else if (!inReach)
+            {
                 ++run.fightHealerFar;
+                // Why, a few times a fight: how far, whether the tank is in sight, and what the healer is doing
+                uint32 const far = run.fightHealerFar;
+                if (tank && (far == 1 || far == 20 || far == 100 || far == 400))
+                {
+                    std::string trace;
+                    if (Engine* engine = ai ? ai->GetCurrentEngine() : nullptr)
+                    {
+                        trace = engine->GetLastAction();
+                        if (trace.size() > 200)
+                            trace = trace.substr(trace.size() - 200);
+                    }
+                    Player* master = ai ? ai->GetMaster() : nullptr;
+                    bool const sameMap = tank->GetMap() == bot->GetMap();
+                    LOG_INFO("playerbots",
+                             "Rolecheck: healer {} out of reach at {}s into the fight (sample {}): {:.0f} yd from the "
+                             "tank, tank in sight {}, moving {}, motion {}, {:.0f} yd from its master {}; its last "
+                             "actions: {}",
+                             bot->GetName(), (run.elapsed - run.fightAt) / 1000, far,
+                             sameMap ? bot->GetExactDist(tank) : -1.0f, sameMap && bot->IsWithinLOSInMap(tank),
+                             bot->isMoving(), uint32(bot->GetMotionMaster()->GetCurrentMovementGeneratorType()),
+                             master ? bot->GetExactDist(master) : -1.0f, master ? master->GetName() : "-", trace);
+                }
+            }
             else if (nearestMob && nearestMob->GetVictim() == bot)
                 ++run.fightHealerHit;
             else
