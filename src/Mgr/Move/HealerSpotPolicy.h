@@ -56,6 +56,48 @@ inline bool HealerSpotClear(FacingMob const* mobs, size_t count, Spot tank, floa
     return !InFrontOfAny(mobs, count, x, y);
 }
 
+// How far (x, y) is from the nearest of the mobs; far away with none
+inline float NearestMob(FacingMob const* mobs, size_t count, float x, float y)
+{
+    float nearest = 1000.0f;
+    for (size_t i = 0; i < count; ++i)
+        nearest = std::fmin(nearest, FlatDistance(x, y, mobs[i].x, mobs[i].y));
+    return nearest;
+}
+
+// With no clear spot (a big pack spread round the tank), is (x, y) still worth the step: past a cleave's reach of every
+// mob, in front of none, near the tank, and a clear gain on where the healer stands? In the solo-wow role check rerun
+// (2026-11-06) a healer near a mob on another was a third of the samples not back: with no spot clear by HealerBack it
+// stayed where it was
+inline bool HealerSpotRoomier(FacingMob const* mobs, size_t count, Spot tank, float x, float y, float nearestHere)
+{
+    if (FlatDistance(x, y, tank.x, tank.y) > HealerNearTank || InFrontOfAny(mobs, count, x, y))
+        return false;
+    float const nearest = NearestMob(mobs, count, x, y);
+    return nearest >= HealerTooClose + 1.0f && nearest >= nearestHere + 2.0f;
+}
+
+// A mob not yet in the fight, and the reach at which it would join it
+struct IdleMob
+{
+    float x = 0.0f;
+    float y = 0.0f;
+    float aggro = 0.0f;
+};
+
+constexpr float IdleMargin = 4.0f;  // yards past an idle mob's aggro range a spot keeps, for its wander and the step
+
+// Is (x, y) out of every idle mob's aggro range? A healer stepping back into the next pack pulled it onto itself: in the
+// solo-wow role check rerun (2026-11-06) every healer sample not back was the healer struck, and most mobs that went to
+// the healer first had no threat on anyone
+inline bool OutOfIdleAggro(IdleMob const* idle, size_t count, float x, float y)
+{
+    for (size_t i = 0; i < count; ++i)
+        if (FlatDistance(x, y, idle[i].x, idle[i].y) < idle[i].aggro + IdleMargin)
+            return false;
+    return true;
+}
+
 // The candidate spot at HealerSpotAngles[index] around the tank's mob, far enough out to clear it
 inline Spot HealerSpot(FacingMob const& anchor, size_t index, float radius = HealerBack + 2.0f)
 {

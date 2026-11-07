@@ -26,14 +26,24 @@ float ThreatMultiplier::GetValue(Action* action)
     if (!AI_VALUE(bool, "group"))
         return 1.0f;
 
-    // Hold off a mob the tank has only just taken, until its first swings put some threat between them
+    // Hold off a mob until the tank has taken it and its first swings put some threat between them
     // (ThreatHoldPolicy.h)
-    if (Unit* target = AI_VALUE(Unit*, "current target"))
+    Unit* target = AI_VALUE(Unit*, "current target");
+    if (target && target->IsAlive() && !PlayerbotAI::IsTank(bot))
     {
-        Player* holder = target->IsAlive() && target->GetVictim() ? target->GetVictim()->ToPlayer() : nullptr;
-        bool const tankHolds =
-            holder && holder != bot && PlayerbotAI::IsTank(holder) && holder->IsInSameGroupWith(bot);
-        if (!tankHold.MayOpen(target->GetGUID().GetRawValue(), tankHolds, getMSTime()))
+        Unit* tank = AI_VALUE(Unit*, "main tank");
+        bool const tankInFight = tank && tank != bot && tank->IsAlive() && tank->IsInCombat() &&
+                                 tank->GetMap() == bot->GetMap() && tank->GetExactDist2d(bot) < 60.0f;
+        Unit* victim = target->GetVictim();
+        Player* holder = victim ? victim->ToPlayer() : nullptr;
+        BotThreat::MobOn on = BotThreat::MobOn::Other;
+        if (!tankInFight)
+            on = BotThreat::MobOn::NoTankInFight;
+        else if (victim == bot)
+            on = BotThreat::MobOn::Self;
+        else if (holder && PlayerbotAI::IsTank(holder) && holder->IsInSameGroupWith(bot))
+            on = BotThreat::MobOn::Tank;
+        if (!tankHold.MayOpen(target->GetGUID().GetRawValue(), on, getMSTime()))
             return 0.0f;
     }
 
