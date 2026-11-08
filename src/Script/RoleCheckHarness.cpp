@@ -222,6 +222,12 @@ struct Run
     bool eventMoves = false;
     uint32 lastEventAt = 0;  // run.elapsed at the last step taken
     std::set<uint32> eventVisited;  // starters gone to while their grid was not loaded, by entry
+    ObjectGuid lastStarter;  // the starter of the last step, for the status
+    Position lastStarterAt;  // where it stood at the step: one that walks on takes the event with it
+    // how often the GM was put beside each starter: three times at most, then the step, wherever the GM landed (a GM
+    // put beside the Focusing Iris, still more than 4 yards off it, was put beside it again every 3 seconds for the
+    // whole run: Eye of Eternity, 2026-11-08)
+    std::map<ObjectGuid, uint8> eventBeside;
 
     // AccountInstancesPerHour before the run: lifted while it runs, since back-to-back runs (and each settle retry
     // into a reset instance) count against every bot's five new dungeons an hour and left bots outside
@@ -473,6 +479,29 @@ void Status()
     {
         PlayerbotAI* ai = GET_PLAYERBOT_AI(tank);
         lead = tank->GetName();
+        // A raid: what the GM is pulling, and what holds the pull (a raid sat 10 minutes with nothing in its log)
+        if (run.raid || run.eventStarted)
+        {
+            Player* gm = Gm();
+            // The event's last starter, where it went and whether it wants talking to again (Culling of Stratholme
+            // stood 11 minutes after Arthas's step with no wave)
+            Creature* starter = gm && run.lastStarter.IsCreature() ? gm->GetMap()->GetCreature(run.lastStarter) : nullptr;
+            if (starter)
+                lead += Acore::StringFormat(" (starter {} at {:.0f} yd, {:.0f} {:.0f} {:.0f}, moving {}, gossip {}, in combat {})",
+                                            starter->GetName(), gm->GetExactDist(starter), starter->GetPositionX(),
+                                            starter->GetPositionY(), starter->GetPositionZ(), starter->isMoving(),
+                                            starter->HasNpcFlag(UNIT_NPC_FLAG_GOSSIP), starter->IsInCombat());
+            Creature* target = gm && !run.pullTarget.IsEmpty() ? gm->GetMap()->GetCreature(run.pullTarget) : nullptr;
+            uint32 fighting = 0;
+            for (Player* bot : Bots())
+                fighting += bot->IsAlive() && bot->IsInCombat();
+            lead += Acore::StringFormat(
+                " (pulling {} at {:.0f} yd, gathering {}s, in a fight {}, calm {}s, bots in combat {}, GM in combat {}, "
+                "event wait {}s, walk wait {}s, tried {}, walked to {})",
+                target ? target->GetName() : "-", target ? gm->GetExactDist(target) : -1.0f, run.gathering / 1000,
+                run.inFight, run.calm / 1000, fighting, gm && gm->IsInCombat(), run.eventWait / 1000,
+                run.walkWait / 1000, run.tried.size(), run.walkedTo.size());
+        }
         if (ai && !run.raid)
         {
             DungeonLead::State const& state = DungeonLead::StateOf(ai);
@@ -946,6 +975,11 @@ void ReviveDead(Player* gm, std::vector<Player*> const& bots)
     {
         ++run.wipes;
         Say(Acore::StringFormat("wipe {}: everyone back at the entrance", run.wipes));
+        // The event resets with the wipe, as for players going again: its starters are taken anew (Eye of Eternity
+        // readies the same Focusing Iris, and the run stood 90 s and ended at one fight)
+        run.eventDone.clear();
+        run.eventBeside.clear();
+        run.eventVisited.clear();
         gm->TeleportTo(run.entrance);
         for (Player* bot : bots)
         {
@@ -1109,7 +1143,7 @@ bool StartEvent(Player* gm, std::vector<Player*> const& bots, uint32 diff)
             return true;
         }
         // Beside it first (a teleport lands at the GM's next session update), then the step
-        if (gm->GetExactDist(starter) > 4.0f)
+        if (gm->GetExactDist(starter) > 4.0f && ++run.eventBeside[starter->GetGUID()] <= 3)
         {
             float const angle = starter->GetAbsoluteAngle(gm);
             gm->NearTeleportTo(starter->GetPositionX() + 2.5f * std::cos(angle),
@@ -1170,6 +1204,20 @@ bool StartEvent(Player* gm, std::vector<Player*> const& bots, uint32 diff)
             }
             else
             {
+                // Its menus as the client would click them, option by option, for a SmartAI that starts on a later
+                // menu: Barrett Ramsey walks on after he is summoned, the GM was still 11 yards off after three
+                // goes, and his first menu only leads to the one that starts the stage (Trial of the Crusader)
+                uint32 menuId = npc->GetCreatureTemplate()->GossipMenuId;
+                for (uint32 click = 0; click < 4 && menuId; ++click)
+                {
+                    npc->AI()->sGossipSelect(gm, menuId, 0);
+                    uint32 next = 0;
+                    auto const options = sObjectMgr->GetGossipMenuItemsMapBounds(menuId);
+                    for (auto option = options.first; option != options.second; ++option)
+                        if (option->second.OptionID == 0)
+                            next = option->second.ActionMenuID;
+                    menuId = next;
+                }
                 sScriptMgr->OnGossipSelect(gm, npc, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
                 what = "asked to start";
             }
@@ -1180,9 +1228,11 @@ bool StartEvent(Player* gm, std::vector<Player*> const& bots, uint32 diff)
         }
         run.eventStarted = true;
         run.lastEventAt = run.elapsed;
+        run.lastStarter = starter->GetGUID();
+        run.lastStarterAt = starter->GetPosition();
         run.eventFrom = gm->GetPosition();
         run.eventMoves = true;
-        Say(Acore::StringFormat("event: {} {}", what, starter->GetName()));
+        Say(Acore::StringFormat("event: {} {} ({:.1f} yd off)", what, starter->GetName(), gm->GetExactDist(starter)));
         run.eventWait = EventWaitMs;
         return true;
     }
@@ -1320,15 +1370,42 @@ bool WalkOn(Player* gm, std::vector<Player*> const& bots)
     if (!best)
         return false;
     run.walkedTo.insert(best->spawnId);
-    run.walkWait = WalkMs;
     Position spot;
     if (!PullSpot(map, best->pos, best->pos.GetAbsoluteAngle(gm), spot))
-        return true;  // no ground to stand on near it: the next one
+        return true;  // no ground to stand on near it: the next one, at once
+    run.walkWait = WalkMs;
     LOG_INFO("playerbots", "Rolecheck: on to {} at {:.0f} yd", best->boss ? "a boss" : "trash", gm->GetExactDist(&spot));
     gm->NearTeleportTo(spot.GetPositionX(), spot.GetPositionY(), spot.GetPositionZ(), spot.GetOrientation());
     for (Player* bot : bots)
         if (bot->IsAlive() && bot->GetMapId() == gm->GetMapId())
             bot->NearTeleportTo(spot.GetPositionX(), spot.GetPositionY(), spot.GetPositionZ(), spot.GetOrientation());
+    return true;
+}
+
+// An event whose starter walks on goes with it, and the group with it, as players walk with Arthas into Stratholme:
+// his waves come about him, 170 yards from where he was talked to, and the group stood there for the whole run
+bool WithStarter(Player* gm, std::vector<Player*> const& bots)
+{
+    // (not in a raid: the Coliseum's Barrett walks out of the arena once he has started a stage)
+    Creature* starter = !run.raid && run.lastStarter.IsCreature() ? gm->GetMap()->GetCreature(run.lastStarter) : nullptr;
+    if (!starter || !starter->IsAlive() || starter->GetExactDist(&run.lastStarterAt) < 30.0f ||
+        gm->GetExactDist(starter) < 30.0f)
+        return false;
+    for (EventGather const& spot : EventGathers)
+        if (spot.mapId == run.mapId && run.tally.bosses < spot.untilBosses)
+            return false;  // the event has its own place for the group
+    float const angle = starter->GetAbsoluteAngle(gm);
+    float const x = starter->GetPositionX() + 8.0f * std::cos(angle);
+    float const y = starter->GetPositionY() + 8.0f * std::sin(angle);
+    float const z = gm->GetMap()->GetHeight(PHASEMASK_NORMAL, x, y, starter->GetPositionZ() + 5.0f);
+    if (z <= INVALID_HEIGHT)
+        return false;
+    LOG_INFO("playerbots", "Rolecheck: with {} at {:.0f} yd", starter->GetName(), gm->GetExactDist(starter));
+    run.walkWait = WalkMs;
+    gm->NearTeleportTo(x, y, z + 0.5f, angle + float(M_PI));
+    for (Player* bot : bots)
+        if (bot->IsAlive() && bot->GetMapId() == gm->GetMapId())
+            bot->NearTeleportTo(x, y, z + 0.5f, angle + float(M_PI));
     return true;
 }
 
@@ -1343,21 +1420,28 @@ void RaidPull(Player* gm, std::vector<Player*> const& bots, uint32 diff)
     if (!mob || !mob->IsAlive() || mob->IsInCombat())
     {
         mob = NextTrash(gm, false);
-        if (!mob && WalkOn(gm, bots))
+        if (!mob && WithStarter(gm, bots))
             return;
-        // The trash done: an event raid's boss comes by its starter, before any pull of it (Malygos circles out of reach
-        // until the Focusing Iris is used; the Coliseum's bosses come when Barrett Ramsey is asked)
+        // The trash in reach done: an event raid's boss comes by its starter, before any pull of it or any walk on to spawns
+        // (Malygos circles out of reach until the Focusing Iris is used; the Coliseum's bosses come when Barrett Ramsey is
+        // asked, and its Nerubians under the arena floor took the whole run to walk on to)
         if (!mob && StartEvent(gm, bots, diff))
+            return;
+        if (!mob && WalkOn(gm, bots))
             return;
         if (!mob)
             mob = NextTrash(gm, true);
         if (!mob)
         {
             // An event raid's starter can come a while after the group or the last fight (the Coliseum summons a Barrett
-            // for each stage), and its mobs a while after the step: wait for them
+            // for each stage), and its mobs a while after the step: wait for them. An event dungeon waits out its time:
+            // its intros run past that (Halls of Reflection's and Culling of Stratholme's ended the run at 1-2 minutes)
+            if (!run.raid)
+                return;
             for (EventStarter const& step : EventStarters)
                 if (step.mapId == run.mapId && (run.calm < 90000 || run.elapsed - run.lastEventAt < 90000))
                     return;
+            run.tally.cleared = run.tally.bosses > 0;
             Report();
             return;
         }
@@ -1487,13 +1571,21 @@ void Observe(Player* gm, uint32 diff)
             if (PlayerbotAI* ai = GET_PLAYERBOT_AI(tank))
             {
                 DungeonLead::State const& lead = DungeonLead::StateOf(ai);
+                // Once the event is on, its mobs stand where the event puts them, which the lead's packs never had:
+                // Culling of Stratholme's waves wait in the streets, and the next comes only once they die. The
+                // group stood at Arthas's side for 11 minutes. The GM goes to them and pulls, as in a raid.
                 if (lead.done || lead.idle)
-                    StartEvent(gm, bots, diff);
+                {
+                    if (run.eventStarted)
+                        RaidPull(gm, bots, diff);
+                    else
+                        StartEvent(gm, bots, diff);
+                }
             }
 
     run.sinceFollow += diff;
     // (not while an event step has the GM away, the group still to come after it)
-    if (!run.raid && run.sinceFollow >= FollowMs && !run.eventMoves)
+    if (!run.raid && run.sinceFollow >= FollowMs && !run.eventMoves && run.pullTarget.IsEmpty())
     {
         run.sinceFollow = 0;
         Follow(gm);

@@ -35,6 +35,7 @@ struct Tally
     uint32_t deaths = 0;
     uint32_t kills = 0;
     uint32_t bosses = 0;
+    bool cleared = false;  // the run ended with every boss it could reach dead and nothing left to fight
 };
 
 inline constexpr float HealerRange = 10.0f;     // yards from the nearest mob a healer counts as standing back
@@ -74,7 +75,9 @@ inline Line Judge(std::string what, uint32_t part, uint32_t whole, double bound,
 inline std::vector<Line> Judge(Tally const& t, bool leads)
 {
     std::vector<Line> lines;
-    lines.push_back(Line{"fights", double(t.fights), double(MinFights), false, t.fights >= MinFights});
+    // Fewer fights pass only in an instance cleared in them: a raid of one boss and no trash has no third fight to give
+    lines.push_back(Line{"fights", double(t.fights), double(MinFights), false,
+                         t.fights >= MinFights || (t.cleared && t.fights > 0)});
     if (leads)
         lines.push_back(Judge("tank opens the pulls", t.tankPulls, t.pulls, TankPullPct));
     lines.push_back(Judge("mobs on the tank", t.onTank, t.mobSamples, TankAggroPct));
