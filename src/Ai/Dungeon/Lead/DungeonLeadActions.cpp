@@ -37,6 +37,7 @@
 #include "SpellMgr.h"
 #include "Timer.h"
 #include "WaitSpotPolicy.h"
+#include "World.h"
 
 using namespace DungeonLead;
 
@@ -273,13 +274,43 @@ std::vector<Creature*> Hostiles(PlayerbotAI* botAI)
 
 bool SameFormation(Creature* a, Creature* b) { return a->GetFormation() && a->GetFormation() == b->GetFormation(); }
 
+// Whether a mob in a fight brings the other one into it: by standing close or by a call for help it answers
+// (Creature::CallAssistance, without the checks on the enemy).
+bool Brings(Creature* from, Creature* to)
+{
+    float const distance = from->GetExactDist(to);
+    if (SamePack(distance, SameFormation(from, to)))
+        return true;
+    float const radius = sWorld->getFloatConfig(CONFIG_CREATURE_FAMILY_ASSISTANCE_RADIUS);
+    return distance <= radius && to->HasReactState(REACT_AGGRESSIVE) && !to->IsCivilian() &&
+           to->GetFaction() == from->GetFaction() && to->RespondsToCallForHelp() &&
+           !to->GetCreatureTemplate()->HasFlagsExtra(CREATURE_FLAG_EXTRA_IGNORE_ALL_ASSISTANCE_CALLS) &&
+           !from->GetCreatureTemplate()->HasFlagsExtra(CREATURE_FLAG_EXTRA_DONT_CALL_ASSISTANCE) &&
+           from->IsWithinLOSInMap(to);
+}
+
+std::vector<Creature*> LinkedTo(size_t seed, std::vector<Creature*> const& mobs, std::vector<bool>* used = nullptr)
+{
+    std::vector<bool> const inPack =
+        LinkedPack(seed, mobs.size(), [&mobs](size_t from, size_t to) { return Brings(mobs[from], mobs[to]); });
+    std::vector<Creature*> pack;
+    for (size_t i = 0; i < mobs.size(); ++i)
+        if (inPack[i])
+        {
+            pack.push_back(mobs[i]);
+            if (used)
+                (*used)[i] = true;
+        }
+    return pack;
+}
+
 std::vector<Creature*> PackAround(Creature* seed, std::vector<Creature*> const& mobs)
 {
-    std::vector<Creature*> pack = {seed};
+    std::vector<Creature*> all = {seed};
     for (Creature* mob : mobs)
-        if (mob != seed && SamePack(mob->GetExactDist(seed), SameFormation(mob, seed)))
-            pack.push_back(mob);
-    return pack;
+        if (mob != seed)
+            all.push_back(mob);
+    return LinkedTo(0, all);
 }
 
 std::vector<std::vector<Creature*>> SplitPacks(std::vector<Creature*> const& mobs)
@@ -287,19 +318,8 @@ std::vector<std::vector<Creature*>> SplitPacks(std::vector<Creature*> const& mob
     std::vector<std::vector<Creature*>> packs;
     std::vector<bool> used(mobs.size(), false);
     for (size_t i = 0; i < mobs.size(); ++i)
-    {
-        if (used[i])
-            continue;
-        std::vector<Creature*> pack;
-        for (size_t j = i; j < mobs.size(); ++j)
-        {
-            if (used[j] || (j != i && !SamePack(mobs[j]->GetExactDist(mobs[i]), SameFormation(mobs[j], mobs[i]))))
-                continue;
-            used[j] = true;
-            pack.push_back(mobs[j]);
-        }
-        packs.push_back(pack);
-    }
+        if (!used[i])
+            packs.push_back(LinkedTo(i, mobs, &used));
     return packs;
 }
 
@@ -375,10 +395,14 @@ void PlanSpot(PlayerbotAI* botAI, State& state, Creature* seed, bool boss)
     state.hasPullSpot = false;
     state.stepping = false;
     state.spotStuckAt = 0;
-    PullStyle style = StyleFor(TierOf(bot));
-    // Bosses do not follow around corners; they are pulled in sight.
-    if (boss && style == PullStyle::Corner)
-        style = PullStyle::Ranged;
+    // The other packs not yet pulled: the group does not gather inside their reach, or the pull brings them too
+    std::vector<Creature*> others = Hostiles(botAI);
+    std::vector<Creature*> const pack = PackAround(seed, others);
+    std::erase_if(others, [&pack](Creature* mob) { return std::find(pack.begin(), pack.end(), mob) != pack.end(); });
+    std::vector<PackMob> const mobs = Describe(pack, nullptr);
+    bool const casters = std::any_of(mobs.begin(), mobs.end(), [](PackMob const& mob) { return mob.caster; });
+
+    PullStyle style = StyleForPack(StyleFor(TierOf(bot)), casters, boss);
     // Each failed pull of this pack brings the tank closer: corner, then in sight, then straight in.
     if (state.failedPulls > 1)
         style = PullStyle::Charge;
@@ -392,10 +416,6 @@ void PlanSpot(PlayerbotAI* botAI, State& state, Creature* seed, bool boss)
     if (path.GetPathType() & PATHFIND_NOPATH)
         return;
 
-    // The other packs not yet pulled: the group does not gather inside their reach, or the pull brings them too
-    std::vector<Creature*> others = Hostiles(botAI);
-    std::vector<Creature*> const pack = PackAround(seed, others);
-    std::erase_if(others, [&pack](Creature* mob) { return std::find(pack.begin(), pack.end(), mob) != pack.end(); });
     auto nearOther = [&](float x, float y, float z)
     {
         return std::any_of(others.begin(), others.end(), [&](Creature* mob)
@@ -431,16 +451,32 @@ void PlanSpot(PlayerbotAI* botAI, State& state, Creature* seed, bool boss)
     }
 
     int const index = WaitSpot(spots.data(), spots.size(), style);
-    if (index < 0)
+    // No corner on the way when one is wanted, or no spot at all: back along the trail, and the tank steps out from
+    // there to pull
+    bool const wantsCorner = style == PullStyle::Corner && (index < 0 || spots[index].seesPack ||
+                                                            spots[index].distToPack > MaxCornerDistance);
+    int back = -1;
+    if (index < 0 || wantsCorner)
     {
-        // Nowhere on the way: back along the trail, and the tank steps out from there to pull
         std::vector<PathSpot> trail;
         for (Position const& point : state.trail)
-            trail.push_back({seed->GetExactDist(&point), false,
+        {
+            float const distance = seed->GetExactDist(&point);
+            bool const sees = distance <= MaxTrailDistance &&
+                              seed->IsWithinLOS(point.GetPositionX(), point.GetPositionY(),
+                                                point.GetPositionZ() + EYE_HEIGHT);
+            trail.push_back({distance, sees,
                              nearOther(point.GetPositionX(), point.GetPositionY(), point.GetPositionZ())});
-        int const back = TrailSpot(trail.data(), trail.size());
-        if (back < 0)
+        }
+        if (wantsCorner)
+            back = TrailSpot(trail.data(), trail.size(), true);
+        if (back < 0 && index < 0)
+            back = TrailSpot(trail.data(), trail.size());
+        if (back < 0 && index < 0)
             return;
+    }
+    if (back >= 0)
+    {
         state.hasSpot = true;
         state.spot = state.trail[back];
         int const pullIndex = PullSpot(spots.data(), spots.size(), 0);
@@ -823,6 +859,8 @@ void DungeonLeadStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
                          NextAction("lead overpull", ACTION_HIGH + 5.0f), NextAction("lead pull", ACTION_MOVE + 2.0f),
                          NextAction("lead advance", ACTION_MOVE + 1.0f)}));
     triggers.push_back(new TriggerNode("lead healer", {NextAction("lead healer call", ACTION_PASSTHROUGH)}));
+    // Above following: a healer out of the fight goes to it instead of after its master
+    triggers.push_back(new TriggerNode("lead fight away", {NextAction("lead join fight", ACTION_MOVE + 3.0f)}));
     // Above following, so a healer the group waits for sits down instead of walking after the tank.
     triggers.push_back(new TriggerNode("lead needs mana", {NextAction("drink", ACTION_NORMAL)}));
 }
@@ -838,6 +876,100 @@ bool LeadHealerTrigger::IsActive()
 {
     return EnabledFor(bot) && bot->GetGroup() && bot->GetMaxPower(POWER_MANA) > 0 && botAI->IsInNonRaidDungeon() &&
            PlayerbotAI::IsHeal(bot);
+}
+
+namespace
+{
+// Out of a fight, this far from the member under attack the healer still walks to it
+float constexpr JOIN_FIGHT_RANGE = 80.0f;
+// Into heal range by this much, so a step of the fight keeps the member in it
+float constexpr JOIN_FIGHT_MARGIN = 6.0f;
+
+// The member a mob is beating on that the healer, out of the fight, cannot heal from where it stands: the tank first.
+// Healers out of combat followed their master away and round corners while the group fought, and a third of the hurt
+// fights got no heal (solo-wow role check, 2026-11-07). Not while the tank's pull is still under way: the pack comes
+// back to the group.
+Player* FightOutOfReach(PlayerbotAI* botAI)
+{
+    Player* bot = botAI->GetBot();
+    Group* group = bot->GetGroup();
+    if (!EnabledFor(bot) || !group || !bot->IsAlive() || bot->IsInCombat() || !PlayerbotAI::IsHeal(bot) ||
+        !botAI->IsInNonRaidDungeon())
+        return nullptr;
+    if (Player* leader = Leader(botAI))
+        if (PlayerbotAI* leaderAI = GET_PLAYERBOT_AI(leader))
+            if (PullStrategy const* pull = PullStrategy::Get(leaderAI))
+                if (pull->HasPullStarted() || pull->IsPullPendingToStart())
+                    return nullptr;
+
+    float const range = botAI->GetRange("heal") - JOIN_FIGHT_MARGIN;
+    // Not its master: following takes it there anyway, and a raid opened by the master walked both healers toward
+    // the pack it pulled 50 yards out (Karazhan, 2026-11-08)
+    Player* master = botAI->GetMaster();
+    Player* best = nullptr;
+    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+    {
+        Player* member = ref->GetSource();
+        if (!member || member == bot || member == master || !member->IsAlive() || member->GetMap() != bot->GetMap() ||
+            bot->GetExactDist(member) > JOIN_FIGHT_RANGE)
+            continue;
+        bool const beaten = std::any_of(member->getAttackers().begin(), member->getAttackers().end(),
+                                        [member](Unit* mob)
+                                        { return mob->IsAlive() && mob->IsCreature() && mob->GetVictim() == member; });
+        if (!beaten || (bot->GetExactDist(member) <= range && bot->IsWithinLOSInMap(member)))
+            continue;
+        if (!best || (PlayerbotAI::IsTank(member) && !PlayerbotAI::IsTank(best)))
+            best = member;
+    }
+    return best;
+}
+}  // namespace
+
+bool LeadFightAwayTrigger::IsActive() { return FightOutOfReach(botAI) != nullptr; }
+
+bool LeadJoinFightAction::isUseful() { return botAI->CanMove() && FightOutOfReach(botAI) != nullptr; }
+
+bool LeadJoinFightAction::Execute(Event /*event*/)
+{
+    Player* member = FightOutOfReach(botAI);
+    if (!member)
+        return false;
+    float const range = botAI->GetRange("heal") - JOIN_FIGHT_MARGIN;
+    // In sight: straight into heal range
+    if (bot->IsWithinLOSInMap(member))
+        return MoveTo(member, range, MovementPriority::MOVEMENT_NORMAL);
+    // Round a corner: along the path to the member, to the first point that sees it in heal range. Walking all the
+    // way in put the healer among the mobs.
+    PathGenerator path(bot);
+    path.CalculatePath(member->GetPositionX(), member->GetPositionY(), member->GetPositionZ(), false);
+    if (path.GetPathType() & PATHFIND_NOPATH)
+        return false;
+    Movement::PointsArray const& points = path.GetPath();
+    G3D::Vector3 stop = points.empty() ? G3D::Vector3(member->GetPositionX(), member->GetPositionY(),
+                                                      member->GetPositionZ())
+                                       : points.back();
+    for (size_t i = 1; i < points.size(); ++i)
+    {
+        // Every few yards along each leg of the path
+        G3D::Vector3 const from = points[i - 1];
+        G3D::Vector3 const leg = points[i] - from;
+        int const steps = std::max(1, static_cast<int>(leg.length() / 3.0f));
+        bool found = false;
+        for (int s = 1; s <= steps && !found; ++s)
+        {
+            G3D::Vector3 const point = from + leg * (static_cast<float>(s) / steps);
+            if (member->GetExactDist(point.x, point.y, point.z) <= range &&
+                member->IsWithinLOS(point.x, point.y, point.z + EYE_HEIGHT))
+            {
+                stop = point;
+                found = true;
+            }
+        }
+        if (found)
+            break;
+    }
+    return MoveTo(member->GetMapId(), stop.x, stop.y, stop.z, false, false, false, false,
+                  MovementPriority::MOVEMENT_NORMAL, true);
 }
 
 bool LeadNeedsManaTrigger::IsActive()
