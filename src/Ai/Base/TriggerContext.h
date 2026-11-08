@@ -50,6 +50,7 @@ public:
         creators["living arena"] = &TriggerContext::living_arena;
         creators["dungeon lead"] = &TriggerContext::dungeon_lead;
         creators["lead healer"] = &TriggerContext::lead_healer;
+        creators["lead fight away"] = &TriggerContext::lead_fight_away;
         creators["lead needs mana"] = &TriggerContext::lead_needs_mana;
         creators["explosive orb"] = &TriggerContext::explosive_orb;
         creators["often"] = &TriggerContext::often;
@@ -363,6 +364,7 @@ private:
     static Trigger* living_arena(PlayerbotAI* botAI) { return new LivingArenaTrigger(botAI); }
     static Trigger* dungeon_lead(PlayerbotAI* botAI) { return new DungeonLeadTrigger(botAI); }
     static Trigger* lead_healer(PlayerbotAI* botAI) { return new LeadHealerTrigger(botAI); }
+    static Trigger* lead_fight_away(PlayerbotAI* botAI) { return new LeadFightAwayTrigger(botAI); }
     static Trigger* lead_needs_mana(PlayerbotAI* botAI) { return new LeadNeedsManaTrigger(botAI); }
     static Trigger* explosive_orb(PlayerbotAI* botAI) { return new ExplosiveOrbTrigger(botAI); }
     static Trigger* often(PlayerbotAI* botAI) { return new RandomTrigger(botAI, "often", 5); }

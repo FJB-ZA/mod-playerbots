@@ -41,6 +41,15 @@ public:
     bool IsActive() override;
 };
 
+// A healer out of the fight its group is in, too far from it or out of its sight to heal.
+class LeadFightAwayTrigger : public Trigger
+{
+public:
+    LeadFightAwayTrigger(PlayerbotAI* botAI) : Trigger(botAI, "lead fight away") {}
+
+    bool IsActive() override;
+};
+
 class LeadNeedsManaTrigger : public Trigger
 {
 public:
@@ -114,6 +123,16 @@ class LeadHealerCallAction : public Action
 public:
     LeadHealerCallAction(PlayerbotAI* botAI) : Action(botAI, "lead healer call") {}
 
+    bool Execute(Event event) override;
+};
+
+// The healer walks to the fight until the member under attack is in heal range and in sight.
+class LeadJoinFightAction : public MovementAction
+{
+public:
+    LeadJoinFightAction(PlayerbotAI* botAI) : MovementAction(botAI, "lead join fight") {}
+
+    bool isUseful() override;
     bool Execute(Event event) override;
 };
 

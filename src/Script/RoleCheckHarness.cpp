@@ -127,6 +127,7 @@ constexpr uint32 GatherMs = 12000;      // raid: the group gathers behind the GM
 // over. Pulling after GatherMs whatever, the GM held Naxxramas trash 110-180 yards from the tank, a quarter of the samples
 constexpr float GatherReach = 40.0f;
 constexpr uint32 GatherMaxMs = 60000;
+constexpr float GatherRaid = 25.0f;  // raid: every bot this near the GM, and out of a fight, before it pulls
 constexpr float PullFrom = 32.0f;       // raid: where the GM waits, short of the mob's aggro
 constexpr float TrashReach = 150.0f;
 constexpr uint32 WalkMs = 3000;         // raid: after going on to mobs further in, before looking about
@@ -196,6 +197,7 @@ struct Run
     // raid: the mob the GM pulls next
     ObjectGuid pullTarget;
     uint32 gathering = 0;
+    bool broughtOver = false;  // the group was brought to the GM for this pull: pull on with the tank near
     std::set<ObjectGuid::LowType> walkedTo;  // spawns the GM went on to
     uint32 walkWait = 0;  // after going on: the teleport lands at the next session update, and the grid loads
     std::set<ObjectGuid> tried;  // mobs pulled once: one that came back without a fight (no way to the GM) is let be
@@ -1053,24 +1055,39 @@ void RaidPull(Player* gm, std::vector<Player*> const& bots, uint32 diff)
             return;
         run.pullTarget = mob->GetGUID();
         run.gathering = 0;
+        run.broughtOver = false;
         gm->NearTeleportTo(spot.GetPositionX(), spot.GetPositionY(), spot.GetPositionZ(), spot.GetOrientation());
         return;
     }
     run.gathering += diff;
     if (run.gathering < GatherMs)
         return;
+    // Not while any bot still fights
+    if (std::any_of(bots.begin(), bots.end(), [](Player* bot) { return bot->IsAlive() && bot->IsInCombat(); }))
+        return;
     Player* tank = MainTank();
-    if (tank && tank->IsAlive() && (tank->GetMap() != gm->GetMap() || tank->GetExactDist(gm) > GatherReach))
+    // The whole raid gathered, as a raid leader waits for it: with only the tank near, Karazhan's first pull caught the
+    // raid strung out 20-60 yards behind the GM and a second pack on the way (2026-11-08). Once brought over, the tank
+    // near is enough: in Naxxramas the bots scattered again within seconds, and nothing was pulled for 9 minutes.
+    bool const strung = !run.broughtOver && std::any_of(bots.begin(), bots.end(), [gm](Player* bot)
+                                    {
+                                        return bot->IsAlive() &&
+                                               (bot->GetMap() != gm->GetMap() || bot->GetExactDist(gm) > GatherRaid);
+                                    });
+    if (strung || (tank && tank->IsAlive() && (tank->GetMap() != gm->GetMap() || tank->GetExactDist(gm) > GatherReach)))
     {
         if (run.gathering < GatherMaxMs)
             return;
-        LOG_INFO("playerbots", "Rolecheck: the tank is {:.0f} yd behind the pull ({:.0f} yd below); the group is brought over",
-                 tank->GetMap() == gm->GetMap() ? tank->GetExactDist(gm) : -1.0f,
-                 gm->GetPositionZ() - tank->GetPositionZ());
+        if (tank)
+            LOG_INFO("playerbots",
+                     "Rolecheck: the tank is {:.0f} yd behind the pull ({:.0f} yd below); the group is brought over",
+                     tank->GetMap() == gm->GetMap() ? tank->GetExactDist(gm) : -1.0f,
+                     gm->GetPositionZ() - tank->GetPositionZ());
         for (Player* bot : bots)
             if (bot->IsAlive() && bot->GetMapId() == gm->GetMapId())
                 bot->NearTeleportTo(gm->GetPositionX(), gm->GetPositionY(), gm->GetPositionZ(), gm->GetOrientation());
         run.gathering = 0;
+        run.broughtOver = true;
         return;
     }
     // The player's pull: the mob comes for the GM, and its pack with it

@@ -10,6 +10,7 @@
 #define _PLAYERBOTS_PACK_POLICY_H
 
 #include <cstddef>
+#include <vector>
 
 namespace DungeonLead
 {
@@ -69,6 +70,32 @@ constexpr int Choose(PackCandidate const* packs, size_t count, bool hasGoal, flo
 
 // Mobs in one creature formation always pull together; otherwise packs are mobs standing close to each other.
 constexpr bool SamePack(float distToSeed, bool sameFormation) { return sameFormation || distToSeed <= PackRadius; }
+
+// The mobs that join one fight, by index: everyone reached hop by hop from the seed. A mob in a fight calls every idle
+// mob of its faction in sight within the assistance radius (CreatureFamilyAssistanceRadius, 10 yards), at once and
+// again every 3 seconds, and each one that comes calls its own. Counting only the mobs near the first, the lead took a
+// Steamvault pack of 9 for 4 and pulled it from beside the rest (solo-wow role check, 2026-11-07).
+template <typename Linked>
+std::vector<bool> LinkedPack(size_t seed, size_t count, Linked const& linked)
+{
+    std::vector<bool> inPack(count, false);
+    if (seed >= count)
+        return inPack;
+    inPack[seed] = true;
+    std::vector<size_t> open = {seed};
+    while (!open.empty())
+    {
+        size_t const from = open.back();
+        open.pop_back();
+        for (size_t i = 0; i < count; ++i)
+            if (!inPack[i] && linked(from, i))
+            {
+                inPack[i] = true;
+                open.push_back(i);
+            }
+    }
+    return inPack;
+}
 }  // namespace DungeonLead
 
 #endif

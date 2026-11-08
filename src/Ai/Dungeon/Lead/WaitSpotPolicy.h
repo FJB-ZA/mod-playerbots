@@ -30,6 +30,19 @@ constexpr float RangedPullDistance = 30.0f;
 // A corner further than this from the pack means a long walk back after the pull; pull in sight instead.
 constexpr float MaxCornerDistance = 42.0f;
 
+// The style for this pack. Bosses do not follow round corners, so they are pulled in sight. Casters stand where they
+// are and cast at a tank they can see, and the group ran on to them: chasing a Coilfang Siren 33 yards into the next
+// hall of the Steamvault brought 21 mobs (solo-wow role check, 2026-11-07). Any tank that stops before a pull takes a
+// pack with casters round a corner, where they must walk in.
+constexpr PullStyle StyleForPack(PullStyle style, bool casters, bool boss)
+{
+    if (boss)
+        return style == PullStyle::Corner ? PullStyle::Ranged : style;
+    if (casters && style == PullStyle::Ranged)
+        return PullStyle::Corner;
+    return style;
+}
+
 // Index of the spot to gather at, or -1 to walk straight in.
 constexpr int WaitSpot(PathSpot const* spots, size_t count, PullStyle style)
 {
@@ -83,15 +96,16 @@ constexpr float MaxTrailDistance = 45.0f;
 // With no spot on the way to the pack (the tank already stands inside its reach, as it does in a crowded room once the
 // last pack is dead), the group falls back along the trail it came by: the newest point clear of this pack and of every
 // other. Walking straight in from the middle of the Deadmines goblin foundry pulled 12-16 mobs and wiped the group
-// (solo-wow role check, 2026-11-07). Index into the trail, or -1.
-constexpr int TrailSpot(PathSpot const* trail, size_t count)
+// (solo-wow role check, 2026-11-07). With outOfSight, for a corner pull with no corner on the way, only a point the
+// pack cannot see. Index into the trail, or -1.
+constexpr int TrailSpot(PathSpot const* trail, size_t count, bool outOfSight = false)
 {
     for (size_t i = count; i > 0; --i)
     {
         PathSpot const& spot = trail[i - 1];
         if (spot.distToPack > MaxTrailDistance)
             return -1;
-        if (spot.distToPack >= SafeDistance && !spot.nearOtherPack)
+        if (spot.distToPack >= SafeDistance && !spot.nearOtherPack && !(outOfSight && spot.seesPack))
             return static_cast<int>(i - 1);
     }
     return -1;
