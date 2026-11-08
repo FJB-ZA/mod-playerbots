@@ -153,7 +153,7 @@ bool AttackAction::Attack(Unit* target, bool /*with_pet*/ /*true*/)
     if (shouldMelee && !dynamic_cast<MeleeAction*>(this) && !PlayerbotAI::IsTank(bot) && target->GetVictim() != bot &&
         botAI->HasStrategy("threat", BOT_STATE_COMBAT))
     {
-        Unit* tank = AI_VALUE(Unit*, "main tank");
+        Unit* tank = AI_VALUE(Unit*, "group main tank");
         if (tank && tank != bot && tank->IsAlive() && tank->IsInCombat() && tank->GetMap() == bot->GetMap())
             shouldMelee = false;
     }

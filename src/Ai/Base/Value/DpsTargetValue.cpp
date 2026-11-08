@@ -284,7 +284,7 @@ Unit* DpsTargetValue::Calculate()
     // over the pack (raids have no bot lead to mark), and the mobs the tank wasn't hitting turned on the damage dealers
     if (!PlayerbotAI::IsTank(bot))
     {
-        Unit* tank = AI_VALUE(Unit*, "main tank");
+        Unit* tank = AI_VALUE(Unit*, "group main tank");
         Unit* held = tank && tank != bot && tank->IsAlive() && tank->IsInCombat() ? tank->GetVictim() : nullptr;
         if (held && held->IsAlive() && !held->IsPlayer() && exclusions.find(held->GetGUID()) == exclusions.end())
         {

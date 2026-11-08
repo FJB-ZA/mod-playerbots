@@ -73,7 +73,7 @@ bool BackLineOutOfPlaceTrigger::IsActive()
         }
         return false;
     }
-    Unit* tank = AI_VALUE(Unit*, "main tank");
+    Unit* tank = AI_VALUE(Unit*, "group main tank");
     // In the fight, or not yet but the tank is (out of combat, BackLineStrategy): the healer's combat starts with its
     // first heal, and until then it stood where the pull left it
     if (!bot->IsInCombat() &&

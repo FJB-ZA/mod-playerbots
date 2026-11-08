@@ -346,6 +346,7 @@ public:
         creators["has area debuff"] = &ValueContext::has_area_debuff;
 
         creators["main tank"] = &ValueContext::main_tank;
+        creators["group main tank"] = &ValueContext::group_main_tank;
         creators["find target"] = &ValueContext::find_target;
         creators["boss target"] = &ValueContext::boss_target;
         creators["nearest triggers"] = &ValueContext::nearest_triggers;
@@ -634,6 +635,7 @@ private:
     static UntypedValue* has_area_debuff(PlayerbotAI* botAI) { return new HasAreaDebuffValue(botAI); }
 
     static UntypedValue* main_tank(PlayerbotAI* botAI) { return new PartyMemberMainTankValue(botAI); }
+    static UntypedValue* group_main_tank(PlayerbotAI* botAI) { return new GroupMainTankValue(botAI); }
     static UntypedValue* find_target(PlayerbotAI* botAI) { return new FindTargetValue(botAI); }
     static UntypedValue* boss_target(PlayerbotAI* botAI) { return new BossTargetValue(botAI); }
     static UntypedValue* nearest_triggers(PlayerbotAI* botAI) { return new NearestTriggersValue(botAI); }

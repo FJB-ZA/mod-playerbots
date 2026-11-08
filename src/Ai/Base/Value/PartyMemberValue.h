@@ -48,4 +48,15 @@ public:
     virtual Unit* Calculate();
 };
 
+// The group's main tank wherever it stands on the bot's map: "main tank" is only the one in sight and spell reach,
+// a target for heals and buffs. Standing, assisting and holding threat go by the tank out of sight too: on "main tank" a
+// healer round a corner from it never stepped back into its sight, the out-of-sight case BackLineTakeSpotAction is
+// written for (solo-wow role check, 2026-11-08)
+class GroupMainTankValue : public UnitCalculatedValue
+{
+public:
+    GroupMainTankValue(PlayerbotAI* botAI) : UnitCalculatedValue(botAI, "group main tank", 1) {}
+    Unit* Calculate() override;
+};
+
 #endif

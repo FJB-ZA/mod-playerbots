@@ -122,6 +122,22 @@ inline bool WouldTurnIt(float tankThreat, float ownThreat, float hit)
 {
     return tankThreat > 0.0f && ownThreat + hit >= tankThreat * TurnsAt;
 }
+
+// Auto attack is no spell: past the hold nothing measured it, and a rogue's white swings carried it to 1.5-2 times the
+// tank's threat, mob after mob off the tank (solo-wow role check, Underbog, 2026-11-08). A melee damage dealer stops
+// swinging near the mark a mob turns at, and swings again once the tank has pulled clear: apart, so it does not flicker.
+constexpr float SwingsPauseAt = 0.9f;    // of the tank's threat: the swing in the air still lands under TurnsAt
+constexpr float SwingsResumeAt = 0.75f;  // of the tank's threat
+
+inline bool PauseSwings(float tankThreat, float ownThreat)
+{
+    return tankThreat > 0.0f && ownThreat >= tankThreat * SwingsPauseAt;
+}
+
+inline bool MaySwing(float tankThreat, float ownThreat)
+{
+    return tankThreat <= 0.0f || ownThreat < tankThreat * SwingsResumeAt;
+}
 }  // namespace BotThreat
 
 #endif
