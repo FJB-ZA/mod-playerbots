@@ -27,6 +27,7 @@
 #include "RpgTriggers.h"
 #include "RtiTriggers.h"
 #include "StuckTriggers.h"
+#include "ThreatStrategy.h"
 #include "TravelTriggers.h"
 #include "WaitForAttackTriggers.h"
 
@@ -140,6 +141,7 @@ public:
         creators["being attacked"] = &TriggerContext::BeingAttacked;
         creators["medium threat"] = &TriggerContext::MediumThreat;
         creators["low tank threat"] = &TriggerContext::low_tank_threat;
+        creators["swings near tank threat"] = &TriggerContext::swings_near_tank_threat;
 
         creators["dead"] = &TriggerContext::Dead;
         creators["corpse near"] = &TriggerContext::corpse_near;
@@ -397,6 +399,7 @@ private:
     static Trigger* BeingAttacked(PlayerbotAI* botAI) { return new BeingAttackedTrigger(botAI); }
     static Trigger* MediumThreat(PlayerbotAI* botAI) { return new MediumThreatTrigger(botAI); }
     static Trigger* low_tank_threat(PlayerbotAI* botAI) { return new LowTankThreatTrigger(botAI); }
+    static Trigger* swings_near_tank_threat(PlayerbotAI* botAI) { return new SwingsNearTankThreatTrigger(botAI); }
     // static Trigger* MediumThreat(PlayerbotAI* botAI) { return new MediumThreatTrigger(botAI); }
     static Trigger* Dead(PlayerbotAI* botAI) { return new DeadTrigger(botAI); }
     static Trigger* corpse_near(PlayerbotAI* botAI) { return new CorpseNearTrigger(botAI); }

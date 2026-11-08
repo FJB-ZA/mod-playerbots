@@ -67,6 +67,7 @@
 #include "RpgAction.h"
 #include "RpgSubActions.h"
 #include "RtiAction.h"
+#include "ThreatStrategy.h"
 #include "SayAction.h"
 #include "ShareQuestAction.h"
 #include "StayActions.h"
@@ -101,6 +102,7 @@ public:
         creators["lead overpull"] = &ActionContext::lead_overpull;
         creators["lead healer call"] = &ActionContext::lead_healer_call;
         creators["lead join fight"] = &ActionContext::lead_join_fight;
+        creators["hold swings"] = &ActionContext::hold_swings;
         creators["living train"] = &ActionContext::living_train;
         creators["living craft"] = &ActionContext::living_craft;
         creators["living processing"] = &ActionContext::living_processing;
@@ -338,6 +340,7 @@ private:
     static Action* lead_overpull(PlayerbotAI* botAI) { return new LeadOverpullAction(botAI); }
     static Action* lead_healer_call(PlayerbotAI* botAI) { return new LeadHealerCallAction(botAI); }
     static Action* lead_join_fight(PlayerbotAI* botAI) { return new LeadJoinFightAction(botAI); }
+    static Action* hold_swings(PlayerbotAI* botAI) { return new HoldSwingsAction(botAI); }
     static Action* living_train(PlayerbotAI* botAI) { return new LivingTrainAction(botAI); }
     static Action* living_craft(PlayerbotAI* botAI) { return new LivingCraftAction(botAI); }
     static Action* living_processing(PlayerbotAI* botAI) { return new LivingProcessingAction(botAI); }

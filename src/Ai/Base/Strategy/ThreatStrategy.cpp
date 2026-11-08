@@ -31,7 +31,7 @@ float ThreatMultiplier::GetValue(Action* action)
     Unit* target = AI_VALUE(Unit*, "current target");
     if (target && target->IsAlive() && !PlayerbotAI::IsTank(bot))
     {
-        Unit* tank = AI_VALUE(Unit*, "main tank");
+        Unit* tank = AI_VALUE(Unit*, "group main tank");
         bool const tankInFight = tank && tank != bot && tank->IsAlive() && tank->IsInCombat() &&
                                  tank->GetMap() == bot->GetMap() && tank->GetExactDist2d(bot) < 60.0f;
         Unit* victim = target->GetVictim();
@@ -55,6 +55,10 @@ float ThreatMultiplier::GetValue(Action* action)
         if (!melee && on == BotThreat::MobOn::Tank &&
             BotThreat::WouldTurnIt(target->GetThreatMgr().GetThreat(holder), own, usualHit.Threat()))
             return 0.0f;
+        // Swings stopped near the tank's threat start again only once the tank has pulled clear
+        if (melee && on == BotThreat::MobOn::Tank &&
+            !BotThreat::MaySwing(target->GetThreatMgr().GetThreat(holder), own))
+            return 0.0f;
     }
 
     if (melee)
@@ -72,6 +76,31 @@ float ThreatMultiplier::GetValue(Action* action)
         return 0.0f;
 
     return 1.0f;
+}
+
+void ThreatStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode("swings near tank threat", {NextAction("hold swings", ACTION_HIGH + 9)}));
+}
+
+bool SwingsNearTankThreatTrigger::IsActive()
+{
+    if (PlayerbotAI::IsTank(bot) || !bot->HasUnitState(UNIT_STATE_MELEE_ATTACKING) || AI_VALUE(bool, "neglect threat"))
+        return false;
+    Unit* mob = bot->GetVictim();
+    Unit* holder = mob && mob->IsAlive() ? mob->GetVictim() : nullptr;
+    Player* tank = holder ? holder->ToPlayer() : nullptr;
+    if (!tank || tank == bot || !PlayerbotAI::IsTank(tank) || !tank->IsInSameGroupWith(bot))
+        return false;
+    return BotThreat::PauseSwings(mob->GetThreatMgr().GetThreat(tank), mob->GetThreatMgr().GetThreat(bot));
+}
+
+// Stops the swings and keeps the target: its strikes go on as the threat hold allows, and "melee" starts the swings
+// again once the tank has pulled clear (ThreatMultiplier)
+bool HoldSwingsAction::Execute(Event /*event*/)
+{
+    bot->AttackStop();
+    return true;
 }
 
 void ThreatStrategy::InitMultipliers(std::vector<Multiplier*>& multipliers)

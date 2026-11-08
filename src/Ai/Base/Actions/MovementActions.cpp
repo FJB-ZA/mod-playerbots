@@ -2906,7 +2906,7 @@ BotMove::FacingMob StandingOf(Unit* mob)
 
 bool BackLineTakeSpotAction::Execute(Event /*event*/)
 {
-    Unit* tank = AI_VALUE(Unit*, "main tank");
+    Unit* tank = AI_VALUE(Unit*, "group main tank");
     if (!tank || tank == bot || !tank->IsAlive() || tank->GetMap() != bot->GetMap())
         return false;
 
