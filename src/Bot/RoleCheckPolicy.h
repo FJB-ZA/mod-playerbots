@@ -24,7 +24,7 @@ struct Tally
     uint32_t tankPulls = 0;     // of those, the tank's
     uint32_t mobSamples = 0;    // a mob fighting the group
     uint32_t onTank = 0;        // ...hitting a tank
-    uint32_t facedSamples = 0;  // a mob on the tank, in melee reach of it
+    uint32_t facedSamples = 0;  // a mob on the tank, in melee reach of it and standing (one moving has no facing to keep)
     uint32_t facedAtGroup = 0;  // ...with someone other than a tank in front of it
     uint32_t dpsSamples = 0;    // a damage dealer, while the tank had a target
     uint32_t dpsOnFocus = 0;    // ...on the tank's target or the skull

@@ -28,19 +28,23 @@
 #include <cmath>
 #include <fstream>
 #include <limits>
+#include <list>
 #include <map>
 #include <mutex>
 #include <set>
 #include <vector>
 
 #include "AiFactory.h"
+#include "AttackersValue.h"
 #include "CellImpl.h"
 #include "Chat.h"
 #include "Config.h"
 #include "DBCStores.h"
 #include "DungeonLead.h"
 #include "Engine.h"
+#include "GameObject.h"
 #include "GameTime.h"
+#include "GossipDef.h"
 #include "GridNotifiers.h"
 #include "GridNotifiersImpl.h"
 #include "Group.h"
@@ -59,8 +63,12 @@
 #include "Playerbots.h"
 #include "RoleCheckPolicy.h"
 #include "ScriptMgr.h"
+#include "ScriptedGossip.h"
 #include "Timer.h"
+#include "UBShared.h"
 #include "World.h"
+#include "WorldPacket.h"
+#include "WorldSession.h"
 
 using namespace Acore::ChatCommands;
 
@@ -187,6 +195,7 @@ struct Run
     // each mob's victim at the last sample, to log what took a mob off the tank (a few a fight)
     std::map<ObjectGuid, ObjectGuid> mobVictim;
     uint32 fightSwitchLogs = 0;
+    std::map<ObjectGuid, uint32> mobUntouched;  // samples each mob was on a member with no member on it
     ObjectGuid fightOpener;
     std::string fightOpenerHow;  // how: what the opener hit, or what struck it
     std::set<ObjectGuid> dead;  // mobs counted as killed
@@ -202,6 +211,17 @@ struct Run
     uint32 walkWait = 0;  // after going on: the teleport lands at the next session update, and the grid loads
     std::set<ObjectGuid> tried;  // mobs pulled once: one that came back without a fight (no way to the GM) is let be
     uint32 away = 0;  // how long some bot has been out of the world
+
+    // event instances: after a step, the event's own time to start; the starters walked up to or used, once each
+    uint32 eventWait = 0;
+    std::set<ObjectGuid> eventDone;
+    bool eventStarted = false;  // a step was taken: from here mobs come at the group by the event's own doing
+    // where the GM stood when it took the step: a step that moves the GM (Chromie's skip ahead puts the player in town)
+    // brings the group after it, as the players would come along
+    Position eventFrom;
+    bool eventMoves = false;
+    uint32 lastEventAt = 0;  // run.elapsed at the last step taken
+    std::set<uint32> eventVisited;  // starters gone to while their grid was not loaded, by entry
 
     // AccountInstancesPerHour before the run: lifted while it runs, since back-to-back runs (and each settle retry
     // into a reset instance) count against every bot's five new dungeons an hour and left bots outside
@@ -577,6 +597,30 @@ void Sample(Player* gm, std::vector<Player*> const& bots)
             }
             was = victim->GetGUID();
         }
+        // A mob on a member that nobody fights back: why the tank leaves it, once a fight for each such mob (Auchenai
+        // Crypts: a Phasing Soldier beside the tank for 500 seconds, no bot on it, the fight never ending)
+        // (a pack mob waiting its turn while the group fights another is no stall: only a group fighting nothing at all)
+        bool fought = false;
+        for (Player* member : members)
+            if (member->IsAlive() && member->GetVictim())
+                fought = true;
+        uint32& untouched = run.mobUntouched[mob->GetGUID()];
+        untouched = fought ? 0 : untouched + 1;
+        if (untouched == 40)
+        {
+            Creature* c = mob;
+            LOG_INFO("playerbots",
+                     "Rolecheck: {} on {} with no member on it for {} samples: {:.1f} yd from the tank, z {:.1f} to the "
+                     "tank's {:.1f}; visible {}, evading {}, flags 0x{:X}, immune to melee {} and to magic {}, the "
+                     "tank sees it {}, in sight {}, may attack it {}, possible target {}, in combat with the tank {}, "
+                     "threat tank {:.0f}, moving {}, casting {}",
+                     mob->GetName(), victim->GetName(), untouched, mob->GetExactDist(tank), mob->GetPositionZ(),
+                     tank->GetPositionZ(), mob->IsVisible(), c->IsInEvadeMode(), mob->GetUInt32Value(UNIT_FIELD_FLAGS),
+                     mob->IsImmunedToDamage(SPELL_SCHOOL_MASK_NORMAL), mob->IsImmunedToDamage(SPELL_SCHOOL_MASK_MAGIC),
+                     tank->CanSeeOrDetect(mob), tank->IsWithinLOSInMap(mob), tank->IsValidAttackTarget(mob),
+                     AttackersValue::IsPossibleTarget(mob, tank), c->IsInCombatWith(tank),
+                     mob->GetThreatMgr().GetThreat(tank), mob->isMoving(), mob->IsNonMeleeSpellCast(false));
+        }
         if (hit && PlayerbotAI::IsTank(hit, true))
         {
             ++t.onTank;
@@ -584,7 +628,11 @@ void Sample(Player* gm, std::vector<Player*> const& bots)
         }
         else if (Player* who = RunPlayerOf(victim))
             ++run.fightOffTank[who->GetGUID()];
-        if (!tank || victim != tank || !mob->IsWithinMeleeRange(tank))
+        // Only a mob standing at the tank: one still running in, or flying round it (Underbog bats, Onyxia's whelps), faces
+        // wherever it goes, and the tank has no say in that. Nor one whose front is where melee belong by the dungeon's own
+        // tactic: an Underbat lashes whoever stands behind or beside it (UBPolicy.h)
+        if (!tank || victim != tank || !mob->IsWithinMeleeRange(tank) || mob->isMoving() ||
+            mob->GetEntry() == UnderbogHungarfen::NPC_UNDERBAT)
             continue;
         ++t.facedSamples;
         // (in a dungeon the GM only trails the tank, out of the fight)
@@ -728,6 +776,7 @@ void StartFight(std::vector<Player*> const& members)
     run.fightHealerHit = run.fightHealerNear = run.fightHealerFar = 0;
     run.mobVictim.clear();
     run.fightSwitchLogs = 0;
+    run.mobUntouched.clear();
     run.fightOpener = first;
     if (Player* tank = MainTank())
     {
@@ -753,6 +802,10 @@ void CountFight()
     Player* who = ObjectAccessor::FindConnectedPlayer(run.fightOpener);
     if (run.raid && run.fightOpener == run.gm)
         return;  // the player's pull, as asked
+    // An event's wave (Violet Hold's portals, the Black Morass's rifts): the mobs came at the group, nobody pulled them. Only a
+    // fight a member opened with a hit of its own is a pull to judge.
+    if (run.eventStarted && run.fightOpenerHow.find(" hit ") == std::string::npos)
+        return;
     ++run.tally.pulls;
     Player* tank = MainTank();
     bool const byTank = who && (who == tank || PlayerbotAI::IsTank(who, true));
@@ -847,6 +900,13 @@ void CountDeaths(Player* gm)
             {
                 ++run.tally.deaths;
                 Say(Acore::StringFormat("{} ({}) died", bot->GetName(), Role(bot)));
+                // Where: a death out of any fight, again and again where it was revived (Underbog), is the place
+                LOG_INFO("playerbots",
+                         "Rolecheck: {} died at {:.1f} {:.1f} {:.1f} (water level {:.1f}), in a fight {}, in water {}, under "
+                         "water {}, attackers {}",
+                         bot->GetName(), bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(),
+                         bot->GetMap()->GetWaterLevel(bot->GetPositionX(), bot->GetPositionY()), run.inFight,
+                         bot->IsInWater(), bot->IsUnderWater(), uint32(bot->getAttackers().size()));
             }
             member.dead = dead;
         }
@@ -876,6 +936,8 @@ void ReviveDead(Player* gm, std::vector<Player*> const& bots)
     if (!anyDead)
         return;
     Player* beside = MainTank();
+    if (beside && !beside->IsAlive())
+        beside = nullptr;
     if (!beside)
         for (Player* bot : bots)
             if (bot->IsAlive())
@@ -895,6 +957,249 @@ void ReviveDead(Player* gm, std::vector<Player*> const& bots)
     for (Player* bot : bots)
         if (!bot->IsAlive())
             Revive(bot, beside);
+}
+
+// Event instances have no packs to lead to until their event starts: a player talks to its starter, uses its object or
+// walks up to it, and the waves come to the group. The lead was done at once and none of these runs had a fight
+// (Violet Hold, the Caverns of Time, the Frozen Halls, the Coliseum, the Eye of Eternity, 2026-11-08). The GM does
+// what the player would, the group brought along; a step whose starter is not up (yet) is passed over.
+enum class EventAct
+{
+    Gossip,    // talk to the creature and take its first option, as a player clicks it
+    Use,       // use the game object
+    Approach,  // walk up to the creature: its sight of the group starts the event
+};
+
+struct EventStarter
+{
+    uint32 mapId;
+    uint32 entry;
+    EventAct act;
+    // Gossip: the option to take when the menu offers it, else the first; and a quest the GM is taken to have done,
+    // as a player who has run the instance before (the Culling of Stratholme lets one skip its intro, 3.3.3)
+    int32 option = -1;
+    uint32 doneQuest = 0;
+};
+
+constexpr EventStarter EventStarters[] = {
+    {608, 30658, EventAct::Gossip},                                   // Violet Hold: Lieutenant Sinclari
+    {595, 26527, EventAct::Gossip, 2, 13151},                         // Culling of Stratholme: Chromie's skip ahead,
+    {595, 27915, EventAct::Gossip}, {595, 26499, EventAct::Gossip},   // Chromie in town, Arthas at each stop
+    {668, 37221, EventAct::Gossip}, {668, 37223, EventAct::Gossip},   // Halls of Reflection: Jaina or Sylvanas,
+    {668, 36955, EventAct::Gossip}, {668, 37554, EventAct::Gossip},   // and again for the escape
+    {650, 35004, EventAct::Gossip}, {650, 35005, EventAct::Gossip},   // Trial of the Champion: the announcer
+    {649, 34816, EventAct::Gossip}, {649, 35909, EventAct::Gossip},   // Trial of the Crusader: Barrett Ramsey, one for
+    {649, 35035, EventAct::Gossip}, {649, 35766, EventAct::Gossip},   // each stage (the beasts, normal and heroic,
+    {649, 35770, EventAct::Gossip},                                   // Jaraxxus, the champions, the twins)
+    {560, 182589, EventAct::Use},  {560, 17876, EventAct::Gossip},    // Old Hillsbrad: the barrels, then Thrall
+    {269, 15608, EventAct::Approach},                                 // The Black Morass: Medivh
+    {616, 193958, EventAct::Use},  {616, 193960, EventAct::Use},      // Eye of Eternity: the Focusing Iris
+};
+
+uint32 constexpr EventWaitMs = 20000;  // after a step: the event's intro, before the next step is looked for
+
+// Where an event's waves come once it is started, and only when the whole group stands there: Halls of Reflection holds
+// its waves until every player is within 40 yards of the throne room's centre (instance_halls_of_reflection.cpp)
+struct EventGather
+{
+    uint32 mapId;
+    float x, y, z;
+    uint32 untilBosses;  // the waves are over once the group has killed this many bosses
+};
+
+constexpr EventGather EventGathers[] = {
+    {668, 5309.46f, 2006.48f, 711.60f, 2},  // Halls of Reflection: the throne room, until Falric and Marwyn are down
+};
+
+// Where a starter stands, from the spawn data: a far one's grid is not loaded until someone goes near it
+bool StarterSpawn(uint32 mapId, uint32 entry, bool object, Position& at)
+{
+    if (object)
+    {
+        for (auto const& [spawnId, data] : sObjectMgr->GetAllGOData())
+            if (data.mapid == mapId && data.id == entry)
+            {
+                at.Relocate(data.posX, data.posY, data.posZ);
+                return true;
+            }
+        return false;
+    }
+    for (auto const& [spawnId, data] : sObjectMgr->GetAllCreatureData())
+        if (data.mapid == mapId && (data.id == entry || data.id2 == entry || data.id3 == entry))
+        {
+            at.Relocate(data.posX, data.posY, data.posZ);
+            return true;
+        }
+    return false;
+}
+
+void BringGroup(Player* gm, std::vector<Player*> const& bots)
+{
+    for (Player* bot : bots)
+        if (bot->IsAlive() && bot->GetMapId() == gm->GetMapId())
+            bot->NearTeleportTo(gm->GetPositionX(), gm->GetPositionY(), gm->GetPositionZ(), gm->GetOrientation());
+}
+
+// The next event step the GM can take, taken; false when the map has none ready
+bool StartEvent(Player* gm, std::vector<Player*> const& bots, uint32 diff)
+{
+    if (run.eventWait)
+    {
+        if (run.eventMoves && gm->GetExactDist(&run.eventFrom) > 30.0f && !gm->IsBeingTeleported())
+        {
+            run.eventMoves = false;
+            BringGroup(gm, bots);
+        }
+        run.eventWait = run.eventWait > diff ? run.eventWait - diff : 0;
+        if (!run.eventWait)
+            run.eventMoves = false;
+        return true;
+    }
+    Map* map = gm->GetMap();
+    for (EventStarter const& step : EventStarters)
+    {
+        if (step.mapId != run.mapId)
+            continue;
+        bool const object = step.act == EventAct::Use;
+        WorldObject* starter = nullptr;
+        if (object)
+        {
+            for (auto const& [spawnId, go] : map->GetGameObjectBySpawnIdStore())
+                if (go->GetEntry() == step.entry && go->isSpawned() && go->GetGoState() == GO_STATE_READY &&
+                    !run.eventDone.count(go->GetGUID()) && (!starter || gm->GetExactDist(go) < gm->GetExactDist(starter)))
+                    starter = go;
+        }
+        else
+        {
+            for (auto const& [spawnId, creature] : map->GetCreatureBySpawnIdStore())
+            {
+                bool const ready = step.act == EventAct::Gossip ? creature->HasNpcFlag(UNIT_NPC_FLAG_GOSSIP)
+                                                                : !run.eventDone.count(creature->GetGUID());
+                if (creature->GetEntry() == step.entry && creature->IsAlive() && ready &&
+                    (!starter || gm->GetExactDist(creature) < gm->GetExactDist(starter)))
+                    starter = creature;
+            }
+            // A summoned one is in no spawn store (the Coliseum summons a Barrett Ramsey for each stage): the creatures
+            // around the GM
+            if (!starter)
+            {
+                std::list<Creature*> near;
+                gm->GetCreatureListWithEntryInGrid(near, step.entry, 300.0f);
+                for (Creature* creature : near)
+                {
+                    bool const ready = step.act == EventAct::Gossip ? creature->HasNpcFlag(UNIT_NPC_FLAG_GOSSIP)
+                                                                    : !run.eventDone.count(creature->GetGUID());
+                    if (creature->IsAlive() && ready && (!starter || gm->GetExactDist(creature) < gm->GetExactDist(starter)))
+                        starter = creature;
+                }
+            }
+        }
+        if (!starter)
+        {
+            // Not loaded: go to where it stands, once, and look again once the grid is up
+            Position at;
+            if (run.eventVisited.count(step.entry) || !StarterSpawn(run.mapId, step.entry, object, at) ||
+                gm->GetExactDist(&at) < 60.0f)
+                continue;
+            run.eventVisited.insert(step.entry);
+            gm->NearTeleportTo(at.GetPositionX(), at.GetPositionY(), at.GetPositionZ() + 0.5f, gm->GetOrientation());
+            run.eventFrom = gm->GetPosition();  // the group follows once the teleport has landed
+            run.eventMoves = true;
+            run.eventWait = 5000;
+            return true;
+        }
+        // Beside it first (a teleport lands at the GM's next session update), then the step
+        if (gm->GetExactDist(starter) > 4.0f)
+        {
+            float const angle = starter->GetAbsoluteAngle(gm);
+            gm->NearTeleportTo(starter->GetPositionX() + 2.5f * std::cos(angle),
+                               starter->GetPositionY() + 2.5f * std::sin(angle), starter->GetPositionZ() + 0.5f,
+                               angle + float(M_PI));
+            run.eventFrom = gm->GetPosition();
+            run.eventMoves = true;
+            run.eventWait = 3000;
+            return true;
+        }
+        std::string what;
+        if (GameObject* go = starter->ToGameObject())
+        {
+            run.eventDone.insert(go->GetGUID());
+            go->Use(gm);
+            what = "used";
+        }
+        else if (step.act == EventAct::Approach)
+        {
+            run.eventDone.insert(starter->GetGUID());
+            what = "went up to";
+        }
+        else
+        {
+            // As the client asks: the menu, then its first option; a script with no option on offer to the GM (a
+            // quest it never did) is asked for its start as that option would
+            Creature* npc = starter->ToCreature();
+            if (step.doneQuest && !gm->IsQuestRewarded(step.doneQuest))
+                gm->SetRewardedQuest(step.doneQuest);
+            WorldPacket hello(CMSG_GOSSIP_HELLO, 8);
+            hello << npc->GetGUID();
+            gm->GetSession()->HandleGossipHelloOpcode(hello);
+            GossipMenu const& menu = gm->PlayerTalkClass->GetGossipMenu();
+            if (!menu.GetMenuItems().empty())
+            {
+                // The starter's own option or the first, then the first of each menu it opens, as a player clicks
+                // through (Violet Hold: "Activate the crystals" opens the menu whose option starts the event); a menu
+                // that comes back the same is not clicked again
+                what = "talked to";
+                std::string last;
+                for (uint32 click = 0; click < 4 && !menu.GetMenuItems().empty(); ++click)
+                {
+                    // A script that opens the next menu clears this one first; one that closes leaves it as it was
+                    auto chosen = menu.GetMenuItems().begin();
+                    if (click == 0 && step.option >= 0 && menu.GetMenuItems().count(uint32(step.option)))
+                        chosen = menu.GetMenuItems().find(uint32(step.option));
+                    uint32 const option = chosen->first;
+                    std::string const text = chosen->second.Message;
+                    std::string const said = std::to_string(menu.GetMenuId()) + ":" + text;
+                    if (said == last)
+                        break;
+                    last = said;
+                    what += " (\"" + text + "\")";
+                    WorldPacket select(CMSG_GOSSIP_SELECT_OPTION, 16);
+                    select << npc->GetGUID() << menu.GetMenuId() << option;
+                    gm->GetSession()->HandleGossipSelectOptionOpcode(select);
+                }
+            }
+            else
+            {
+                sScriptMgr->OnGossipSelect(gm, npc, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+                what = "asked to start";
+            }
+            gm->PlayerTalkClass->SendCloseGossip();
+            // One that keeps its gossip (a menu the GM can't use) is not asked again and again
+            if (npc->HasNpcFlag(UNIT_NPC_FLAG_GOSSIP))
+                npc->RemoveNpcFlag(UNIT_NPC_FLAG_GOSSIP);
+        }
+        run.eventStarted = true;
+        run.lastEventAt = run.elapsed;
+        run.eventFrom = gm->GetPosition();
+        run.eventMoves = true;
+        Say(Acore::StringFormat("event: {} {}", what, starter->GetName()));
+        run.eventWait = EventWaitMs;
+        return true;
+    }
+    // Nothing left to start: the group goes where the started event wants it
+    if (run.eventStarted)
+        for (EventGather const& spot : EventGathers)
+            if (spot.mapId == run.mapId && run.tally.bosses < spot.untilBosses &&
+                gm->GetExactDist2d(spot.x, spot.y) > 20.0f)
+            {
+                gm->NearTeleportTo(spot.x, spot.y, spot.z, gm->GetOrientation());
+                run.eventFrom = gm->GetPosition();
+                run.eventMoves = true;
+                run.eventWait = 5000;
+                Say("event: gathering the group where its waves come");
+                return true;
+            }
+    return false;
 }
 
 // Dungeon: once the tank has led on, the GM catches up the way it came, a few yards short of the tank. Not every few
@@ -1040,10 +1345,19 @@ void RaidPull(Player* gm, std::vector<Player*> const& bots, uint32 diff)
         mob = NextTrash(gm, false);
         if (!mob && WalkOn(gm, bots))
             return;
+        // The trash done: an event raid's boss comes by its starter, before any pull of it (Malygos circles out of reach
+        // until the Focusing Iris is used; the Coliseum's bosses come when Barrett Ramsey is asked)
+        if (!mob && StartEvent(gm, bots, diff))
+            return;
         if (!mob)
             mob = NextTrash(gm, true);
         if (!mob)
         {
+            // An event raid's starter can come a while after the group or the last fight (the Coliseum summons a Barrett
+            // for each stage), and its mobs a while after the step: wait for them
+            for (EventStarter const& step : EventStarters)
+                if (step.mapId == run.mapId && (run.calm < 90000 || run.elapsed - run.lastEventAt < 90000))
+                    return;
             Report();
             return;
         }
@@ -1130,8 +1444,13 @@ void Observe(Player* gm, uint32 diff)
     }
     std::vector<Player*> members = bots;
     members.push_back(gm);
-    bool const fighting = std::any_of(members.begin(), members.end(),
-                                      [](Player* m) { return m->IsAlive() && m->IsInCombat(); });
+    // Every bot down is a wipe, whoever still stands: the mobs that pulled on the GM kept beating on it, unhurt, and
+    // the fight never ended, so nobody got up and the rest of the run was 8 minutes of nothing (Karazhan, 2026-11-08)
+    bool const botsDown = std::none_of(bots.begin(), bots.end(), [](Player* bot) { return bot->IsAlive(); });
+    if (botsDown && gm->IsInCombat())
+        gm->CombatStop(true);
+    bool const fighting = !botsDown && std::any_of(members.begin(), members.end(),
+                                                   [](Player* m) { return m->IsAlive() && m->IsInCombat(); });
     if (fighting)
     {
         run.calm = 0;
@@ -1162,9 +1481,19 @@ void Observe(Player* gm, uint32 diff)
     }
     if (!run.inFight)
         ReviveDead(gm, bots);
+    // Dungeon: the lead found no pack left to lead to (or no way to one), and all is calm: an event to start
+    if (!run.raid && !run.inFight && run.calm >= ReviveMs)
+        if (Player* tank = MainTank())
+            if (PlayerbotAI* ai = GET_PLAYERBOT_AI(tank))
+            {
+                DungeonLead::State const& lead = DungeonLead::StateOf(ai);
+                if (lead.done || lead.idle)
+                    StartEvent(gm, bots, diff);
+            }
 
     run.sinceFollow += diff;
-    if (!run.raid && run.sinceFollow >= FollowMs)
+    // (not while an event step has the GM away, the group still to come after it)
+    if (!run.raid && run.sinceFollow >= FollowMs && !run.eventMoves)
     {
         run.sinceFollow = 0;
         Follow(gm);
