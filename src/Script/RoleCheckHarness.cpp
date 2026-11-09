@@ -244,6 +244,7 @@ struct Run
     std::map<ObjectGuid, uint32> fightFaced;  // samples each member stood in front of a mob on the tank
     // healer samples not standing back, by why: a mob on the healer near it, a mob on another near it, out of reach
     uint32 fightHealerHit = 0, fightHealerNear = 0, fightHealerFar = 0;
+    uint32 fightTraceAt = 0, fightTraceLogs = 0;  // the damage dealers' action traces in a big fight, every 5 s
     // each mob's victim at the last sample, to log what took a mob off the tank (a few a fight)
     std::map<ObjectGuid, ObjectGuid> mobVictim;
     uint32 fightSwitchLogs = 0;
@@ -671,6 +672,25 @@ void Sample(Player* gm, std::vector<Player*> const& bots)
     if (std::any_of(mobs.begin(), mobs.end(), [](Creature* mob) { return mob->GetVehicle() || mob->GetVehicleKit(); }))
         return;
 
+    // In a big fight, each damage dealer's whole last-action trace now and then: why its area spells did or did not
+    // go out (the traces logged elsewhere are cut to their last 300 characters)
+    if (mobs.size() >= CAST_LOG_MOBS && run.fightTraceLogs < 4 * bots.size() &&
+        (run.elapsed - run.fightAt) / 5000 > run.fightTraceAt)
+    {
+        run.fightTraceAt = (run.elapsed - run.fightAt) / 5000;
+        for (Player* bot : bots)
+        {
+            PlayerbotAI* ai = GET_PLAYERBOT_AI(bot);
+            Engine* engine = ai ? ai->GetCurrentEngine() : nullptr;
+            if (!engine || !bot->IsAlive() || !PlayerbotAI::IsDps(bot))
+                continue;
+            ++run.fightTraceLogs;
+            LOG_INFO("playerbots", "Rolecheck: {} ({}) at {}s into a {}-mob fight, casting {}: {}", bot->GetName(),
+                     Role(bot), (run.elapsed - run.fightAt) / 1000, mobs.size(),
+                     bot->IsNonMeleeSpellCast(false), engine->GetLastAction());
+        }
+    }
+
     // With the tank dead nobody holds the mobs: that shows in the deaths, not here
     for (Creature* mob : tank ? mobs : std::vector<Creature*>())
     {
@@ -902,6 +922,7 @@ void StartFight(std::vector<Player*> const& members)
     run.fightOffTank.clear();
     run.fightFaced.clear();
     run.fightHealerHit = run.fightHealerNear = run.fightHealerFar = 0;
+    run.fightTraceAt = run.fightTraceLogs = 0;
     run.mobVictim.clear();
     run.fightSwitchLogs = 0;
     run.mobUntouched.clear();

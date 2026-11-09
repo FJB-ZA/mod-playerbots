@@ -82,15 +82,20 @@ bool WatchersTargetAction::Execute(Event /*event*/)
             continue;
 
         int priority = AzjolNerub::WatcherPriority(WatcherOf(npc->GetEntry()));
-        if (priority >= 0 && (!best || priority <= bestPriority))
+        if (priority >= 0 && (!best || priority < bestPriority))
         {
             best = npc;
             bestPriority = priority;
         }
     }
 
-    // Already on the best target: nothing to send
-    return best && currentTarget != best && Attack(best);
+    // Already on a watcher as good as any: keep it. Taking the last of equals in a list that reorders, the bots
+    // switched target every tick and finished no cast (role check, heroic Azjol-Nerub, 2026-11-09)
+    int const currentPriority =
+        currentTarget && currentTarget->IsAlive() ? AzjolNerub::WatcherPriority(WatcherOf(currentTarget->GetEntry())) : -1;
+    if (!best || AzjolNerub::KeepsWatcher(currentPriority, bestPriority))
+        return false;
+    return Attack(best);
 }
 
 float KrikthirMultiplier::GetValue(Action* action)
@@ -117,5 +122,10 @@ float KrikthirMultiplier::GetValue(Action* action)
         watcher = watcher || WatcherOf(unit->GetEntry()) != AzjolNerub::Watcher::None;
     }
 
+    // On a watcher the watcher order picks the target: an assist turning to the tank's mob undid it every other tick
+    Unit* current = AI_VALUE(Unit*, "current target");
+    bool const onWatcher = current && current->IsAlive() && WatcherOf(current->GetEntry()) != AzjolNerub::Watcher::None;
+    if (assist && onWatcher)
+        return 0.0f;
     return AzjolNerub::KrikthirAllows(boss, watcher, assist, aoe) ? 1.0f : 0.0f;
 }
