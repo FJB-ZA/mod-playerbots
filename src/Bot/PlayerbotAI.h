@@ -500,6 +500,10 @@ public:
     bool Whisper(std::string const& msg, std::string const& receiverName);
 
     void SpellInterrupted(uint32 spellid);
+    // Breath left in ms from the server's breath timer, or -1 when the timer is off (full breath).
+    int32 GetBreathLeft() const;
+    int32 GetBreathMax() const { return breathMax; }
+    bool IsLosingBreath() const { return breathMax > 0 && breathScale < 0; }
     int32 CalculateGlobalCooldown(uint32 spellid);
     void RequestSpellInterrupt();
     void RemoveAura(std::string const name);
@@ -641,6 +645,12 @@ public:
     void AddTimedEvent(std::function<void()> callback, uint32 delayMs);
 
 private:
+    // The server's breath timer as last sent to this bot (SMSG_START_MIRROR_TIMER)
+    int32 breathValue = 0;
+    int32 breathMax = 0;
+    int32 breathScale = 0;
+    uint32 breathAt = 0;
+
     static void _fillGearScoreData(Player* player, Item* item, std::vector<uint32>* gearScore, uint32& twoHandScore,
                                    bool mixed = false);
     bool IsTellAllowed(PlayerbotSecurityLevel securityLevel = PLAYERBOT_SECURITY_ALLOW_ALL);

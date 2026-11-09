@@ -3294,3 +3294,28 @@ bool MoveAwayFromPlayerWithDebuffAction::Execute(Event /*event*/)
 }
 
 bool MoveAwayFromPlayerWithDebuffAction::isPossible() { return bot->CanFreeMove(); }
+
+bool SurfaceAction::Execute(Event /*event*/)
+{
+    if (!botAI->IsLosingBreath())
+    {
+        // Up already: it waits there until its breath is back
+        if (bot->isMoving())
+            bot->StopMoving();
+        return true;
+    }
+    // The liquid the server measures the breath by, or the map's when that has none
+    LiquidData liquid = bot->GetLiquidData();
+    if (liquid.Level <= INVALID_HEIGHT)
+        liquid = bot->GetMap()->GetLiquidData(bot->GetPhaseMask(), bot->GetPositionX(), bot->GetPositionY(),
+                                              bot->GetPositionZ(), bot->GetCollisionHeight(), {});
+    float const top = liquid.Level > INVALID_HEIGHT && liquid.Level > bot->GetPositionZ()
+                          ? liquid.Level - 0.5f
+                          : bot->GetPositionZ() + 10.0f;
+    // Head just out of the water, where it stands: the fight is still there once it has its breath back
+    bot->InterruptNonMeleeSpells(true);
+    bot->GetMotionMaster()->Clear();
+    bot->GetMotionMaster()->MovePoint(0, bot->GetPositionX(), bot->GetPositionY(), top, FORCED_MOVEMENT_NONE, 0.0f,
+                                      bot->GetOrientation(), false, true);
+    return true;
+}

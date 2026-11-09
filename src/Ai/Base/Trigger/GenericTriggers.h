@@ -26,6 +26,21 @@ protected:
     int32 amount;
 };
 
+// Under water long enough to drown before long. Bots walk the bottom of deep water and never come up for air: three
+// drowned in one fight in Ghaz'an's lake (Underbog, 2026-11-08). Breath is kept as the core keeps it (60 seconds, used
+// at 1x under water and won back at 10x above): under 40 seconds left the bot goes up, and stays up until it is full.
+// A bot up for a moment and straight back down won back too little and drowned all the same.
+class NeedAirTrigger : public Trigger
+{
+public:
+    NeedAirTrigger(PlayerbotAI* botAI) : Trigger(botAI, "need air") {}
+
+    bool IsActive() override;
+
+private:
+    bool needAir = false;
+};
+
 class HighManaTrigger : public Trigger
 {
 public:
