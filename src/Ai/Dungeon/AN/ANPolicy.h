@@ -42,6 +42,12 @@ constexpr int WatcherPriority(Watcher watcher)
     }
 }
 
+// A damage dealer on a watcher keeps it while no other is strictly before it in the order; -1 = not on a watcher
+constexpr bool KeepsWatcher(int currentPriority, int bestPriority)
+{
+    return currentPriority >= 0 && currentPriority <= bestPriority;
+}
+
 // While watchers live and the boss still waits, no target swaps and no area damage: it pulls the packs waiting by him.
 // Once he is in the fight everything is pulled, and his swarms want area damage.
 constexpr bool KrikthirAllows(bool bossWaiting, bool watcherUp, bool dpsAssist, bool aoe)
