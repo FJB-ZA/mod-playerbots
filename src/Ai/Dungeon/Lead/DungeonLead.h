@@ -48,6 +48,12 @@ struct State
     std::vector<Position> trail;  // where the tank walked out of a fight, newest last (WaitSpotPolicy.h TrailSpot)
     bool stepping = false;  // the tank has left the group to pull
     uint32 spotStuckAt = 0;  // since when the tank, standing still, has failed to move to its spot
+    bool advancing = false;  // the tank is on a stretch of the walk toward the goal (LeadAdvanceAction)
+    ObjectGuid::LowType progressGoal = 0;  // the goal the advance's progress is measured for
+    uint32 advancedAt = 0;                 // the advance's last look at the way on; a gap starts the measure over
+    uint32 progressAt = 0;                 // when the advance last brought the tank nearer to it
+    float bestToGoal = 0.0f;               // the nearest the tank has been to it, in a straight line
+    float bestWay = 0.0f;                  // and along the way the path search finds
     bool pulled = false;
     uint32 pulledAt = 0;
     bool fought = false;  // the pull turned into a fight

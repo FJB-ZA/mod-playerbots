@@ -8,6 +8,8 @@
 #include "GridNotifiers.h"
 #include "GridNotifiersImpl.h"
 #include "Group.h"
+#include "Log.h"
+#include "ObjectMgr.h"
 #include "Playerbots.h"
 #include "SpellMgr.h"
 #include "TOCActions.h"
@@ -58,6 +60,13 @@ void ExtendCooldown(Unit* vehicleBase, uint32 spellId, uint32 duration)
         vehicleBase->AddSpellCooldown(spellId, 0, duration);
 }
 
+// The spell a click on the mount casts: Ride Vehicle (67830 for both joust mounts, from npc_spellclick_spells)
+SpellInfo const* RideSpell(Unit* vehicleBase)
+{
+    SpellClickInfoMapBounds clicks = sObjectMgr->GetSpellClickInfoMapBounds(vehicleBase->GetEntry());
+    return clicks.first != clicks.second ? sSpellMgr->GetSpellInfo(clicks.first->second.spellId) : nullptr;
+}
+
 bool IsShielded(Unit* unit) { return unit->HasAura(SPELL_BOSS_DEFEND) || unit->HasAura(SPELL_MINIONS_DEFEND); }
 
 uint8 DefendStacks(Unit* unit)
@@ -76,16 +85,20 @@ public:
     }
 };
 
-bool BothMountsNear(Player* bot)
+// The joust is on while any joust mount is left. Asking for both kinds fails once one kind runs out, and they do over
+// wipes: a dismounted champion despawns the battleworg it remounts on (a warhorse in a Horde run) and a dead mount
+// never respawns (spawntime 999999). The lance then came off and the mount trigger went quiet, yet the joust
+// multiplier, which needs just one free mount, still held the bot on foot with nothing allowed to run.
+bool JoustMountNear(Player* bot)
 {
-    return bot->FindNearestCreature(NPC_ARGENT_WARHORSE, 100.0f) &&
+    return bot->FindNearestCreature(NPC_ARGENT_WARHORSE, 100.0f) ||
            bot->FindNearestCreature(NPC_ARGENT_BATTLEWORG, 100.0f);
 }
 }  // namespace
 
 bool ToCLanceTrigger::IsActive()
 {
-    if (bot->GetVehicle() || !BothMountsNear(bot))
+    if (bot->GetVehicle() || !JoustMountNear(bot))
         return false;
 
     if (!bot->HasItemOrGemWithIdEquipped(ITEM_LANCE, 1))
@@ -99,7 +112,7 @@ bool ToCUELanceTrigger::IsActive()
     if (bot->GetVehicle() || !bot->HasItemOrGemWithIdEquipped(ITEM_LANCE, 1))
         return false;
 
-    return !BothMountsNear(bot);
+    return !JoustMountNear(bot);
 }
 
 bool ToCMountedTrigger::IsActive()
@@ -108,7 +121,8 @@ bool ToCMountedTrigger::IsActive()
     return vehicleBase && bot->GetVehicle() && IsJoustMount(vehicleBase->GetEntry());
 }
 
-bool ToCMountNearTrigger::IsActive() { return !bot->GetVehicle() && BothMountsNear(bot); }
+// The same free-mount test as the joust multiplier, so a bot it holds on foot is always one this sends to a mount
+bool ToCMountNearTrigger::IsActive() { return !bot->GetVehicle() && ToCMountAction::FindMount(botAI); }
 
 bool ToCLanceAction::Execute(Event /*event*/)
 {
@@ -675,21 +689,62 @@ bool ToCMountAction::EnterVehicle(Unit* vehicleBase, bool moveIfFar)
     if (dist > INTERACTION_DISTANCE && !moveIfFar)
         return false;
 
+    // Keep the tick while still on the way, so a heal or a cast the multiplier lets through doesn't halt the run
     if (dist > INTERACTION_DISTANCE)
-        return MoveTo(vehicleBase);
+    {
+        bool const moving = MoveTo(vehicleBase) || bot->isMoving();
+        NoteAttempt(vehicleBase, dist, moving ? "on the way" : "can't move to it");
+        return moving;
+    }
+
+    // The mount turns away a rider without the lance's aura (npc_toc5_player_vehicle::BeforeSpellClick)
+    if (!bot->HasAura(SPELL_LANCE_EQUIPPED))
+    {
+        NoteAttempt(vehicleBase, dist, "no Lance Equipped aura");
+        return false;
+    }
+
+    // Ride Vehicle is on the global cooldown, so a click in the 1.5 s after a heal fails SPELL_FAILED_NOT_READY. A bot
+    // that then heals again restarts it every tick and never boards: hold the tick until the cooldown runs out.
+    SpellInfo const* ride = RideSpell(vehicleBase);
+    if (ride && bot->GetGlobalCooldownMgr().HasGlobalCooldown(ride))
+    {
+        NoteAttempt(vehicleBase, dist, "waiting out the global cooldown");
+        return true;
+    }
 
     botAI->RemoveShapeshift();
     bot->GetMotionMaster()->Clear();
     bot->StopMoving();
-    vehicleBase->HandleSpellClick(bot);
+    bool const clicked = vehicleBase->HandleSpellClick(bot);
 
     if (!bot->IsOnVehicle(vehicleBase))
+    {
+        NoteAttempt(vehicleBase, dist, clicked ? "ride cast failed" : "spell click refused");
         return false;
+    }
+
+    NoteAttempt(vehicleBase, dist, "boarded");
 
     // Bots can enter the vehicle while on their own mount
     WorldPacket emptyPacket;
     bot->GetSession()->HandleCancelMountAuraOpcode(emptyPacket);
     return true;
+}
+
+// One line each time the mount or the outcome changes, to show what keeps a bot on foot from boarding mid-fight
+void ToCMountAction::NoteAttempt(Unit* vehicleBase, float dist, std::string const& outcome)
+{
+    if (vehicleBase->GetGUID() == lastMount && outcome == lastOutcome)
+        return;
+
+    lastMount = vehicleBase->GetGUID();
+    lastOutcome = outcome;
+    LOG_INFO("playerbots",
+             "ToC mount: {} to {} {} at {:.1f} yd: {}; in combat {}, health {:.0f}%, lance equipped {}, stunned {}",
+             bot->GetName(), vehicleBase->GetName(), vehicleBase->GetGUID().GetCounter(), dist, outcome,
+             bot->IsInCombat(), bot->GetHealthPct(), bot->HasItemOrGemWithIdEquipped(ITEM_LANCE, 1),
+             bot->HasUnitState(UNIT_STATE_STUNNED));
 }
 
 float ToCJoustMultiplier::GetValue(Action* action)
@@ -709,8 +764,8 @@ float ToCJoustMultiplier::GetValue(Action* action)
     shape.movement = dynamic_cast<MovementAction*>(action) != nullptr;
     shape.mountedJoust = dynamic_cast<ToCMountedAction*>(action) != nullptr;
 
-    // The mount scan is cached, so only an unmounted bot that isn't getting ready pays for it
-    if (!fight.onVehicle && !shape.setup)
+    // The mount scan is cached, so only an unmounted bot about to move somewhere else pays for it
+    if (!fight.onVehicle && !shape.setup && shape.movement)
         fight.spareMount = SpareMountNearby();
 
     return Toc::JoustAllows(fight, shape) ? 1.0f : 0.0f;

@@ -31,6 +31,7 @@
 #include "PlayerbotAIConfig.h"
 #include "PlayerbotTextMgr.h"
 #include "Playerbots.h"
+#include "PoolMgr.h"
 #include "PositionValue.h"
 #include "PullStrategy.h"
 #include "RtiTargetValue.h"
@@ -56,6 +57,10 @@ uint32 constexpr OVERPULL_WINDOW_MS = 8000;
 // A tank running in without a pull spell is not in combat until it reaches the pack.
 uint32 constexpr PULL_GRACE_MS = 6000;
 uint32 constexpr SPOT_STUCK_MS = 5000;
+// The advance this long without getting 5 yards nearer to its goal, by either measure: that way on goes nowhere
+uint32 constexpr NO_PROGRESS_MS = 30000;
+uint32 constexpr ADVANCE_GAP_MS = 5000;  // a wait, a pack or a fight between two looks: the measure starts over
+float constexpr PROGRESS_STEP = 5.0f;
 uint32 constexpr MAX_FAILED_PULLS = 3;
 uint32 constexpr MAX_PATH_TRIES = 4;
 uint32 constexpr SKULL_CALL_CHANCE = 25;
@@ -67,6 +72,10 @@ float constexpr SAMPLE_STEP = 3.0f;
 size_t constexpr MAX_SAMPLES = 40;
 float constexpr OVERPULL_REACH = 30.0f;
 float constexpr EYE_HEIGHT = 2.0f;
+// A mob that can fly this far over the floor under it is out of a walking tank's reach
+float constexpr AIRBORNE_HEIGHT = 10.0f;
+// A stretch's end the floor puts this far under the straight line is over a drop, not a dip
+float constexpr MAX_DIP = 10.0f;
 
 struct CcProvider
 {
@@ -98,6 +107,7 @@ struct BossSpawn
     ObjectGuid::LowType spawnId;
     Position pos;
     uint8 spawnMask;
+    bool flies = false;  // its kind can fly, so it may hold the air with no floor under it
 };
 
 bool IsLeader(PlayerbotAI* botAI)
@@ -164,7 +174,8 @@ std::vector<BossSpawn> const& TrashSpawns(uint32 mapId)
             continue;
         CreatureTemplate const* creatureTemplate = sObjectMgr->GetCreatureTemplate(data.id);
         if (creatureTemplate && IsTrash(creatureTemplate))
-            spawns.push_back({spawnId, Position(data.posX, data.posY, data.posZ, data.orientation), data.spawnMask});
+            spawns.push_back({spawnId, Position(data.posX, data.posY, data.posZ, data.orientation), data.spawnMask,
+                              creatureTemplate->Movement.IsFlightAllowed()});
     }
     return spawns;
 }
@@ -190,7 +201,23 @@ bool BossAlive(Map* map, BossSpawn const& spawn, Position& pos)
         return creature->IsAlive() && !Sealed(creature);
     }
     pos = spawn.pos;
+    // Not up on this map at all, as the grid loader judges it: a pool member the pool did not pick, or a spawn group
+    // that is off. The Oculus's ring pairs each Azure Spellbinder with an Azure Inquisitor in a one-of-two pool; the
+    // tank killed the Inquisitor, walked to the Spellbinder that never spawned, and stood on its spot for 10 minutes
+    // (role check, 2026-11-09)
+    CreatureData const* data = sObjectMgr->GetCreatureData(spawn.spawnId);
+    if (data && (!map->IsSpawnGroupActive(data->spawnGroupId) ||
+                 (data->poolId && !map->GetPoolData().IsSpawnedObject<Creature>(spawn.spawnId))))
+        return false;
     return map->GetCreatureRespawnTime(spawn.spawnId) <= time(nullptr);
+}
+
+// No floor within reach under where it is now
+bool Airborne(Player* bot, Position const& pos)
+{
+    float const ground = bot->GetMap()->GetHeight(bot->GetPhaseMask(), pos.GetPositionX(), pos.GetPositionY(),
+                                                  pos.GetPositionZ() + EYE_HEIGHT);
+    return ground <= INVALID_HEIGHT || pos.GetPositionZ() - ground > AIRBORNE_HEIGHT;
 }
 
 bool NearestAlive(Player* bot, std::vector<BossSpawn> const& spawns, State& state, bool skipBlocked = true)
@@ -205,6 +232,11 @@ bool NearestAlive(Player* bot, std::vector<BossSpawn> const& spawns, State& stat
             continue;
         Position pos;
         if (!BossAlive(map, spawn, pos))
+            continue;
+        // Sky trash is no goal on foot: the way to an Azure Ring Guardian 20 yards over the Oculus's entrance ring is a
+        // straight line off the ring, and the tank took it to the bottom of the map (role check, 2026-11-09). It is
+        // still fought where it comes down to the group.
+        if (spawn.flies && Airborne(bot, pos))
             continue;
         float const distance = bot->GetExactDist(&pos);
         if (!state.hasGoal || distance < best)
@@ -243,6 +275,13 @@ bool FindGoal(PlayerbotAI* botAI, State& state)
         return true;
     }
     return false;
+}
+
+bool GoalIsBoss(State const& state)
+{
+    CreatureData const* data = state.goalSpawn ? sObjectMgr->GetCreatureData(state.goalSpawn) : nullptr;
+    CreatureTemplate const* creature = data ? sObjectMgr->GetCreatureTemplate(data->id) : nullptr;
+    return creature && (creature->flags_extra & CREATURE_FLAG_EXTRA_DUNGEON_BOSS);
 }
 
 // The advance found no way on toward the goal: try another for a while
@@ -659,12 +698,33 @@ Wait CheckReady(PlayerbotAI* botAI, State& state)
     return state.wait;
 }
 
+// A wait holds the walk already under way, not only the next stretch. The core's walk to a stretch's end can run far
+// past the stretch: in Azjol-Nerub the tank walked on for 90 seconds under "wait on Poskee at 52 yd", 630 yards and
+// away from Krik'thir and then Hadronox as each was its goal, and later walked alone into Anub'arak with the group 160
+// yards back (role check, 2026-11-09).
+void HoldAdvance(PlayerbotAI* botAI, State& state)
+{
+    if (!state.advancing)
+        return;
+    state.advancing = false;
+    Player* bot = botAI->GetBot();
+    if (bot->IsInCombat() || !bot->isMoving() ||
+        bot->GetMotionMaster()->GetCurrentMovementGeneratorType() != POINT_MOTION_TYPE)
+        return;
+    bot->GetMotionMaster()->Clear();
+    bot->StopMoving();
+    // Or the next stretch, once the group is up, waits out the old one's delay or is taken for the same move
+    botAI->GetAiObjectContext()->GetValue<LastMovement&>("last movement")->Get().clear();
+}
+
 bool ReadyToLead(PlayerbotAI* botAI, State& state)
 {
     Refresh(botAI, state);
-    if (state.done || (state.restMs && !Elapsed(state.restFrom, state.restMs)))
-        return false;
-    return CheckReady(botAI, state) == Wait::None;
+    if (!state.done && (!state.restMs || Elapsed(state.restFrom, state.restMs)) &&
+        CheckReady(botAI, state) == Wait::None)
+        return true;
+    HoldAdvance(botAI, state);
+    return false;
 }
 
 // The walk on toward the boss as the tank would take it, a point every few yards, as far as the pack scan reaches
@@ -1084,6 +1144,15 @@ bool LeadAdvanceAction::isUseful()
         return bot->GetExactDist(&state.pullSpot) > SPOT_REACHED;
     }
 
+    // At a trash goal with nothing there to pull: the next one. Idle there, the tank was no leader any more and nothing
+    // ever looked for another goal: the run stood on one spot for 10 minutes (the Oculus, role check 2026-11-09)
+    if (state.hasGoal && bot->GetExactDist(&state.goal) <= GOAL_REACHED && !GoalIsBoss(state))
+    {
+        BlockGoal(state);
+        state.idle = false;
+        return false;
+    }
+
     // Nothing to pull and nowhere to go: the group follows its master until a pack turns up. A blocked goal with
     // another to head for instead is no reason to stop.
     state.idle = !state.hasGoal || (state.blockedGoals.empty() && !Elapsed(state.goalBlockedAt, GOAL_BLOCKED_MS)) ||
@@ -1113,7 +1182,9 @@ bool OffIsland(Player* bot, Position const& goal, G3D::Vector3& to)
             PathGenerator path(bot);
             path.SetUseStraightPath(true);
             path.CalculatePath(x, y, z, goal.GetPositionX(), goal.GetPositionY(), goal.GetPositionZ(), false);
-            if (path.GetPathType() & (PATHFIND_NOPATH | PATHFIND_INCOMPLETE))
+            // Nor a straight line through the air, which the search draws a player when either end is off the ground:
+            // the tank stepped off toward a mob in the Oculus's sky as if the way ran from there
+            if (path.GetPathType() & (PATHFIND_NOPATH | PATHFIND_INCOMPLETE | PATHFIND_NOT_USING_PATH))
                 continue;
             to = G3D::Vector3(x, y, z);
             return true;
@@ -1143,6 +1214,7 @@ bool LeadAdvanceAction::Execute(Event /*event*/)
     };
     if (!state.pack.IsEmpty() && state.hasSpot)
     {
+        state.advancing = false;
         Position const& to = state.stepping ? state.pullSpot : state.spot;
         if (MoveTo(bot->GetMapId(), to.GetPositionX(), to.GetPositionY(), to.GetPositionZ(), false, false, false,
                    false, MovementPriority::MOVEMENT_NORMAL, true))
@@ -1197,6 +1269,32 @@ bool LeadAdvanceAction::Execute(Event /*event*/)
         return false;
     }
 
+    // No nearer for a while, in a straight line or along the way: the advance goes nowhere. After the Anub'arak fight
+    // in Azjol-Nerub it went "OK" tick after tick for six minutes with the tank 222-224 yards from the boss, "0
+    // blocked" (role check, 2026-11-09). Set aside, the goal is tried again after a fight or once every way is blocked.
+    float const toGoal = bot->GetExactDist(&state.goal);
+    bool const restart = state.progressGoal != state.goalSpawn || Elapsed(state.advancedAt, ADVANCE_GAP_MS);
+    state.advancedAt = getMSTime();
+    if (restart || toGoal < state.bestToGoal - PROGRESS_STEP || length < state.bestWay - PROGRESS_STEP)
+    {
+        state.progressGoal = state.goalSpawn;
+        state.progressAt = getMSTime();
+        state.bestToGoal = toGoal;
+        state.bestWay = length;
+    }
+    else if (Elapsed(state.progressAt, NO_PROGRESS_MS))
+    {
+        LOG_INFO("playerbots",
+                 "{} gets no nearer to {:.1f} {:.1f} {:.1f} from {:.1f} {:.1f} {:.1f}: {:.0f} yd, way {:.0f} yd, path "
+                 "type {}",
+                 bot->GetName(), state.goal.GetPositionX(), state.goal.GetPositionY(), state.goal.GetPositionZ(),
+                 bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), toGoal, length,
+                 uint32(path.GetPathType()));
+        state.progressGoal = 0;
+        BlockGoal(state);
+        return false;
+    }
+
     // The stretch ends ADVANCE_STEP along the way, partway down a long straight leg between two corners
     float walked = 0.0f;
     G3D::Vector3 stop = points.back();
@@ -1224,14 +1322,35 @@ bool LeadAdvanceAction::Execute(Event /*event*/)
     // Partway down a leg the straight line between two corners can run under a rise or over a dip, where the move
     // found no ground and failed, tick after tick: the tank stood there for the rest of the run (Ragefire Chasm, Pit of
     // Saron). Onto the floor there, else to the corner itself; neither, and the way counts as blocked.
+    float const lineZ = stop.z;
     bot->UpdateAllowedPositionZ(stop.x, stop.y, stop.z);
-    if (MoveTo(bot->GetMapId(), stop.x, stop.y, stop.z, false, false, false, false, MovementPriority::MOVEMENT_NORMAL,
-               true))
+    // Far under the line is no dip but a drop. With no ground found at the goal's end the search draws a player a
+    // straight line to it; the floor under that line's stretch lay 250 yards down, and the tank walked off the Oculus's
+    // entrance ring toward a mob in the air and spent the run under the rings: 1 fight in 12 minutes (role check,
+    // 2026-11-09).
+    bool const throughAir = (path.GetPathType() & PATHFIND_NOT_USING_PATH) != 0;
+    bool const drop = lineZ - stop.z > MAX_DIP;
+    if (throughAir && drop)
+    {
+        BlockGoal(state);
+        return false;
+    }
+    // A floor that far under a leg on the ground is another level (a bridge or ledge the leg runs over): the walk to it
+    // is no stretch but the way round to that level. The corner is on the way for certain.
+    if (!drop && MoveTo(bot->GetMapId(), stop.x, stop.y, stop.z, false, false, false, false,
+                        MovementPriority::MOVEMENT_NORMAL, true))
+    {
+        state.advancing = true;
         return true;
-    if (bot->GetExactDist(corner.x, corner.y, corner.z) >= SPOT_REACHED &&
+    }
+    // A line through the air has no corner on the ground: its end is the goal itself
+    if (!throughAir && bot->GetExactDist(corner.x, corner.y, corner.z) >= SPOT_REACHED &&
         MoveTo(bot->GetMapId(), corner.x, corner.y, corner.z, false, false, false, false,
                MovementPriority::MOVEMENT_NORMAL, true))
+    {
+        state.advancing = true;
         return true;
+    }
     BlockGoal(state);
     return false;
 }

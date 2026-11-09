@@ -42,10 +42,11 @@ constexpr int WatcherPriority(Watcher watcher)
     }
 }
 
-// While watchers live no target swaps and no area damage: it pulls the packs still waiting by the boss.
-constexpr bool KrikthirAllows(bool bossUp, bool watcherUp, bool dpsAssist, bool aoe)
+// While watchers live and the boss still waits, no target swaps and no area damage: it pulls the packs waiting by him.
+// Once he is in the fight everything is pulled, and his swarms want area damage.
+constexpr bool KrikthirAllows(bool bossWaiting, bool watcherUp, bool dpsAssist, bool aoe)
 {
-    return !(bossUp && watcherUp && (dpsAssist || aoe));
+    return !(bossWaiting && watcherUp && (dpsAssist || aoe));
 }
 
 // Anub'arak

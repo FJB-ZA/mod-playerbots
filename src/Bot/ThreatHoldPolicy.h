@@ -123,6 +123,18 @@ inline bool WouldTurnIt(float tankThreat, float ownThreat, float hit)
     return tankThreat > 0.0f && ownThreat + hit >= tankThreat * TurnsAt;
 }
 
+// Mobs no tank keeps, whose target threat does not pick: holding back for the tank leaves them on whoever they chose.
+// Krik'thir's Anub'ar Skirmishers fixate a random player as they enter combat (SmartAI 'Fixate Trigger'), and the
+// damage dealers sent to kill them first stood waiting on a hold that never came: 21 deaths and 2 wipes at the
+// watchers (role check, Azjol-Nerub, 2026-11-09).
+constexpr uint32_t NPC_ANUBAR_SKIRMISHER = 28734;
+constexpr uint32_t NPC_ANUBAR_SKIRMISHER_H = 31606;
+
+constexpr bool TankKeeps(uint32_t entry)
+{
+    return entry != NPC_ANUBAR_SKIRMISHER && entry != NPC_ANUBAR_SKIRMISHER_H;
+}
+
 // Auto attack is no spell: past the hold nothing measured it, and a rogue's white swings carried it to 1.5-2 times the
 // tank's threat, mob after mob off the tank (solo-wow role check, Underbog, 2026-11-08). A melee damage dealer stops
 // swinging near the mark a mob turns at, and swings again once the tank has pulled clear: apart, so it does not flicker.
