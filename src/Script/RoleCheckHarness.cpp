@@ -621,6 +621,24 @@ void Status()
                                              bot->GetMap() == tank->GetMap() ? bot->GetExactDist(tank) : -1.0f,
                                              bot->IsAlive() ? "" : " dead", bot->isMoving() ? " moving" : "");
         lead += "; from the tank: " + where;
+        // A member far from the tank: where it is and what it does (heroic Azjol-Nerub: a mage alive and moving out to
+        // 568 yards after the first pull, the tank waiting on it for 90 seconds)
+        for (Player* bot : Bots())
+        {
+            PlayerbotAI* ai = GET_PLAYERBOT_AI(bot);
+            Engine* engine = ai ? ai->GetCurrentEngine() : nullptr;
+            if (bot == tank || bot->GetMap() != tank->GetMap() || bot->GetExactDist(tank) < 60.0f || !engine)
+                continue;
+            std::string trace = engine->GetLastAction();
+            if (trace.size() > 400)
+                trace = trace.substr(trace.size() - 400);
+            LOG_INFO("playerbots",
+                     "Rolecheck: {} far from the tank: at {:.1f} {:.1f} {:.1f} (tank z {:.1f}), alive {}, combat {}, "
+                     "motion {}, falling {}; its last actions: {}",
+                     bot->GetName(), bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), tank->GetPositionZ(),
+                     bot->IsAlive(), bot->IsInCombat(), uint32(bot->GetMotionMaster()->GetCurrentMovementGeneratorType()),
+                     bot->HasUnitMovementFlag(MOVEMENTFLAG_FALLING), trace);
+        }
     }
     RoleCheck::Tally const& t = run.tally;
     Say(Acore::StringFormat("{}s: tank {} moved {:.0f} yards; {} fights, {} kills, {} bosses, {} deaths", run.elapsed / 1000,
