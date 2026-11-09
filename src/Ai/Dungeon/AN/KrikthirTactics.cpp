@@ -111,7 +111,9 @@ float KrikthirMultiplier::GetValue(Action* action)
         Unit* unit = botAI->GetUnit(guid);
         if (!unit)
             continue;
-        boss = boss || unit->GetEntry() == NPC_KRIKTHIR;
+        // Only while he waits: in combat he has brought in the whole room and calls swarms of 50 and more Skittering
+        // Swarmers, which held to single targets killed the group at every try (role check, 2026-11-09)
+        boss = boss || (unit->GetEntry() == NPC_KRIKTHIR && !unit->IsInCombat());
         watcher = watcher || WatcherOf(unit->GetEntry()) != AzjolNerub::Watcher::None;
     }
 

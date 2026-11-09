@@ -20,6 +20,7 @@ enum TocC_IDs
     SPELL_DEFEND                    = 66482,
     SPELL_BOSS_DEFEND               = 62719,
     SPELL_MINIONS_DEFEND            = 64100,
+    SPELL_LANCE_EQUIPPED            = 62853,  // the lance's equip aura, which the joust mounts ask of a rider
 
     //Eadric
     SPELL_RADIANCE                  = 66935,

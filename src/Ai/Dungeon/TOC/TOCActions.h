@@ -95,6 +95,12 @@ public:
     bool Execute(Event event) override;
     bool EnterVehicle(Unit* vehicleBase, bool moveIfFar);
     static Unit* FindMount(PlayerbotAI* botAI);
+
+private:
+    void NoteAttempt(Unit* vehicleBase, float dist, std::string const& outcome);
+
+    ObjectGuid lastMount;
+    std::string lastOutcome;
 };
 
 class ToCEadricAction : public MovementAction

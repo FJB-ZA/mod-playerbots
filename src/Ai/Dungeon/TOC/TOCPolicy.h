@@ -122,13 +122,16 @@ struct JoustAction
     bool mountedJoust = false;
 };
 
-// On foot with a free mount, only getting ready may run; on a joust mount, only the joust moves it.
+// On foot with a free mount, only getting ready may move the bot, but it still heals, drinks and casts where it
+// stands: holding every action left bots whose remount stalled as statues while the champions, which charge and
+// thrust a player on foot for 8.5k and 8k, killed them (heals, a healing potion and shoot were all held).
+// On a joust mount, only the joust moves it.
 constexpr bool JoustAllows(JoustMoment fight, JoustAction action)
 {
     if (!fight.combat)
         return true;
     if (!fight.onVehicle)
-        return action.setup || !fight.spareMount;
+        return action.setup || !action.movement || !fight.spareMount;
     if (!fight.onJoustMount)
         return true;
     return !(action.movement && !action.mountedJoust);

@@ -637,6 +637,11 @@ std::vector<Creature*> FightMobs(std::vector<Player*> const& members)
             continue;
         for (Unit* attacker : member->getAttackers())
             add(attacker);
+        // A rider is fought through its vehicle: a joust's champions strike the mount, never the rider, so the
+        // Trial of the Champion waves showed "up to 0 mobs" and their kills went uncounted
+        if (Unit* vehicle = member->GetVehicleBase())
+            for (Unit* attacker : vehicle->getAttackers())
+                add(attacker);
         add(member->GetVictim());
     }
     return mobs;
@@ -650,6 +655,16 @@ void Sample(Player* gm, std::vector<Player*> const& bots)
     std::vector<Creature*> const mobs = FightMobs(members);
     Player* tank = MainTank();
     run.fightMobCount = std::max<uint32>(run.fightMobCount, mobs.size());
+
+    // Vehicle combat has no roles: riders cast their vehicle's spells and mobs strike the vehicles, so nobody holds a
+    // mob, heals or follows the tank's target. The Trial of the Champion joust had the tank "off the tank" on its own
+    // warhorse and dps focus at 0%; while a bot rides, the sample is left out, not failed.
+    if (std::any_of(bots.begin(), bots.end(), [](Player* bot) { return bot->IsAlive() && bot->GetVehicle(); }))
+        return;
+    // Nor while the mobs ride: a bot unhorsed in the joust is on foot against mounted champions, its role's place
+    // nowhere to be had until it is back on a mount (Trial of the Champion, "healer back 0%" on those samples)
+    if (std::any_of(mobs.begin(), mobs.end(), [](Creature* mob) { return mob->GetVehicle() || mob->GetVehicleKit(); }))
+        return;
 
     // With the tank dead nobody holds the mobs: that shows in the deaths, not here
     for (Creature* mob : tank ? mobs : std::vector<Creature*>())
@@ -914,7 +929,10 @@ void CountFight()
         return;  // the player's pull, as asked
     // An event's wave (Violet Hold's portals, the Black Morass's rifts): the mobs came at the group, nobody pulled them. Only a
     // fight a member opened with a hit of its own is a pull to judge.
-    if (run.eventStarted && run.fightOpenerHow.find(" hit ") == std::string::npos)
+    // A hit on a wave mob already sent at the group is no pull either: Trial of the Champion's Argent trash ran at the
+    // tank as the herald released it, a rogue struck one on its way, and the row failed tank pulls at 0%.
+    if (run.eventStarted && (run.fightOpenerHow.find(" hit ") == std::string::npos ||
+                             run.fightOpenerHow.find("already fighting") != std::string::npos))
         return;
     // Nor any fight where the group is held for the waves: a mage's hit on a Chronomancer already at Medivh was the run's
     // one pull, and failed it (The Black Morass)
@@ -2035,15 +2053,19 @@ public:
         if (!run.inFight && opener.IsEmpty() && (striker || struck))
         {
             opener = striker ? striker->GetGUID() : struck->GetGUID();
-            openerHow = striker ? Acore::StringFormat("{} hit {}", attacker == striker ? "it" : attacker->GetName(),
-                                                      victim->GetName())
+            // A mob already fighting before the hit was on its way to the group: CountFight takes no pull from it
+            openerHow = striker ? Acore::StringFormat("{} hit {}{}", attacker == striker ? "it" : attacker->GetName(),
+                                                      victim->GetName(), victim->IsInCombat() ? ", already fighting" : "")
                                 : Acore::StringFormat("struck by {}", attacker->GetName());
         }
         if (struck && attacker->ToCreature())
             fightStruck = true;
-        // Hurt: under the health a bot healer heals at, not a scratch it rightly leaves alone
-        if (struck && (victim->GetHealth() <= damage || float(victim->GetHealth() - damage) * 100.0f <
-                                                            float(victim->GetMaxHealth()) * RoleCheck::HurtHealthPct))
+        // Hurt: under the health a bot healer heals at, not a scratch it rightly leaves alone. A member's vehicle is
+        // nobody a healer can heal: each joust wave logged "hurt Eleria (alive at 100%)" for her warhorse's hits.
+        // Nor a mounted champion's hit on a member it unhorsed: the healer rides nothing that heals
+        if (struck && !victim->GetVehicleKit() && !attacker->GetVehicle() && !attacker->GetVehicleKit() &&
+            (victim->GetHealth() <= damage ||
+             float(victim->GetHealth() - damage) * 100.0f < float(victim->GetMaxHealth()) * RoleCheck::HurtHealthPct))
         {
             if (!fightHurt)
                 fightHurtWho = struck->GetGUID();
