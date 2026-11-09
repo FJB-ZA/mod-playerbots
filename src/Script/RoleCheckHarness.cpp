@@ -102,7 +102,7 @@ uint32 DungeonLevel(uint32 mapId)
 
 // The level asked for, or else: a classic dungeon's own level, or the cap of the map's own expansion. Onyxia's Lair
 // and Naxxramas are classic maps that Wrath made level 80 raids, so their runs ask for 80
-Era EraOf(MapEntry const* map, uint32 level)
+Era EraOfLevel(MapEntry const* map, uint32 level)
 {
     if (!level && map->IsNonRaidDungeon() && map->Expansion() == EXPANSION_CLASSIC)
         level = DungeonLevel(map->MapID);
@@ -118,6 +118,45 @@ Era EraOf(MapEntry const* map, uint32 level)
     if (level <= 70)
         return Era{70, 115, false};  // Karazhan
     return Era{80, 200, map->Expansion() == EXPANSION_WRATH_OF_THE_LICH_KING};  // fresh heroic gear
+}
+
+// A raid's own gear: what a group coming in would wear, the tier before it. All of TBC at Karazhan's 115 left The Eye
+// (8 wipes, 0 kills) and Sunwell measuring the gear and not the roles
+uint32 RaidItemLevel(uint32 mapId)
+{
+    switch (mapId)
+    {
+        case 565:  // Gruul's Lair
+        case 544:  // Magtheridon's Lair
+        case 568:  // Zul'Aman
+            return 120;
+        case 548:  // Serpentshrine Cavern
+        case 550:  // Tempest Keep: The Eye
+            return 128;
+        case 534:  // Hyjal Summit
+        case 564:  // Black Temple
+            return 138;
+        case 580:  // Sunwell Plateau
+            return 146;
+        case 603:  // Ulduar
+            return 213;
+        case 649:  // Trial of the Crusader
+            return 226;
+        case 631:  // Icecrown Citadel
+            return 245;
+        case 724:  // The Ruby Sanctum
+            return 258;
+        default:
+            return 0;
+    }
+}
+
+Era EraOf(MapEntry const* map, uint32 level)
+{
+    Era era = EraOfLevel(map, level);
+    if (uint32 const raidLevel = map->IsRaid() && era.level >= 70 ? RaidItemLevel(map->MapID) : 0)
+        era.gearItemLevel = raidLevel;
+    return era;
 }
 constexpr uint32 LoginTimeoutMs = 180000;  // just after a start the world thread is slow to log bots in
 constexpr uint32 SettleMs = 15000;      // after the teleport: everyone in, buffs up
@@ -136,7 +175,11 @@ constexpr uint32 GatherMs = 12000;      // raid: the group gathers behind the GM
 constexpr float GatherReach = 40.0f;
 constexpr uint32 GatherMaxMs = 60000;
 constexpr float GatherRaid = 25.0f;  // raid: every bot this near the GM, and out of a fight, before it pulls
-constexpr float PullFrom = 32.0f;       // raid: where the GM waits, short of the mob's aggro
+// raid: where the GM waits, short of the aggro of a mob and of the group spread round it (at 32 yards a healer
+// walked into The Eye's pack)
+constexpr float PullFrom = 40.0f;
+constexpr float PackClear = 25.0f;     // raid: that far from any other pack, where there is such a spot
+constexpr float PackOf = 12.0f;        // raid: mobs this near the one pulled are its pack
 constexpr float TrashReach = 150.0f;
 constexpr uint32 WalkMs = 3000;         // raid: after going on to mobs further in, before looking about
 
@@ -984,6 +1027,11 @@ void ReviveDead(Player* gm, std::vector<Player*> const& bots)
         run.eventDone.clear();
         run.eventBeside.clear();
         run.eventVisited.clear();
+        // ...and so does the pull: kept, the GM pulled its last mob from the entrance, 116 yards off, and the pack came
+        // through the halls to a group that had just got up (Sunwell)
+        run.pullTarget.Clear();
+        run.gathering = 0;
+        run.broughtOver = false;
         gm->TeleportTo(run.entrance);
         for (Player* bot : bots)
         {
@@ -1277,7 +1325,11 @@ void Follow(Player* gm)
 
 bool Pullable(Creature const* mob, Player* gm)
 {
-    return mob->IsAlive() && !mob->IsInCombat() && mob->IsHostileTo(gm) && !mob->IsTotem() &&
+    // Hostile to the raid, judged by its tank: to a GM in GM mode every mob is neutral, so between pulls none was
+    // pullable and Karazhan ended at its first fight
+    Player* tank = MainTank();
+    Unit const* judge = tank ? static_cast<Unit const*>(tank) : gm;
+    return mob->IsAlive() && !mob->IsInCombat() && mob->IsHostileTo(judge) && !mob->IsTotem() &&
            !mob->GetCharmerOrOwnerGUID().IsPlayer() &&
            !mob->HasUnitFlag(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE) && !mob->IsImmuneToPC() &&
            mob->GetCreatureTemplate()->type != CREATURE_TYPE_CRITTER;
@@ -1338,22 +1390,40 @@ std::vector<RaidSpawn> const& RaidSpawns(uint32 mapId)
 }
 
 // Where the GM stands to pull a mob out of reach: PullFrom yards off it on open ground it can see, else nearer
-bool PullSpot(Map* map, Position const& mob, float facing, Position& spot)
+bool PullSpot(Map* map, Position const& mob, float facing, Position& spot, Creature* target = nullptr,
+              Player* gm = nullptr)
 {
-    for (float const reach : {PullFrom, PullFrom / 2.0f, 8.0f})
-        for (int turn = 0; turn < 8; ++turn)
-        {
-            float const angle = facing + float(turn) * float(M_PI) / 4.0f;
-            float const x = mob.GetPositionX() + reach * std::cos(angle);
-            float const y = mob.GetPositionY() + reach * std::sin(angle);
-            float const z = map->GetHeight(PHASEMASK_NORMAL, x, y, mob.GetPositionZ() + 5.0f);
-            if (z <= INVALID_HEIGHT || std::fabs(z - mob.GetPositionZ()) > 6.0f ||
-                !map->isInLineOfSight(x, y, z + 2.0f, mob.GetPositionX(), mob.GetPositionY(), mob.GetPositionZ() + 2.0f,
-                                      PHASEMASK_NORMAL, LINEOFSIGHT_ALL_CHECKS, VMAP::ModelIgnoreFlags::Nothing))
-                continue;
-            spot.Relocate(x, y, z + 0.5f, angle + float(M_PI));
-            return true;
-        }
+    // Clear of the other packs about, as a raid leader picks where the raid waits: at the first spot found, the raid
+    // gathered beside the next pack, and Karazhan's first pulls were 13, 7 and 6 mobs
+    std::vector<Position> others;
+    if (target && gm)
+    {
+        std::list<Creature*> near;
+        Acore::AnyUnitInObjectRangeCheck check(target, PullFrom + PackClear);
+        Acore::CreatureListSearcher<Acore::AnyUnitInObjectRangeCheck> searcher(target, near, check);
+        Cell::VisitObjects(target, searcher, PullFrom + PackClear);
+        for (Creature* other : near)
+            if (other != target && Pullable(other, gm) && other->GetExactDist(target) > PackOf)
+                others.push_back(other->GetPosition());
+    }
+    for (bool const clear : {true, false})
+        for (float const reach : {PullFrom, PullFrom / 2.0f, 8.0f})
+            for (int turn = 0; turn < 8; ++turn)
+            {
+                float const angle = facing + float(turn) * float(M_PI) / 4.0f;
+                float const x = mob.GetPositionX() + reach * std::cos(angle);
+                float const y = mob.GetPositionY() + reach * std::sin(angle);
+                float const z = map->GetHeight(PHASEMASK_NORMAL, x, y, mob.GetPositionZ() + 5.0f);
+                if (z <= INVALID_HEIGHT || std::fabs(z - mob.GetPositionZ()) > 6.0f ||
+                    !map->isInLineOfSight(x, y, z + 2.0f, mob.GetPositionX(), mob.GetPositionY(), mob.GetPositionZ() + 2.0f,
+                                          PHASEMASK_NORMAL, LINEOFSIGHT_ALL_CHECKS, VMAP::ModelIgnoreFlags::Nothing))
+                    continue;
+                if (clear && std::any_of(others.begin(), others.end(), [x, y](Position const& other)
+                                         { return other.GetExactDist2d(x, y) < PackClear; }))
+                    continue;
+                spot.Relocate(x, y, z + 0.5f, angle + float(M_PI));
+                return true;
+            }
     return false;
 }
 
@@ -1427,8 +1497,12 @@ void RaidPull(Player* gm, std::vector<Player*> const& bots, uint32 diff)
         return;
     }
     Creature* mob = run.pullTarget.IsEmpty() ? nullptr : gm->GetMap()->GetCreature(run.pullTarget);
-    if (!mob || !mob->IsAlive() || mob->IsInCombat())
+    if (!mob || !mob->IsAlive() || mob->IsInCombat() || gm->GetExactDist(mob) > PullFrom + 10.0f)
     {
+        // Unseen between pulls, as a raid leader keeps clear of the packs it is not pulling: seen all run, the GM drew
+        // every pack it walked by or waited near, 9-12 mobs a fight and three wipes in Karazhan's first rooms
+        if (!gm->IsGameMaster() && !gm->IsInCombat())
+            gm->SetGameMaster(true);
         mob = NextTrash(gm, false);
         if (!mob && WithStarter(gm, bots))
             return;
@@ -1459,7 +1533,7 @@ void RaidPull(Player* gm, std::vector<Player*> const& bots, uint32 diff)
         // fall), and the bots brought over fell and walked back 175 yards below it, minute after minute (Naxxramas)
         Position spot;
         run.tried.insert(mob->GetGUID());
-        if (!PullSpot(gm->GetMap(), mob->GetPosition(), mob->GetAngle(gm), spot))
+        if (!PullSpot(gm->GetMap(), mob->GetPosition(), mob->GetAngle(gm), spot, mob, gm))
             return;
         run.pullTarget = mob->GetGUID();
         run.gathering = 0;
@@ -1505,6 +1579,7 @@ void RaidPull(Player* gm, std::vector<Player*> const& bots, uint32 diff)
         openerHow = "the pull";
     }
     run.tried.insert(mob->GetGUID());
+    gm->SetGameMaster(false);  // the mob must see the GM to come for it
     mob->AI()->AttackStart(gm);
     mob->CallAssistance();
     run.pullTarget.Clear();
@@ -1741,8 +1816,6 @@ void Tick(uint32 diff)
                 return;
             }
             Describe();
-            if (run.raid)
-                gm->SetGameMaster(false);  // the mobs must see the GM to come for it
             run.phase = Phase::Observe;
             run.elapsed = 0;
             return;
@@ -1856,10 +1929,10 @@ public:
             return false;
         }
         // GM mode on to get there: the progression gate keeps a player without the era behind it out of Northrend.
-        // In a dungeon it stays on, so no mob fights the GM; in a raid it goes off once everyone is in, for the pulls
+        // It stays on, so no mob fights the GM; in a raid it goes off only for each pull
         if (!gm->IsGameMaster())
         {
-            handler->SendErrorMessage("A role check needs GM mode on (.gm on); a raid turns it off once inside.",
+            handler->SendErrorMessage("A role check needs GM mode on (.gm on); a raid turns it off for each pull.",
                                       false);
             return false;
         }
