@@ -181,6 +181,7 @@ constexpr float PullFrom = 40.0f;
 constexpr float PackClear = 25.0f;     // raid: that far from any other pack, where there is such a spot
 constexpr float PackOf = 12.0f;        // raid: mobs this near the one pulled are its pack
 constexpr float TrashReach = 150.0f;
+constexpr float EventReach = 400.0f;  // an event dungeon's mobs, once nothing is in TrashReach
 constexpr uint32 WalkMs = 3000;         // raid: after going on to mobs further in, before looking about
 
 enum class Phase : uint8 { Idle, Login, Settle, Observe };
@@ -514,6 +515,8 @@ void Describe()
     }
 }
 
+std::string NearestHostiles(Player* gm);
+
 void Status()
 {
     Player* tank = MainTank();
@@ -544,6 +547,10 @@ void Status()
                 target ? target->GetName() : "-", target ? gm->GetExactDist(target) : -1.0f, run.gathering / 1000,
                 run.inFight, run.calm / 1000, fighting, gm && gm->IsInCombat(), run.eventWait / 1000,
                 run.walkWait / 1000, run.tried.size(), run.walkedTo.size());
+            // Nothing to pull: the nearest hostiles about and why each is passed over (Culling of Stratholme and the
+            // Black Morass stood minutes with their waves and rifts out in the streets and nothing pulled)
+            if (gm && !target && !run.inFight)
+                lead += " (nothing pullable: " + NearestHostiles(gm) + ")";
         }
         if (ai && !run.raid)
         {
@@ -1095,6 +1102,9 @@ struct EventGather
 
 constexpr EventGather EventGathers[] = {
     {668, 5309.46f, 2006.48f, 711.60f, 2},  // Halls of Reflection: the throne room, until Falric and Marwyn are down
+    // The Black Morass: before Medivh, where the rifts' mobs and bosses walk to, until Aeonus is down. Sent after the
+    // wildlife, the group left him to the portals' mobs
+    {269, -2033.2f, 7120.7f, 23.2f, 3},
 };
 
 // Where a starter stands, from the spawn data: a far one's grid is not loaded until someone goes near it
@@ -1337,17 +1347,56 @@ bool Pullable(Creature const* mob, Player* gm)
 
 bool IsBoss(Creature const* mob) { return mob->IsDungeonBoss() || mob->isWorldBoss(); }
 
-// Raid: the nearest mob the GM can pull, not already fighting; trash, or a boss once no trash is left about
-Creature* NextTrash(Player* gm, bool bosses)
+// The three nearest mobs hostile to the group within TrashReach of the GM, and why each is not pulled
+std::string NearestHostiles(Player* gm)
 {
+    Player* tank = MainTank();
+    Unit const* judge = tank ? static_cast<Unit const*>(tank) : gm;
     std::list<Creature*> near;
     Acore::AnyUnitInObjectRangeCheck check(gm, TrashReach);
     Acore::CreatureListSearcher<Acore::AnyUnitInObjectRangeCheck> searcher(gm, near, check);
     Cell::VisitObjects(gm, searcher, TrashReach);
+    std::vector<Creature*> hostiles;
+    for (Creature* mob : near)
+        if (mob->IsAlive() && mob->IsHostileTo(judge) && mob->GetCreatureTemplate()->type != CREATURE_TYPE_CRITTER)
+            hostiles.push_back(mob);
+    std::sort(hostiles.begin(), hostiles.end(),
+              [gm](Creature* a, Creature* b) { return gm->GetExactDist(a) < gm->GetExactDist(b); });
+    std::string out;
+    for (size_t i = 0; i < hostiles.size() && i < 3; ++i)
+    {
+        Creature* mob = hostiles[i];
+        std::string why;
+        if (mob->IsInCombat())
+            why += " in combat";
+        if (mob->HasUnitFlag(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE))
+            why += " not attackable";
+        if (mob->IsImmuneToPC())
+            why += " immune to players";
+        if (mob->GetCharmerOrOwnerGUID().IsPlayer())
+            why += " a player's";
+        if (run.tried.count(mob->GetGUID()))
+            why += " tried";
+        if (IsBoss(mob))
+            why += " boss";
+        out += Acore::StringFormat("{}{} {} at {:.0f} yd{}", out.empty() ? "" : ", ", mob->GetName(), mob->GetEntry(),
+                                   gm->GetExactDist(mob), why.empty() ? " pullable" : why);
+    }
+    return out.empty() ? "no hostiles in reach" : out;
+}
+
+// Raid: the nearest mob the GM can pull, not already fighting; trash, or a boss once no trash is left about
+Creature* NextTrash(Player* gm, bool bosses, float reach = TrashReach, bool summoned = false)
+{
+    std::list<Creature*> near;
+    Acore::AnyUnitInObjectRangeCheck check(gm, reach);
+    Acore::CreatureListSearcher<Acore::AnyUnitInObjectRangeCheck> searcher(gm, near, check);
+    Cell::VisitObjects(gm, searcher, reach);
     Creature* best = nullptr;
     for (Creature* mob : near)
     {
-        if (!Pullable(mob, gm) || IsBoss(mob) != bosses || run.tried.count(mob->GetGUID()))
+        if (!Pullable(mob, gm) || IsBoss(mob) != bosses || run.tried.count(mob->GetGUID()) ||
+            (summoned && !mob->IsSummon()))
             continue;
         if (!best || gm->GetExactDist(mob) < gm->GetExactDist(best))
             best = mob;
@@ -1482,6 +1531,10 @@ bool WithStarter(Player* gm, std::vector<Player*> const& bots)
         return false;
     LOG_INFO("playerbots", "Rolecheck: with {} at {:.0f} yd", starter->GetName(), gm->GetExactDist(starter));
     run.walkWait = WalkMs;
+    // Followed to here: again only once it moves on. Left where it was first seen, the group was taken back to
+    // Arthas, who waits at his waypoint 11 for the waves to be killed, from every wave it went out to (Culling of
+    // Stratholme)
+    run.lastStarterAt = starter->GetPosition();
     gm->NearTeleportTo(x, y, z + 0.5f, angle + float(M_PI));
     for (Player* bot : bots)
         if (bot->IsAlive() && bot->GetMapId() == gm->GetMapId())
@@ -1511,6 +1564,12 @@ void RaidPull(Player* gm, std::vector<Player*> const& bots, uint32 diff)
         // asked, and its Nerubians under the arena floor took the whole run to walk on to)
         if (!mob && StartEvent(gm, bots, diff))
             return;
+        // An event's mobs out in the streets, further than any pack in reach: Culling of Stratholme puts each wave at
+        // its own spot, up to 250 yards from the last, and the group goes to it as players follow the map's marker.
+        // Only the event's own, summoned mobs: the swamp's wildlife out to 400 yards drew the group away from Medivh as
+        // soon as he began (The Black Morass)
+        if (!mob && !run.raid && run.eventStarted)
+            mob = NextTrash(gm, false, EventReach, true);
         if (!mob && WalkOn(gm, bots))
             return;
         if (!mob)
