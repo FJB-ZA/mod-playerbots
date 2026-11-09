@@ -49,6 +49,7 @@
 #include "GridNotifiersImpl.h"
 #include "Group.h"
 #include "InstanceSaveMgr.h"
+#include "InstanceScript.h"
 #include "LivingWorldMgr.h"
 #include "Log.h"
 #include "Map.h"
@@ -56,6 +57,7 @@
 #include "MapMgr.h"
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
+#include "PathGenerator.h"
 #include "PlayerbotAI.h"
 #include "PlayerbotAIConfig.h"
 #include "PlayerbotFactory.h"
@@ -170,6 +172,10 @@ constexpr uint32 FollowMs = 2000;       // dungeon: how often the GM looks where
 // player who is further away
 constexpr float CatchUpAt = 12.0f;
 constexpr uint32 GatherMs = 12000;      // raid: the group gathers behind the GM before it pulls
+// An event's own mobs, which come at the group on their own clock: pulled one at a time with 12 seconds' gathering
+// each, the rifts' mobs drained Medivh's shield in under 4 minutes (The Black Morass)
+constexpr uint32 EventGatherMs = 3000;
+constexpr float WaveReach = 20.0f;  // an event's mobs this near the one pulled come with it
 // raid: the GM pulls only with the tank this near, as a player waits for the tank; past GatherMaxMs the group is brought
 // over. Pulling after GatherMs whatever, the GM held Naxxramas trash 110-180 yards from the tank, a quarter of the samples
 constexpr float GatherReach = 40.0f;
@@ -251,6 +257,7 @@ struct Run
     ObjectGuid pullTarget;
     uint32 gathering = 0;
     bool broughtOver = false;  // the group was brought to the GM for this pull: pull on with the tank near
+    bool eventPull = false;    // the mob pulled next is one of an event's own
     std::set<ObjectGuid::LowType> walkedTo;  // spawns the GM went on to
     uint32 walkWait = 0;  // after going on: the teleport lands at the next session update, and the grid loads
     std::set<ObjectGuid> tried;  // mobs pulled once: one that came back without a fight (no way to the GM) is let be
@@ -533,10 +540,16 @@ void Status()
             // stood 11 minutes after Arthas's step with no wave)
             Creature* starter = gm && run.lastStarter.IsCreature() ? gm->GetMap()->GetCreature(run.lastStarter) : nullptr;
             if (starter)
-                lead += Acore::StringFormat(" (starter {} at {:.0f} yd, {:.0f} {:.0f} {:.0f}, moving {}, gossip {}, in combat {})",
+                lead += Acore::StringFormat(" (starter {} at {:.0f} yd, {:.0f} {:.0f} {:.0f}, moving {}, gossip {}, in combat {}, "
+                                            "casting {})",
                                             starter->GetName(), gm->GetExactDist(starter), starter->GetPositionX(),
                                             starter->GetPositionY(), starter->GetPositionZ(), starter->isMoving(),
-                                            starter->HasNpcFlag(UNIT_NPC_FLAG_GOSSIP), starter->IsInCombat());
+                                            starter->HasNpcFlag(UNIT_NPC_FLAG_GOSSIP), starter->IsInCombat(),
+                                            starter->IsNonMeleeSpellCast(false));
+            // Medivh's shield, which the event mobs drain: at 0 he dies and the event starts over (The Black Morass)
+            if (gm && run.mapId == 269)
+                if (InstanceScript* instance = gm->GetInstanceScript())
+                    lead += Acore::StringFormat(" (shield {}%, rift {})", instance->GetData(13), instance->GetData(14));
             Creature* target = gm && !run.pullTarget.IsEmpty() ? gm->GetMap()->GetCreature(run.pullTarget) : nullptr;
             uint32 fighting = 0;
             for (Player* bot : Bots())
@@ -569,6 +582,17 @@ void Status()
                 state.hasSpot ? tank->GetExactDist(&state.spot) : 0.0f, state.hasPullSpot, state.stepping, state.pulled,
                 state.failedPulls, state.skipped.size(), GoalName(state),
                 state.hasGoal ? tank->GetExactDist(&state.goal) : -1.0f, state.blockedGoals.size());
+            // Every goal blocked from the door: where the tank stands and what the path search makes of the way on
+            // (Ahn'kahet: 119 goals blocked in 30 seconds, nobody moved a yard)
+            if (state.hasGoal && !state.blockedGoals.empty() && !tank->IsInCombat())
+            {
+                PathGenerator path(tank);
+                path.SetUseStraightPath(true);
+                path.CalculatePath(state.goal.GetPositionX(), state.goal.GetPositionY(), state.goal.GetPositionZ(), false);
+                lead += Acore::StringFormat(" (tank at {:.1f} {:.1f} {:.1f}, path type {}, {} points)", tank->GetPositionX(),
+                                            tank->GetPositionY(), tank->GetPositionZ(), uint32(path.GetPathType()),
+                                            path.GetPath().size());
+            }
             // A tank standing still out of a fight: what its engine last tried, to see what holds it
             if (!tank->IsInCombat() && !tank->isMoving())
                 if (Engine* engine = ai->GetCurrentEngine())
@@ -878,6 +902,9 @@ void StartFight(std::vector<Player*> const& members)
     }
 }
 
+struct EventGather;
+EventGather const* HeldAt();
+
 // Who opened the fight, once it proved one
 void CountFight()
 {
@@ -888,6 +915,10 @@ void CountFight()
     // An event's wave (Violet Hold's portals, the Black Morass's rifts): the mobs came at the group, nobody pulled them. Only a
     // fight a member opened with a hit of its own is a pull to judge.
     if (run.eventStarted && run.fightOpenerHow.find(" hit ") == std::string::npos)
+        return;
+    // Nor any fight where the group is held for the waves: a mage's hit on a Chronomancer already at Medivh was the run's
+    // one pull, and failed it (The Black Morass)
+    if (HeldAt())
         return;
     ++run.tally.pulls;
     Player* tank = MainTank();
@@ -1107,6 +1138,20 @@ constexpr EventGather EventGathers[] = {
     {269, -2033.2f, 7120.7f, 23.2f, 3},
 };
 
+// The spot a started event keeps the group at while its waves last, and how far out it pulls from there: picking the
+// nearest wildlife pull after pull, the group drifted 400 yards from Medivh (The Black Morass)
+constexpr float HeldReach = 45.0f;
+
+EventGather const* HeldAt()
+{
+    if (!run.eventStarted)
+        return nullptr;
+    for (EventGather const& spot : EventGathers)
+        if (spot.mapId == run.mapId && run.tally.bosses < spot.untilBosses)
+            return &spot;
+    return nullptr;
+}
+
 // Where a starter stands, from the spawn data: a far one's grid is not loaded until someone goes near it
 bool StarterSpawn(uint32 mapId, uint32 entry, bool object, Position& at)
 {
@@ -1137,6 +1182,8 @@ void BringGroup(Player* gm, std::vector<Player*> const& bots)
 }
 
 // The next event step the GM can take, taken; false when the map has none ready
+Creature* NextTrash(Player* gm, bool bosses, float reach = TrashReach, bool summoned = false);
+
 bool StartEvent(Player* gm, std::vector<Player*> const& bots, uint32 diff)
 {
     if (run.eventWait)
@@ -1308,7 +1355,10 @@ bool StartEvent(Player* gm, std::vector<Player*> const& bots, uint32 diff)
     if (run.eventStarted)
         for (EventGather const& spot : EventGathers)
             if (spot.mapId == run.mapId && run.tally.bosses < spot.untilBosses &&
-                gm->GetExactDist2d(spot.x, spot.y) > 20.0f)
+                gm->GetExactDist2d(spot.x, spot.y) > 20.0f &&
+                // Not while an event mob is left out there: the Rift Keepers stood at their rifts, 95-138 yards out, as
+                // the group waited at Medivh for their mobs and his shield ran out (The Black Morass)
+                !NextTrash(gm, false, EventReach, true))
             {
                 gm->NearTeleportTo(spot.x, spot.y, spot.z, gm->GetOrientation());
                 run.eventFrom = gm->GetPosition();
@@ -1386,19 +1436,24 @@ std::string NearestHostiles(Player* gm)
 }
 
 // Raid: the nearest mob the GM can pull, not already fighting; trash, or a boss once no trash is left about
-Creature* NextTrash(Player* gm, bool bosses, float reach = TrashReach, bool summoned = false)
+Creature* NextTrash(Player* gm, bool bosses, float reach, bool summoned)
 {
     std::list<Creature*> near;
     Acore::AnyUnitInObjectRangeCheck check(gm, reach);
     Acore::CreatureListSearcher<Acore::AnyUnitInObjectRangeCheck> searcher(gm, near, check);
     Cell::VisitObjects(gm, searcher, reach);
     Creature* best = nullptr;
+    EventGather const* held = HeldAt();
     for (Creature* mob : near)
     {
         if (!Pullable(mob, gm) || IsBoss(mob) != bosses || run.tried.count(mob->GetGUID()) ||
-            (summoned && !mob->IsSummon()))
+            (summoned && !mob->IsSummon()) ||
+            (held && !summoned && mob->GetExactDist2d(held->x, held->y) > HeldReach))
             continue;
-        if (!best || gm->GetExactDist(mob) < gm->GetExactDist(best))
+        // Held: the one nearest where the group is held first, the mobs at Medivh before the Rift Keepers out at their
+        // rifts. Nearest the GM first, the group fought 40-50 yards out as the mobs at Medivh drained his shield
+        if (!best || (held ? mob->GetExactDist2d(held->x, held->y) < best->GetExactDist2d(held->x, held->y)
+                           : gm->GetExactDist(mob) < gm->GetExactDist(best)))
             best = mob;
     }
     return best;
@@ -1542,6 +1597,59 @@ bool WithStarter(Player* gm, std::vector<Player*> const& bots)
     return true;
 }
 
+// Held where an event's waves come: the group stays there and the tank takes each wave as it comes, the nearest the spot
+// first, as a group at Medivh does. Pulled by the GM out where each mob was seen, the group went back and forth between
+// the rifts and Medivh as the mobs walked on, nothing died for 100 seconds and his shield ran out (The Black Morass).
+void HeldPull(Player* gm, std::vector<Player*> const& bots, EventGather const& held, uint32 diff)
+{
+    if (std::any_of(bots.begin(), bots.end(), [](Player* bot) { return bot->IsAlive() && bot->IsInCombat(); }))
+    {
+        run.gathering = 0;
+        return;
+    }
+    Player* tank = MainTank();
+    if (!tank || !tank->IsAlive() || tank->GetMap() != gm->GetMap())
+        return;
+    // Back to the spot after a fight that drew the group off it
+    if (tank->GetExactDist2d(held.x, held.y) > 30.0f)
+    {
+        gm->NearTeleportTo(held.x, held.y, held.z, gm->GetOrientation());
+        for (Player* bot : bots)
+            if (bot->IsAlive() && bot->GetMapId() == gm->GetMapId())
+                bot->NearTeleportTo(held.x, held.y, held.z, gm->GetOrientation());
+        run.gathering = 0;
+        return;
+    }
+    run.gathering += diff;
+    if (run.gathering < EventGatherMs)
+        return;
+    Creature* mob = NextTrash(gm, false, EventReach, true);
+    if (!mob)
+        mob = NextTrash(gm, true, EventReach, true);
+    if (!mob)
+        mob = NextTrash(gm, false);
+    if (!mob)
+        return;
+    {
+        std::lock_guard<std::mutex> guard(hookLock);
+        opener = tank->GetGUID();
+        openerHow = "the tank's pull";
+    }
+    std::list<Creature*> wave;
+    Acore::AnyUnitInObjectRangeCheck check(mob, WaveReach);
+    Acore::CreatureListSearcher<Acore::AnyUnitInObjectRangeCheck> searcher(mob, wave, check);
+    Cell::VisitObjects(mob, searcher, WaveReach);
+    wave.remove(mob);
+    wave.push_front(mob);
+    for (Creature* one : wave)
+        if (one == mob || (one->IsSummon() && Pullable(one, gm)))
+        {
+            run.tried.insert(one->GetGUID());
+            one->AI()->AttackStart(tank);
+        }
+    run.gathering = 0;
+}
+
 void RaidPull(Player* gm, std::vector<Player*> const& bots, uint32 diff)
 {
     if (run.walkWait)
@@ -1556,7 +1664,9 @@ void RaidPull(Player* gm, std::vector<Player*> const& bots, uint32 diff)
         // every pack it walked by or waited near, 9-12 mobs a fight and three wipes in Karazhan's first rooms
         if (!gm->IsGameMaster() && !gm->IsInCombat())
             gm->SetGameMaster(true);
-        mob = NextTrash(gm, false);
+        // Held where an event's waves come, the tank takes them there
+        EventGather const* held = HeldAt();
+        mob = held ? nullptr : NextTrash(gm, false);
         if (!mob && WithStarter(gm, bots))
             return;
         // The trash in reach done: an event raid's boss comes by its starter, before any pull of it or any walk on to spawns
@@ -1564,6 +1674,11 @@ void RaidPull(Player* gm, std::vector<Player*> const& bots, uint32 diff)
         // asked, and its Nerubians under the arena floor took the whole run to walk on to)
         if (!mob && StartEvent(gm, bots, diff))
             return;
+        if (!mob && held)
+        {
+            HeldPull(gm, bots, *held, diff);
+            return;
+        }
         // An event's mobs out in the streets, further than any pack in reach: Culling of Stratholme puts each wave at
         // its own spot, up to 250 yards from the last, and the group goes to it as players follow the map's marker.
         // Only the event's own, summoned mobs: the swamp's wildlife out to 400 yards drew the group away from Medivh as
@@ -1597,11 +1712,12 @@ void RaidPull(Player* gm, std::vector<Player*> const& bots, uint32 diff)
         run.pullTarget = mob->GetGUID();
         run.gathering = 0;
         run.broughtOver = false;
+        run.eventPull = run.eventStarted && mob->IsSummon();
         gm->NearTeleportTo(spot.GetPositionX(), spot.GetPositionY(), spot.GetPositionZ(), spot.GetOrientation());
         return;
     }
     run.gathering += diff;
-    if (run.gathering < GatherMs)
+    if (run.gathering < (run.eventPull ? EventGatherMs : GatherMs))
         return;
     // Not while any bot still fights
     if (std::any_of(bots.begin(), bots.end(), [](Player* bot) { return bot->IsAlive() && bot->IsInCombat(); }))
@@ -1641,6 +1757,20 @@ void RaidPull(Player* gm, std::vector<Player*> const& bots, uint32 diff)
     gm->SetGameMaster(false);  // the mob must see the GM to come for it
     mob->AI()->AttackStart(gm);
     mob->CallAssistance();
+    // The wave it came with
+    if (run.eventPull)
+    {
+        std::list<Creature*> wave;
+        Acore::AnyUnitInObjectRangeCheck check(mob, WaveReach);
+        Acore::CreatureListSearcher<Acore::AnyUnitInObjectRangeCheck> searcher(mob, wave, check);
+        Cell::VisitObjects(mob, searcher, WaveReach);
+        for (Creature* other : wave)
+            if (other != mob && other->IsSummon() && Pullable(other, gm))
+            {
+                run.tried.insert(other->GetGUID());
+                other->AI()->AttackStart(gm);
+            }
+    }
     run.pullTarget.Clear();
 }
 
