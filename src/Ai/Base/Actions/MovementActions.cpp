@@ -3042,6 +3042,10 @@ bool BackLineTakeSpotAction::Execute(Event /*event*/)
         return moved;
     }
     Position nearest = GetNearestPosition(availablePos);
+    // A step a cast or a turn stopped short is over: standing still, the bot is not waiting on it. Held to it for up
+    // to 5 seconds, a fire mage stood in a Karazhan pack 2.6 yards from a mob, its clear spot 20 yards off "refused".
+    if (!bot->isMoving())
+        AI_VALUE(LastMovement&, "last movement").clear();
     bool const moved = MoveTo(bot->GetMapId(), nearest.GetPositionX(), nearest.GetPositionY(), nearest.GetPositionZ(),
                               false, false, false, true, MovementPriority::MOVEMENT_COMBAT);
     Note(Acore::StringFormat("{} spot {:.1f} yd away, {}", toRoomiest ? "roomiest" : "clear",
