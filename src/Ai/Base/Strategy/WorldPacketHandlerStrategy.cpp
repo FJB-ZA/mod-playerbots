@@ -10,6 +10,9 @@ void WorldPacketHandlerStrategy::InitTriggers(std::vector<TriggerNode*>& trigger
 {
     PassThroughStrategy::InitTriggers(triggers);
 
+    // Every bot, in a fight or out of one: up for air before it drowns
+    triggers.push_back(new TriggerNode("need air", { NextAction("surface", ACTION_EMERGENCY + 9) }));
+
     triggers.push_back(
         new TriggerNode("group invite", { NextAction("accept invitation", relevance) }));
     triggers.push_back(

@@ -85,6 +85,15 @@ private:
     void DoMovePoint(Unit* unit, float x, float y, float z, bool generatePath, bool backwards);
 };
 
+// Straight up to the water's surface for air ("need air")
+class SurfaceAction : public MovementAction
+{
+public:
+    SurfaceAction(PlayerbotAI* botAI) : MovementAction(botAI, "surface") {}
+
+    bool Execute(Event event) override;
+};
+
 class FleeAction : public MovementAction
 {
 public:
