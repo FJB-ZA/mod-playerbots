@@ -58,8 +58,22 @@ bool BackLineOutOfPlaceTrigger::IsActive()
     // short) only out of a mob's front it stands in: a mage casting back to back never stepped out of the pack the tank
     // brought in (solo-wow role check, 2026-11-07)
     bool const backLine = PlayerbotAI::IsHeal(bot) || (PlayerbotAI::IsRanged(bot) && PlayerbotAI::IsDps(bot));
-    if (!backLine || PlayerbotAI::IsTank(bot) || bot->isMoving())
+    if (!backLine || PlayerbotAI::IsTank(bot))
         return false;
+    if (bot->isMoving())
+    {
+        // ...unless the step goes somewhere the tank has left: a spot picked seconds before, with the tank since gone
+        // after a mob that ran to a damage dealer, kept the healer 30-60 yards off it for a whole fight (Karazhan,
+        // 2026-11-09: 206 samples out of the tank's reach in one fight)
+        Unit* tank = AI_VALUE(Unit*, "group main tank");
+        float x, y, z;
+        if (!tank || tank == bot || !tank->IsAlive() || !tank->IsInCombat() || tank->GetMap() != bot->GetMap() ||
+            !bot->GetMotionMaster()->GetDestination(x, y, z))
+            return false;
+        return tank->GetExactDist2d(x, y) > BotMove::HealerNearTank + 4.0f ||
+               (bot->GetExactDist2d(tank) > BotMove::HealerNearTank &&
+                !tank->IsWithinLOS(x, y, z + bot->GetCollisionHeight()));
+    }
     if (bot->IsNonMeleeSpellCast(false))
     {
         for (ObjectGuid const& guid : AI_VALUE(GuidVector, "attackers"))
