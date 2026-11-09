@@ -11,6 +11,7 @@
 #include "PlayerbotAIConfig.h"
 #include "Playerbots.h"
 #include "Strategy.h"
+#include "ThreatHoldPolicy.h"
 
 class FindMaxThreatGapTargetStrategy : public FindTargetStrategy
 {
@@ -289,7 +290,20 @@ Unit* DpsTargetValue::Calculate()
         if (held && held->IsAlive() && !held->IsPlayer() && exclusions.find(held->GetGUID()) == exclusions.end())
         {
             GuidVector const attackers = AI_VALUE(GuidVector, "attackers");
-            if (std::find(attackers.begin(), attackers.end(), held->GetGUID()) != attackers.end())
+            auto const fighting = [&attackers](Unit* unit)
+            { return std::find(attackers.begin(), attackers.end(), unit->GetGUID()) != attackers.end(); };
+            // Not after the tank onto a trivial add (ThreatHoldPolicy.h): in Krik'thir's swarm the tank's target
+            // changed every second or so as its swings killed 328-health Swarmers, and the damage dealers, turning
+            // after it, started cast after cast and finished none, two or three spells in 30 seconds (role check,
+            // heroic Azjol-Nerub, 2026-11-09). A target of their own they keep until it dies.
+            if (BotThreat::Trivial(held->GetMaxHealth(), bot->GetMaxHealth()))
+            {
+                Unit* current = AI_VALUE(Unit*, "current target");
+                if (current && current->IsAlive() && exclusions.find(current->GetGUID()) == exclusions.end() &&
+                    fighting(current))
+                    return current;
+            }
+            else if (fighting(held))
                 return held;
         }
     }
