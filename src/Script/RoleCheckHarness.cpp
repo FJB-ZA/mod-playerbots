@@ -65,6 +65,8 @@
 #include "Playerbots.h"
 #include "RoleCheckPolicy.h"
 #include "ScriptMgr.h"
+#include "Spell.h"
+#include "SpellMgr.h"
 #include "ScriptedGossip.h"
 #include "Timer.h"
 #include "UBShared.h"
@@ -295,6 +297,9 @@ bool fightHurt = false;
 bool fightHealed = false;
 ObjectGuid fightHurtWho;  // the first member hurt in the fight, for the log of a hurt fight left unhealed
 bool fightStruck = false;  // a mob struck a member: a real fight
+// Each member's casts this fight, by spell, logged after a big fight to show whether area spells went out
+std::map<ObjectGuid, std::map<uint32, uint32>> fightCasts;
+uint32 constexpr CAST_LOG_MOBS = 10;
 
 void Report();
 
@@ -881,6 +886,7 @@ void StartFight(std::vector<Player*> const& members)
         opener.Clear();
         fightHurt = false;
         fightHealed = false;
+        fightCasts.clear();
     }
     if (first.IsEmpty())
         for (Player* member : members)
@@ -990,6 +996,23 @@ void EndFight()
              offTank.empty() ? "" : "; off the tank on ", offTank, faced.empty() ? "" : "; in front of a mob: ",
              faced, healer);
     std::lock_guard<std::mutex> guard(hookLock);
+    if (run.fightMobCount >= CAST_LOG_MOBS)
+        for (auto const& [guid, spells] : fightCasts)
+        {
+            Player* member = ObjectAccessor::FindConnectedPlayer(guid);
+            std::vector<std::pair<uint32, uint32>> counts(spells.begin(), spells.end());
+            std::sort(counts.begin(), counts.end(), [](auto const& a, auto const& b) { return a.second > b.second; });
+            std::string casts;
+            for (size_t i = 0; i < counts.size() && i < 8; ++i)
+            {
+                SpellInfo const* info = sSpellMgr->GetSpellInfo(counts[i].first);
+                casts += Acore::StringFormat("{}{} {}", casts.empty() ? "" : ", ",
+                                             info ? info->SpellName[0] : "?", counts[i].second);
+            }
+            LOG_INFO("playerbots", "Rolecheck: fight {} casts by {} ({}): {}", run.tally.fights,
+                     member ? member->GetName() : "?", member ? std::string(1, Role(member)) : "?", casts);
+        }
+    fightCasts.clear();
     if (fightHurt)
     {
         ++run.tally.hurtFights;
@@ -2235,10 +2258,27 @@ public:
         return true;
     }
 };
+
+class RoleCheckPlayerScript : public PlayerScript
+{
+public:
+    RoleCheckPlayerScript() : PlayerScript("RoleCheckPlayerScript", {PLAYERHOOK_ON_SPELL_CAST}) {}
+
+    void OnPlayerSpellCast(Player* player, Spell* spell, bool /*skipCheck*/) override
+    {
+        // The bot's own casts, not the procs and auras they trigger
+        if (run.phase != Phase::Observe || !run.inFight || !player || !spell || spell->IsTriggered() ||
+            !IsRunPlayer(player->GetGUID()))
+            return;
+        std::lock_guard<std::mutex> guard(hookLock);
+        ++fightCasts[player->GetGUID()][spell->GetSpellInfo()->Id];
+    }
+};
 }  // namespace
 
 void AddRoleCheckScripts()
 {
+    new RoleCheckPlayerScript();
     new RoleCheckUnitScript();
     new RoleCheckWorldScript();
     new RoleCheckCommandScript();

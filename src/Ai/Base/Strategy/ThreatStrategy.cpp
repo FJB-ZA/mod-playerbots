@@ -29,10 +29,11 @@ float ThreatMultiplier::GetValue(Action* action)
     // Hold off a mob until the tank has taken it and its first swings put some threat between them
     // (ThreatHoldPolicy.h)
     Unit* target = AI_VALUE(Unit*, "current target");
-    // A mob that fixates where it likes is nobody's to hold: kill it (ThreatHoldPolicy.h TankKeeps)
-    if (target && target->IsAlive() && !BotThreat::TankKeeps(target->GetEntry()))
-        return 1.0f;
-    if (target && target->IsAlive() && !PlayerbotAI::IsTank(bot))
+    // A mob that fixates where it likes, or one an area spell all but kills, is nobody's to hold: kill it
+    // (ThreatHoldPolicy.h TankKeeps, Trivial)
+    bool const tanksIt = target && BotThreat::TankKeeps(target->GetEntry()) &&
+                         !BotThreat::Trivial(target->GetMaxHealth(), bot->GetMaxHealth());
+    if (target && target->IsAlive() && tanksIt && !PlayerbotAI::IsTank(bot))
     {
         Unit* tank = AI_VALUE(Unit*, "group main tank");
         bool const tankInFight = tank && tank != bot && tank->IsAlive() && tank->IsInCombat() &&
@@ -91,7 +92,7 @@ bool SwingsNearTankThreatTrigger::IsActive()
     if (PlayerbotAI::IsTank(bot) || !bot->HasUnitState(UNIT_STATE_MELEE_ATTACKING) || AI_VALUE(bool, "neglect threat"))
         return false;
     Unit* mob = bot->GetVictim();
-    if (mob && !BotThreat::TankKeeps(mob->GetEntry()))
+    if (mob && (!BotThreat::TankKeeps(mob->GetEntry()) || BotThreat::Trivial(mob->GetMaxHealth(), bot->GetMaxHealth())))
         return false;
     Unit* holder = mob && mob->IsAlive() ? mob->GetVictim() : nullptr;
     Player* tank = holder ? holder->ToPlayer() : nullptr;
