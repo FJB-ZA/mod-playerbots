@@ -651,7 +651,12 @@ Wait CheckReady(PlayerbotAI* botAI, State& state)
 
             Member member;
             member.alive = player->IsAlive();
-            member.distance = player == bot || player->GetMap() != bot->GetMap() ? 0.0f : player->GetExactDist(&from);
+            // Nor is one who came along with the tank behind: the GM following it out to the pull spot stood 86 yards
+            // from the gathering spot beside the tank, the tank waited on them for good mid-step, and as a real player
+            // they were never given up on (role check, heroic Azjol-Nerub, 2026-11-09)
+            member.distance = player == bot || player->GetMap() != bot->GetMap()
+                                  ? 0.0f
+                                  : std::min(player->GetExactDist(&from), player->GetExactDist(bot));
             member.healthPct = player->GetHealthPct();
             member.usesMana = player->getPowerType() == POWER_MANA && player->GetMaxPower(POWER_MANA) > 0;
             member.manaPct = member.usesMana ? player->GetPowerPct(POWER_MANA) : 100.0f;

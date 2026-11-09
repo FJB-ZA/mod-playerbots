@@ -141,6 +141,7 @@ class CastBlinkBackAction : public CastSpellAction
 public:
     CastBlinkBackAction(PlayerbotAI* botAI) : CastSpellAction(botAI, "blink") {}
     bool Execute(Event event) override;
+    bool isUseful() override;
 };
 
 class CastManaShieldAction : public CastBuffSpellAction
