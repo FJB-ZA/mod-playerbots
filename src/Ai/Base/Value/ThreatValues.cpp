@@ -9,6 +9,7 @@
 #include <algorithm>
 
 #include "Playerbots.h"
+#include "ThreatHoldPolicy.h"
 #include "ThreatManager.h"
 
 uint8 ThreatValue::Calculate()
@@ -17,6 +18,9 @@ uint8 ThreatValue::Calculate()
     {
         uint8 maxThreat = 0;
         GuidVector attackers = context->GetValue<GuidVector>("attackers")->Get();
+        // Every attacker, not only those round the target: judging just the mobs within 10 yards of it let area
+        // spells go out on packs the tank had not yet taken, and Deadmines and Underbog lost healer back and aggro
+        // (role check, 2026-11-09)
         for (ObjectGuid const guid : attackers)
         {
             Unit* unit = botAI->GetUnit(guid);
@@ -49,6 +53,12 @@ uint8 ThreatValue::Calculate(Unit* target)
 
     // Already on us: holding back only stops us fighting back
     if (target->GetVictim() == bot)
+        return 0;
+
+    // Nor a mob too weak to need a tank (ThreatHoldPolicy.h Trivial), or a fixated one: Krik'thir's swarms of 328
+    // health Skittering Swarmers, none yet touched by the tank, read as threat 100 and held every area spell, and
+    // the group died under 30-55 of them (role check, heroic Azjol-Nerub, 2026-11-09)
+    if (BotThreat::Trivial(target->GetMaxHealth(), bot->GetMaxHealth()) || !BotThreat::TankKeeps(target->GetEntry()))
         return 0;
 
     float botThreat = target->GetThreatMgr().GetThreat(bot);

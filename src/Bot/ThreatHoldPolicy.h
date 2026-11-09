@@ -135,6 +135,16 @@ constexpr bool TankKeeps(uint32_t entry)
     return entry != NPC_ANUBAR_SKIRMISHER && entry != NPC_ANUBAR_SKIRMISHER_H;
 }
 
+// A mob with under this share of the damage dealer's own health dies to an area spell or two: no tank need take it
+// first. Krik'thir's Skittering Swarmers have 328 health in heroic and his Infectors 6,556, against a level 80
+// bot's 20-25 thousand; the trash beside them has 50-65 thousand, and level 20 trash about a bot's own.
+constexpr float TrivialHealthShare = 0.3f;
+
+constexpr bool Trivial(uint32_t mobMaxHealth, uint32_t ownMaxHealth)
+{
+    return ownMaxHealth > 0 && float(mobMaxHealth) < float(ownMaxHealth) * TrivialHealthShare;
+}
+
 // Auto attack is no spell: past the hold nothing measured it, and a rogue's white swings carried it to 1.5-2 times the
 // tank's threat, mob after mob off the tank (solo-wow role check, Underbog, 2026-11-08). A melee damage dealer stops
 // swinging near the mark a mob turns at, and swings again once the tank has pulled clear: apart, so it does not flicker.
