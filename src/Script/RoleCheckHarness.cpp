@@ -710,6 +710,10 @@ void Sample(Player* gm, std::vector<Player*> const& bots)
         PlayerbotAI* ai = GET_PLAYERBOT_AI(bot);
         if (PlayerbotAI::IsHeal(bot, true))
         {
+            // With the tank down the fight is a wipe and its mobs are loose: where they find the healer is no measure
+            // of where it stood (The Eye and Sunwell failed healer back on the samples of their wipes)
+            if (!tank || !tank->IsAlive())
+                continue;
             ++t.healerSamples;
             float nearest = 1000.0f;
             Creature* nearestMob = nullptr;
@@ -1165,6 +1169,12 @@ bool StartEvent(Player* gm, std::vector<Player*> const& bots, uint32 diff)
         {
             run.eventDone.insert(starter->GetGUID());
             what = "went up to";
+            // With the group: a GM is no player in a creature's sight. Medivh starts on a player within 20 yards, and
+            // the group stood 26 yards off for the whole run (The Black Morass). He still did not begin with them
+            // beside him: an open issue in his script, not the harness
+            for (Player* bot : bots)
+                if (bot->IsAlive() && bot->GetMapId() == gm->GetMapId())
+                    bot->NearTeleportTo(gm->GetPositionX(), gm->GetPositionY(), gm->GetPositionZ(), gm->GetOrientation());
         }
         else
         {
