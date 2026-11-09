@@ -1091,9 +1091,56 @@ bool LeadAdvanceAction::isUseful()
     return !state.idle;
 }
 
+namespace
+{
+// A start the way on is cut short from: Ahn'kahet's door stands on a scrap of walkable ground the path search finds no
+// way off, every way on came back cut short at two points, and the group stood at the door for the whole run with 119
+// goals set aside. A spot a few yards off in sight, at about the same height, that the way on does run from: walked to
+// in a straight line, as a player steps off the door's step.
+bool OffIsland(Player* bot, Position const& goal, G3D::Vector3& to)
+{
+    Map* map = bot->GetMap();
+    for (float radius : {4.0f, 8.0f, 12.0f, 16.0f, 20.0f})
+        for (int i = 0; i < 16; ++i)
+        {
+            float const angle = bot->GetAbsoluteAngle(&goal) + float(i) * float(M_PI) / 8.0f;
+            float const x = bot->GetPositionX() + radius * std::cos(angle);
+            float const y = bot->GetPositionY() + radius * std::sin(angle);
+            float const z = map->GetHeight(bot->GetPhaseMask(), x, y, bot->GetPositionZ() + 3.0f);
+            if (z <= INVALID_HEIGHT || std::fabs(z - bot->GetPositionZ()) > 4.0f ||
+                !bot->IsWithinLOS(x, y, z + EYE_HEIGHT))
+                continue;
+            PathGenerator path(bot);
+            path.SetUseStraightPath(true);
+            path.CalculatePath(x, y, z, goal.GetPositionX(), goal.GetPositionY(), goal.GetPositionZ(), false);
+            if (path.GetPathType() & (PATHFIND_NOPATH | PATHFIND_INCOMPLETE))
+                continue;
+            to = G3D::Vector3(x, y, z);
+            return true;
+        }
+    return false;
+}
+}  // namespace
+
 bool LeadAdvanceAction::Execute(Event /*event*/)
 {
     State& state = StateOf(botAI);
+    // Off a scrap of ground the way on is cut short from: a straight walk, no path search
+    auto const StepOffIsland = [this](State const& lead) -> bool
+    {
+        G3D::Vector3 to;
+        if (!lead.hasGoal || !OffIsland(bot, lead.goal, to))
+            return false;
+        LOG_INFO("playerbots", "{} steps off to {:.1f} {:.1f} {:.1f}: no way on from {:.1f} {:.1f} {:.1f}", bot->GetName(),
+                  to.x, to.y, to.z, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ());
+        if (bot->IsSitState())
+            bot->SetStandState(UNIT_STAND_STATE_STAND);
+        bot->GetMotionMaster()->MovePoint(0, to.x, to.y, to.z, FORCED_MOVEMENT_NONE, 0.0f, 0.0f, false);
+        AI_VALUE(LastMovement&, "last movement")
+            .Set(bot->GetMapId(), to.x, to.y, to.z, bot->GetOrientation(),
+                 IN_MILLISECONDS * MoveDelay(bot->GetExactDist(to.x, to.y, to.z), false), MovementPriority::MOVEMENT_NORMAL);
+        return true;
+    };
     if (!state.pack.IsEmpty() && state.hasSpot)
     {
         Position const& to = state.stepping ? state.pullSpot : state.spot;
@@ -1132,6 +1179,8 @@ bool LeadAdvanceAction::Execute(Event /*event*/)
     Movement::PointsArray const& points = path.GetPath();
     if ((path.GetPathType() & PATHFIND_NOPATH) || points.size() < 2)
     {
+        if (StepOffIsland(state))
+            return true;
         BlockGoal(state);
         return false;
     }
@@ -1142,6 +1191,8 @@ bool LeadAdvanceAction::Execute(Event /*event*/)
     // A long way round the path search gives up on ends in a dead end close by: the tank would shuffle there for good
     if ((path.GetPathType() & PATHFIND_INCOMPLETE) && length < ADVANCE_STEP)
     {
+        if (StepOffIsland(state))
+            return true;
         BlockGoal(state);
         return false;
     }
