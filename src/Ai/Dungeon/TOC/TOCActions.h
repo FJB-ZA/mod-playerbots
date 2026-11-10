@@ -51,9 +51,13 @@ private:
         JOUST_MOVE_NONE,
         JOUST_MOVE_FLEE,
         JOUST_MOVE_KITE,
-        JOUST_MOVE_APPROACH
+        JOUST_MOVE_APPROACH,
+        JOUST_MOVE_SPARE
     };
 
+    bool RideToSpare(Unit* current, uint32 now);
+    ObjectGuid spare;
+    uint32 spareCheckAt = 0;
     void ScanArena(std::vector<Unit*>& hostiles, std::vector<Unit*>& walking);
     Unit* FindJoustTarget(std::vector<Unit*>& hostiles);
     Unit* FindTrampleTarget(std::vector<Unit*>& walking);

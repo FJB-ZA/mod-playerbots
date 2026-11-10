@@ -140,6 +140,10 @@ constexpr bool JoustAllows(JoustMoment fight, JoustAction action)
 // arena under the champions' charges, and died stunned on the way (role check, heroic Trial of the Champion,
 // 2026-11-09). distance[rider][mount]; the mount rider `self` takes, or -1 when the mounts ran out before it.
 // A mount of the other faction counts this much farther: only the faction's own can trample a dismounted champion
+// Ride to a spare while the current mount can still carry its rider out of trample range.
+constexpr bool NeedsFreshMount(float healthPct) { return healthPct <= 45.0f; }
+constexpr bool HealthySpare(float healthPct) { return healthPct >= 80.0f; }
+
 constexpr float OtherMountPenalty = 20.0f;
 constexpr float MountCost(float distance, bool otherFaction)
 {
