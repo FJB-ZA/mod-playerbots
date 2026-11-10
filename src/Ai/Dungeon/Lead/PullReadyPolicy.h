@@ -41,6 +41,19 @@ struct Member
     uint32_t waitedMs = 0;  // how long the tank has already waited on this member
 };
 
+// A bot this close to the master it follows is where it should be: it stands as far from the group as the master does.
+// Bots follow the player, not the tank: with the player 12-18 yards off the tank, a healer beside them stood 23 yards
+// out, "behind", and the tank waited out its 90 seconds on it again and again (role check, heroic Azjol-Nerub,
+// 2026-11-09).
+constexpr float FollowSlack = 10.0f;
+
+// How far a member stands from the group: from the gathering spot or the tank, or for a bot beside its master, the
+// master's own distance when that is less.
+constexpr float GroupDistance(float fromGroup, bool followsMaster, float toMaster, float masterFromGroup)
+{
+    return followsMaster && toMaster <= FollowSlack && masterFromGroup < fromGroup ? masterFromGroup : fromGroup;
+}
+
 // A called oom is cleared by the player's real mana, never by a timer.
 constexpr bool OomCleared(Tier tier, float manaPct, bool resting)
 {

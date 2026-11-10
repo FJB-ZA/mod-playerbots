@@ -53,6 +53,7 @@
 #include "LivingWorldMgr.h"
 #include "Log.h"
 #include "Map.h"
+#include "LastMovementValue.h"
 #include "MovementActions.h"
 #include "MapMgr.h"
 #include "ObjectAccessor.h"
@@ -337,6 +338,22 @@ bool IsRunPlayer(ObjectGuid guid)
     return std::any_of(run.bots.begin(), run.bots.end(), [&](Member const& m) { return m.guid == guid; });
 }
 
+// Mobs a boss's own script sends at the group: struck by one, nobody pulled it. Azjol-Nerub's Krik'thir sends a watcher
+// group every 60-70 seconds once one is engaged, and Hadronox climbs his tunnel to the group; a damage dealer they
+// struck first failed the row on tank pulls (role check, heroic Azjol-Nerub, 2026-11-09).
+bool SentByScript(uint32 mapId, uint32 entry)
+{
+    switch (mapId)
+    {
+        case 601:  // Azjol-Nerub: Narjil, Gashra and Silthik, their warriors, shadowcasters and skirmishers, Hadronox
+            return (entry >= 28729 && entry <= 28734) || entry == 28921;
+        case 546:  // The Underbog: the mushrooms Hungarfen grows, still bursting after him
+            return entry == 17990;
+        default:
+            return false;
+    }
+}
+
 // The run's player behind a unit: the player, or the owner of its pet, totem or guardian
 Player* RunPlayerOf(Unit* unit)
 {
@@ -588,6 +605,26 @@ void Status()
                 state.hasSpot ? tank->GetExactDist(&state.spot) : 0.0f, state.hasPullSpot, state.stepping, state.pulled,
                 state.failedPulls, state.skipped.size(), GoalName(state),
                 state.hasGoal ? tank->GetExactDist(&state.goal) : -1.0f, state.blockedGoals.size());
+            // The member waited on: its mana and whether it sits to eat or drink (after a wipe the tank waited 90 s on
+            // the healer 21 yards off, "behind", and pulled without the log saying whether it was drinking)
+            if (waitingOn && waitingOn->IsAlive())
+            {
+                // and, standing off and not following (a healer 23 yards off at full mana, still), whom it follows
+                PlayerbotAI* waitAi = GET_PLAYERBOT_AI(waitingOn);
+                Player* master = waitAi ? waitAi->GetMaster() : nullptr;
+                Engine* engine = waitAi ? waitAi->GetCurrentEngine() : nullptr;
+                std::string trace = engine ? engine->GetLastAction() : "";
+                if (trace.size() > 250)
+                    trace = trace.substr(trace.size() - 250);
+                lead += Acore::StringFormat(
+                    " (waited-on mana {:.0f}%, health {:.0f}%, sitting {}, moving {}, motion {}, master {} at {:.0f} yd; "
+                    "last actions {})",
+                    waitingOn->GetMaxPower(POWER_MANA) > 0 ? waitingOn->GetPowerPct(POWER_MANA) : -1.0f,
+                    waitingOn->GetHealthPct(), waitingOn->IsSitState(), waitingOn->isMoving(),
+                    uint32(waitingOn->GetMotionMaster()->GetCurrentMovementGeneratorType()),
+                    master ? master->GetName() : "-",
+                    master && master->GetMap() == waitingOn->GetMap() ? waitingOn->GetExactDist(master) : -1.0f, trace);
+            }
             // Every goal blocked from the door: where the tank stands and what the path search makes of the way on
             // (Ahn'kahet: 119 goals blocked in 30 seconds, nobody moved a yard)
             if (state.hasGoal && !state.blockedGoals.empty() && !tank->IsInCombat())
@@ -669,6 +706,44 @@ std::vector<Creature*> FightMobs(std::vector<Player*> const& members)
         add(member->GetVictim());
     }
     return mobs;
+}
+
+// A bot on a point move to well below where it stands: what sent it there, caught as it starts. In heroic Azjol-Nerub
+// two bots sank straight down through the floor, x and y fixed and z falling 68 yards each 15 s, out to 500 yards
+// from the tank, on a point move begun mid-fight (role check, 2026-11-09).
+void WatchSinking(std::vector<Player*> const& bots)
+{
+    static std::map<ObjectGuid, uint32> loggedAt;
+    for (Player* bot : bots)
+    {
+        float x, y, z;
+        if (!bot->IsAlive() || bot->GetMotionMaster()->GetCurrentMovementGeneratorType() != POINT_MOTION_TYPE ||
+            !bot->GetMotionMaster()->GetDestination(x, y, z) || bot->GetPositionZ() - z < 25.0f ||
+            bot->GetExactDist2d(x, y) > 15.0f)
+            continue;
+        uint32& at = loggedAt[bot->GetGUID()];
+        if (at && run.elapsed - at < 10000)
+            continue;
+        at = run.elapsed;
+        PlayerbotAI* ai = GET_PLAYERBOT_AI(bot);
+        Engine* engine = ai ? ai->GetCurrentEngine() : nullptr;
+        std::string trace = engine ? engine->GetLastAction() : "";
+        if (trace.size() > 800)
+            trace = trace.substr(trace.size() - 800);
+        std::string last;
+        if (ai)
+        {
+            LastMovement& move = ai->GetAiObjectContext()->GetValue<LastMovement&>("last movement")->Get();
+            last = Acore::StringFormat("{:.1f} {:.1f} {:.1f}, priority {}, {} ms ago", move.lastMoveToX,
+                                       move.lastMoveToY, move.lastMoveToZ, uint32(move.priority),
+                                       getMSTimeDiff(move.msTime, getMSTime()));
+        }
+        LOG_INFO("playerbots",
+                 "Rolecheck: {} sinking: at {:.1f} {:.1f} {:.1f}, moving to {:.1f} {:.1f} {:.1f}; combat {}, flying {}, "
+                 "swimming {}, on transport {}; last bot move to {}; its last actions: {}",
+                 bot->GetName(), bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), x, y, z,
+                 bot->IsInCombat(), bot->IsFlying(), bot->IsInWater(), bot->GetTransport() != nullptr, last, trace);
+    }
 }
 
 void Sample(Player* gm, std::vector<Player*> const& bots)
@@ -921,6 +996,10 @@ void StartFight(std::vector<Player*> const& members)
         std::lock_guard<std::mutex> guard(hookLock);
         first = opener;
         run.fightOpenerHow = first.IsEmpty() ? "first in combat" : openerHow;
+        // A fight that starts with the tank down is no pull to judge: Trial of the Champion's Argent wave came with the
+        // tank dead, the last damage dealer standing struck first, and the row failed tank pulls at 0%
+        if (!MainTank())
+            run.fightOpenerHow += ", tank down";
         opener.Clear();
         fightHurt = false;
         fightHealed = false;
@@ -978,6 +1057,12 @@ void CountFight()
     // tank as the herald released it, a rogue struck one on its way, and the row failed tank pulls at 0%.
     if (run.eventStarted && (run.fightOpenerHow.find(" hit ") == std::string::npos ||
                              run.fightOpenerHow.find("already fighting") != std::string::npos))
+        return;
+    // Nor a mob a boss's script sent at the group (SentByScript), nor a fight with no mob in it: a rogue freeing a webbed
+    // player from Krik'thir's Web Wrap, already fighting, "opened" a fight with no mob in it
+    if (run.fightOpenerHow.find("sent by its boss") != std::string::npos ||
+        run.fightOpenerHow.find(", tank down") != std::string::npos ||
+        (run.fightMobCount == 0 && run.fightOpenerHow.find("already fighting") != std::string::npos))
         return;
     // Nor any fight where the group is held for the waves: a mage's hit on a Chronomancer already at Medivh was the run's
     // one pull, and failed it (The Black Morass)
@@ -1907,6 +1992,7 @@ void Observe(Player* gm, uint32 diff)
     {
         run.sinceSample = 0;
         CountDeaths(gm);
+        WatchSinking(bots);
         if (run.inFight && run.elapsed - run.fightAt >= RoleCheck::GraceMs)
             Sample(gm, bots);
         if (Player* tank = MainTank())
@@ -2118,7 +2204,10 @@ public:
             // A mob already fighting before the hit was on its way to the group: CountFight takes no pull from it
             openerHow = striker ? Acore::StringFormat("{} hit {}{}", attacker == striker ? "it" : attacker->GetName(),
                                                       victim->GetName(), victim->IsInCombat() ? ", already fighting" : "")
-                                : Acore::StringFormat("struck by {}", attacker->GetName());
+                                : Acore::StringFormat("struck by {}{}", attacker->GetName(),
+                                                      SentByScript(attacker->GetMapId(), attacker->GetEntry())
+                                                          ? ", sent by its boss"
+                                                          : "");
         }
         if (struck && attacker->ToCreature())
             fightStruck = true;

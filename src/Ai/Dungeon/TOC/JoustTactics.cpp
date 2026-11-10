@@ -654,13 +654,13 @@ bool ToCMountAction::Execute(Event /*event*/)
     return EnterVehicle(vehicleToEnter, true);
 }
 
-// Prefers the faction's own mount, the only one that can trample a dismounted champion.
+// Each bot on foot its own free mount (Toc::AssignedMount), the faction's own preferred: only it can trample a
+// dismounted champion.
 Unit* ToCMountAction::FindMount(PlayerbotAI* botAI)
 {
     Player* player = botAI->GetBot();
-    Unit* preferredMount = nullptr;
-    Unit* otherMount = nullptr;
     uint32 preferredEntry = FactionMountEntry(player);
+    std::vector<Unit*> mounts;
     GuidVector npcs = botAI->GetAiObjectContext()->GetValue<GuidVector>("nearest vehicles")->Get();
     for (ObjectGuid const& guid : npcs)
     {
@@ -671,16 +671,31 @@ Unit* ToCMountAction::FindMount(PlayerbotAI* botAI)
         if (!vehicleBase->GetVehicleKit() || !vehicleBase->GetVehicleKit()->GetAvailableSeatCount())
             continue;
 
-        uint32 entry = vehicleBase->GetEntry();
-        if (!IsJoustMount(entry))
-            continue;
-
-        Unit*& slot = entry == preferredEntry ? preferredMount : otherMount;
-        if (!slot || player->GetExactDist(slot) > player->GetExactDist(vehicleBase))
-            slot = vehicleBase;
+        if (IsJoustMount(vehicleBase->GetEntry()))
+            mounts.push_back(vehicleBase);
     }
+    if (mounts.empty())
+        return nullptr;
 
-    return preferredMount ? preferredMount : otherMount;
+    // The riders still to board: this bot and the other bots of the group alive on foot here
+    std::vector<Player*> riders{player};
+    if (Group* group = player->GetGroup())
+        for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+        {
+            Player* member = ref->GetSource();
+            if (member && member != player && member->IsAlive() && member->GetMap() == player->GetMap() &&
+                !member->GetVehicle() && GET_PLAYERBOT_AI(member))
+                riders.push_back(member);
+        }
+
+    std::vector<std::vector<float>> distance(riders.size(), std::vector<float>(mounts.size()));
+    for (size_t r = 0; r < riders.size(); ++r)
+        for (size_t m = 0; m < mounts.size(); ++m)
+            distance[r][m] = riders[r]->GetExactDist(mounts[m]) +
+                             (mounts[m]->GetEntry() == preferredEntry ? 0.0f : Toc::OtherMountPenalty);
+
+    int const mine = Toc::AssignedMount(distance, 0);
+    return mine >= 0 ? mounts[mine] : nullptr;
 }
 
 bool ToCMountAction::EnterVehicle(Unit* vehicleBase, bool moveIfFar)

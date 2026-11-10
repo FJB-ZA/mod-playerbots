@@ -10,6 +10,7 @@
 #define _PLAYERBOTS_TOC_POLICY_H
 
 #include <cstdint>
+#include <vector>
 
 #include "DungeonTacticsPolicy.h"
 
@@ -135,6 +136,39 @@ constexpr bool JoustAllows(JoustMoment fight, JoustAction action)
     if (!fight.onJoustMount)
         return true;
     return !(action.movement && !action.mountedJoust);
+}
+
+// Spare mounts for the riders on foot: the closest rider and mount pair first, each rider and each mount once. All
+// three on foot ran to the one nearest warhorse, one boarded and the others turned for the next, 50-60 yards across the
+// arena under the champions' charges, and died stunned on the way (role check, heroic Trial of the Champion,
+// 2026-11-09). distance[rider][mount]; the mount rider `self` takes, or -1 when the mounts ran out before it.
+// A mount of the other faction counts this much farther: only the faction's own can trample a dismounted champion
+constexpr float OtherMountPenalty = 20.0f;
+
+inline int AssignedMount(std::vector<std::vector<float>> const& distance, size_t self)
+{
+    size_t const riders = distance.size();
+    size_t const mounts = riders ? distance[0].size() : 0;
+    std::vector<bool> riderTaken(riders, false);
+    std::vector<bool> mountTaken(mounts, false);
+    for (size_t round = 0; round < riders && round < mounts; ++round)
+    {
+        int bestRider = -1;
+        int bestMount = -1;
+        for (size_t r = 0; r < riders; ++r)
+            for (size_t m = 0; m < mounts; ++m)
+                if (!riderTaken[r] && !mountTaken[m] &&
+                    (bestRider < 0 || distance[r][m] < distance[bestRider][bestMount]))
+                {
+                    bestRider = int(r);
+                    bestMount = int(m);
+                }
+        if (bestRider == int(self))
+            return bestMount;
+        riderTaken[bestRider] = true;
+        mountTaken[bestMount] = true;
+    }
+    return -1;
 }
 
 // Eadric the Pure

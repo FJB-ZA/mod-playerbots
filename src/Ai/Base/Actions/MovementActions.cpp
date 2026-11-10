@@ -15,6 +15,7 @@
 #include "MotionMaster.h"
 #include "MoveSplineInitArgs.h"
 #include "MovementGenerator.h"
+#include "FallPolicy.h"
 #include "HealerSpotPolicy.h"
 #include "MeleeSpotPolicy.h"
 #include "MovementPlanner.h"
@@ -181,6 +182,26 @@ bool MovementAction::MoveTo(uint32 mapId, float x, float y, float z, bool /*idle
     if (!IsMovingAllowed())
     {
         return false;
+    }
+
+    // A short step to under the floor (BotMove::FixSunk): on the ground there, or not at all
+    if (!bot->IsFlying() && !bot->isSwimming() && !bot->GetVehicle() && bot->GetMapId() == mapId &&
+        BotMove::SinkChecked(bot->GetExactDist2d(x, y), z, bot->GetPositionZ()))
+    {
+        float const ground = bot->GetMap()->GetHeight(bot->GetPhaseMask(), x, y, bot->GetPositionZ() + BotMove::SinkSlack,
+                                                      true, BotMove::SinkSearchDown);
+        bool const found = ground > INVALID_HEIGHT &&
+                           bot->GetPositionZ() - ground <= BotMove::SinkSearchDown + BotMove::SinkSlack;
+        switch (BotMove::FixSunk(z, found, ground))
+        {
+            case BotMove::SinkFix::Refuse:
+                return false;
+            case BotMove::SinkFix::OnGround:
+                z = ground;
+                break;
+            case BotMove::SinkFix::Keep:
+                break;
+        }
     }
 
     MovePlan plan = MovementPlanner::Plan(botAI, x, y, z);

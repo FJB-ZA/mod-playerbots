@@ -12,6 +12,9 @@
 #include "ANTriggers.h"
 #include "ChooseTargetActions.h"
 #include "Playerbots.h"
+#include "RtiTargetValue.h"
+
+#include <algorithm>
 
 namespace
 {
@@ -46,7 +49,73 @@ Unit* FindByEntry(PlayerbotAI* botAI, uint32 entry)
     }
     return nullptr;
 }
+
+int PriorityOf(Unit* unit)
+{
+    return unit && unit->IsAlive() ? AzjolNerub::WatcherPriority(WatcherOf(unit->GetEntry())) : -1;
+}
+
+// The in-combat watcher earliest in the kill order. In-combat adds only: a range search would aggro the packs still
+// waiting nearby
+Unit* BestWatcher(PlayerbotAI* botAI, int& bestPriority)
+{
+    Unit* best = nullptr;
+    bestPriority = -1;
+    for (ObjectGuid const& guid : botAI->GetAiObjectContext()->GetValue<GuidVector>("attackers")->Get())
+    {
+        Unit* npc = botAI->GetUnit(guid);
+        int const priority = PriorityOf(npc);
+        if (priority >= 0 && (!best || priority < bestPriority))
+        {
+            best = npc;
+            bestPriority = priority;
+        }
+    }
+    return best;
+}
+
+Unit* Skull(PlayerbotAI* botAI)
+{
+    Group* group = botAI->GetBot()->GetGroup();
+    return group ? botAI->GetUnit(group->GetTargetIcon(RtiTargetValue::skullIndex)) : nullptr;
+}
+
+// What the skull should be: the watcher the order takes first, the one already marked while none is strictly before
+// it; with no watcher in the fight, Krik'thir once he fights. Nothing is a mark the lead's own marking keeps.
+Unit* WantedSkull(PlayerbotAI* botAI)
+{
+    int bestPriority = -1;
+    Unit* best = BestWatcher(botAI, bestPriority);
+    Unit* skull = Skull(botAI);
+    if (best)
+        return AzjolNerub::KeepsWatcher(PriorityOf(skull), bestPriority) ? skull : best;
+    Unit* boss = FindByEntry(botAI, NPC_KRIKTHIR);
+    return boss && boss->IsAlive() && boss->IsInCombat() ? boss : nullptr;
+}
 }  // namespace
+
+bool KrikthirMarkTrigger::IsActive()
+{
+    return PlayerbotAI::IsTank(bot) && bot->IsInCombat() && bot->GetGroup() && FindByEntry(botAI, NPC_KRIKTHIR);
+}
+
+// Each damage dealer held the watcher order on its own while the tank's target and the lead's skull were picked by
+// other measures: the role check counted them off the tank's target for 60% of the samples at Krik'thir (heroic
+// Azjol-Nerub, 2026-11-09). One skull, on the watcher the order wants, is the target all of them share.
+bool KrikthirMarkAction::isUseful()
+{
+    Unit* wanted = WantedSkull(botAI);
+    return wanted && wanted != Skull(botAI);
+}
+
+bool KrikthirMarkAction::Execute(Event /*event*/)
+{
+    Unit* wanted = WantedSkull(botAI);
+    if (!wanted)
+        return false;
+    bot->GetGroup()->SetTargetIcon(RtiTargetValue::skullIndex, bot->GetGUID(), wanted->GetGUID());
+    return true;
+}
 
 bool KrikthirWebWrapTrigger::IsActive() { return PlayerbotAI::IsDps(bot) && FindByEntry(botAI, NPC_WEB_WRAP); }
 
@@ -71,29 +140,21 @@ bool WatchersTargetAction::Execute(Event /*event*/)
     if (currentTarget && currentTarget->GetEntry() == NPC_WEB_WRAP)
         return false;
 
-    // In-combat adds only: a range search would aggro the packs still waiting nearby
-    Unit* best = nullptr;
     int bestPriority = -1;
-    GuidVector attackers = AI_VALUE(GuidVector, "attackers");
-    for (ObjectGuid const& guid : attackers)
-    {
-        Unit* npc = botAI->GetUnit(guid);
-        if (!npc)
-            continue;
+    Unit* best = BestWatcher(botAI, bestPriority);
+    if (!best)
+        return false;
 
-        int priority = AzjolNerub::WatcherPriority(WatcherOf(npc->GetEntry()));
-        if (priority >= 0 && (!best || priority < bestPriority))
-        {
-            best = npc;
-            bestPriority = priority;
-        }
-    }
+    // The skull among the equals first: it does not reorder, and it is the one the whole group is on
+    Unit* skull = Skull(botAI);
+    GuidVector const attackers = AI_VALUE(GuidVector, "attackers");
+    if (skull && PriorityOf(skull) == bestPriority &&
+        std::find(attackers.begin(), attackers.end(), skull->GetGUID()) != attackers.end())
+        return currentTarget == skull ? false : Attack(skull);
 
-    // Already on a watcher as good as any: keep it. Taking the last of equals in a list that reorders, the bots
+    // Else already on a watcher as good as any: keep it. Taking the last of equals in a list that reorders, the bots
     // switched target every tick and finished no cast (role check, heroic Azjol-Nerub, 2026-11-09)
-    int const currentPriority =
-        currentTarget && currentTarget->IsAlive() ? AzjolNerub::WatcherPriority(WatcherOf(currentTarget->GetEntry())) : -1;
-    if (!best || AzjolNerub::KeepsWatcher(currentPriority, bestPriority))
+    if (AzjolNerub::KeepsWatcher(PriorityOf(currentTarget), bestPriority))
         return false;
     return Attack(best);
 }
