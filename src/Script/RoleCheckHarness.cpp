@@ -42,6 +42,7 @@
 #include "DBCStores.h"
 #include "DungeonLead.h"
 #include "Engine.h"
+#include "Event.h"
 #include "GameObject.h"
 #include "GameTime.h"
 #include "GossipDef.h"
@@ -64,6 +65,7 @@
 #include "PlayerbotFactory.h"
 #include "PlayerbotMgr.h"
 #include "Playerbots.h"
+#include "PullStrategy.h"
 #include "RoleCheckPolicy.h"
 #include "ScriptMgr.h"
 #include "Spell.h"
@@ -1685,8 +1687,10 @@ bool PullSpot(Map* map, Position const& mob, float facing, Position& spot, Creat
             if (other != target && Pullable(other, gm) && other->GetExactDist(target) > PackOf)
                 others.push_back(other->GetPosition());
     }
+    // The arena tank uses its own ranged pull from a spot outside the soldiers' aggro range.
+    float const pullRange = target && map->GetId() == 650 ? 28.0f : PullFrom;
     for (bool const clear : {true, false})
-        for (float const reach : {PullFrom, PullFrom / 2.0f, 8.0f})
+        for (float const reach : {pullRange, pullRange / 2.0f, 8.0f})
             for (int turn = 0; turn < 8; ++turn)
             {
                 float const angle = facing + float(turn) * float(M_PI) / 4.0f;
@@ -1935,20 +1939,43 @@ void RaidPull(Player* gm, std::vector<Player*> const& bots, uint32 diff)
         run.broughtOver = true;
         return;
     }
+    // In the arena the party is already on the floor. Ask its tank for a real pull;
+    // an escort AI ordered to attack a GM 40 yards away can evade without a swing.
+    if (run.mapId == 650)
+    {
+        if (!tank || !tank->IsAlive())
+            return;
+        PlayerbotAI* ai = GET_PLAYERBOT_AI(tank);
+        if (!ai)
+            return;
+        PullStrategy* pull = PullStrategy::Get(ai);
+        if (pull && pull->HasTarget())
+            return;
+        gm->SetSelection(mob->GetGUID());
+        Event const request("rolecheck", std::string(), gm);
+        bool const started = ai->DoSpecificAction("pull my target", request, true) ||
+                             ai->DoSpecificAction("attack my target", request, true);
+        if (started)
+        {
+            // The GM chose the target. Keep assisted pulls out of the autonomous opener column.
+            std::lock_guard<std::mutex> guard(hookLock);
+            opener = gm->GetGUID();
+            openerHow = "the GM requested the pull";
+        }
+        LOG_INFO("playerbots", "Rolecheck: tank asked to pull {} at {:.0f} yd, accepted {}", mob->GetName(),
+                 tank->GetExactDist(mob), started);
+        run.walkWait = WalkMs;
+        run.gathering = 0;
+        return;
+    }
     // The player's pull: the mob comes for the GM, and its pack with it
     {
         std::lock_guard<std::mutex> guard(hookLock);
         opener = gm->GetGUID();
         openerHow = "the pull";
     }
-    // The arena escort AI can drop the GM before its first swing. Let a surviving
-    // soldier be pulled again and give its approach the same combat state as a ranged hit.
-    bool const arena = run.mapId == 650;
-    if (!arena)
-        run.tried.insert(mob->GetGUID());
+    run.tried.insert(mob->GetGUID());
     gm->SetGameMaster(false);  // the mob must see the GM to come for it
-    if (arena)
-        mob->EngageWithTarget(gm);
     mob->AI()->AttackStart(gm);
     mob->CallAssistance();
     // The wave it came with
@@ -1961,10 +1988,7 @@ void RaidPull(Player* gm, std::vector<Player*> const& bots, uint32 diff)
         for (Creature* other : wave)
             if (other != mob && other->IsSummon() && Pullable(other, gm))
             {
-                if (arena)
-                    other->EngageWithTarget(gm);
-                else
-                    run.tried.insert(other->GetGUID());
+                run.tried.insert(other->GetGUID());
                 other->AI()->AttackStart(gm);
             }
     }
