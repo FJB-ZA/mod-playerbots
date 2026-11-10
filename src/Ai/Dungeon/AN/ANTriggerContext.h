@@ -20,6 +20,7 @@ class WotlkDungeonANTriggerContext : public NamedObjectContext<Trigger>
             creators["krik'thir swarm pickup"] = &WotlkDungeonANTriggerContext::krikthir_pickup;
             creators["krik'thir loose swarm"] = &WotlkDungeonANTriggerContext::krikthir_swarm;
             creators["krik'thir mark"] = &WotlkDungeonANTriggerContext::krikthir_mark;
+            creators["hadronox door traffic"] = &WotlkDungeonANTriggerContext::hadronox_traffic;
             creators["anub'arak pound"] = &WotlkDungeonANTriggerContext::anubarak_pound;
         }
     private:
@@ -28,6 +29,7 @@ class WotlkDungeonANTriggerContext : public NamedObjectContext<Trigger>
         static Trigger* krikthir_mark(PlayerbotAI* botAI) { return new KrikthirMarkTrigger(botAI); }
         static Trigger* krikthir_swarm(PlayerbotAI* ai) { return new KrikthirSwarmTrigger(ai, false); }
         static Trigger* krikthir_pickup(PlayerbotAI* ai) { return new KrikthirSwarmTrigger(ai, true); }
+        static Trigger* hadronox_traffic(PlayerbotAI* ai) { return new HadronoxTrafficTrigger(ai); }
         static Trigger* anubarak_pound(PlayerbotAI* botAI) { return new AnubarakPoundTrigger(botAI); }
 };
 

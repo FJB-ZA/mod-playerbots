@@ -348,7 +348,7 @@ std::vector<Creature*> PackAround(Creature* seed, std::vector<Creature*> const& 
 {
     std::vector<Creature*> all = {seed};
     for (Creature* mob : mobs)
-        if (mob != seed)
+        if (mob != seed && !AzjolNerub::SkipHadronoxPull(mob))
             all.push_back(mob);
     return LinkedTo(0, all);
 }
@@ -458,6 +458,8 @@ void PlanSpot(PlayerbotAI* botAI, State& state, Creature* seed, bool boss)
 
     auto nearOther = [&](float x, float y, float z)
     {
+        if (AzjolNerub::HadronoxTraffic(bot, x, y, z))
+            return true;
         return std::any_of(others.begin(), others.end(), [&](Creature* mob)
                            { return mob->GetExactDist(x, y, z) <= mob->GetAggroRange(bot) + AggroSlack; });
     };
@@ -771,7 +773,7 @@ Creature* CurrentPack(PlayerbotAI* botAI, State& state)
     if (!state.pack.IsEmpty())
     {
         Creature* seed = bot->GetMap()->GetCreature(state.pack);
-        if (seed && seed->IsAlive() && !seed->IsInCombat() && !AzjolNerub::SkipHadronoxPull(bot, seed))
+        if (seed && seed->IsAlive() && !seed->IsInCombat() && !AzjolNerub::SkipHadronoxPull(seed))
             return seed;
         ForgetPack(state);
     }
@@ -783,10 +785,9 @@ Creature* CurrentPack(PlayerbotAI* botAI, State& state)
     bool const hasGoal = FindGoal(botAI, state);
     float const leaderToGoal = hasGoal ? bot->GetExactDist(&state.goal) : 0.0f;
     std::vector<Creature*> mobs = Hostiles(botAI);
-    std::erase_if(mobs, [bot, &state](Creature* mob)
-    {
-        return state.skipped.count(mob->GetGUID().GetRawValue()) > 0 || AzjolNerub::SkipHadronoxPull(bot, mob);
-    });
+    std::erase_if(
+        mobs, [&state](Creature* mob)
+        { return state.skipped.count(mob->GetGUID().GetRawValue()) > 0 || AzjolNerub::SkipHadronoxPull(mob); });
     std::vector<std::vector<Creature*>> packs = SplitPacks(mobs);
     std::vector<G3D::Vector3> const way = hasGoal ? WayAhead(bot, state.goal) : std::vector<G3D::Vector3>();
     std::vector<Player*> members;
@@ -907,7 +908,7 @@ ObjectGuid ExtraPack(Player* bot, std::vector<Creature*> const& pulled, std::vec
     float bestDistance = OVERPULL_REACH;
     for (Creature* mob : mobs)
     {
-        if (AzjolNerub::SkipHadronoxPull(bot, mob) || std::find(pulled.begin(), pulled.end(), mob) != pulled.end())
+        if (AzjolNerub::SkipHadronoxPull(mob) || std::find(pulled.begin(), pulled.end(), mob) != pulled.end())
             continue;
         float const distance = bot->GetExactDist(mob);
         if (distance < bestDistance)

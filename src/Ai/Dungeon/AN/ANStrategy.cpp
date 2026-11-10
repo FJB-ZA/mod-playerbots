@@ -34,7 +34,7 @@ void WotlkDungeonANStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
         triggers.push_back(new TriggerNode("krik'thir swarm pickup", {NextAction(pickup, ACTION_INTERRUPT + 2)}));
 
     // Hadronox
-    // The core AC triggers are very buggy with this boss, but default strat seems to play correctly
+    triggers.push_back(new TriggerNode("hadronox door traffic", {NextAction("hadronox clear lane", ACTION_MOVE + 2)}));
 
     //Anub'arak
     // TODO: No clear way to track these spikes. They don't seem to appear as gameobjects or triggers,

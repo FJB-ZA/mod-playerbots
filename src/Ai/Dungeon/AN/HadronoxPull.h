@@ -12,7 +12,8 @@ class Player;
 
 namespace AzjolNerub
 {
-bool SkipHadronoxPull(Player* tank, Creature* mob);
+bool SkipHadronoxPull(Creature* mob);
+bool HadronoxTraffic(Player* bot, float x, float y, float z);
 bool WaitForHadronox(Player* tank);
 }
 

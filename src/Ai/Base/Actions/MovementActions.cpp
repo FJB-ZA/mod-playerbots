@@ -16,6 +16,7 @@
 #include "MoveSplineInitArgs.h"
 #include "MovementGenerator.h"
 #include "FallPolicy.h"
+#include "HadronoxPull.h"
 #include "HealerSpotPolicy.h"
 #include "MeleeSpotPolicy.h"
 #include "MovementPlanner.h"
@@ -2990,6 +2991,8 @@ bool BackLineTakeSpotAction::Execute(Event /*event*/)
     // every spot in the Deadmines' tunnels was in some pack's range and the healer stayed by the mobs (2026-11-07)
     auto idleSees = [&](float x, float y, float z)
     {
+        if (AzjolNerub::HadronoxTraffic(bot, x, y, z))
+            return true;
         for (size_t k = 0; k < idle.size(); ++k)
             if (!BotMove::OutOfIdleAggro(&idle[k], 1, x, y) &&
                 idleMobs[k]->IsWithinLOS(x, y, z + bot->GetCollisionHeight()))
