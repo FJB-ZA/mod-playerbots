@@ -141,23 +141,29 @@ constexpr bool JoustAllows(JoustMoment fight, JoustAction action)
 // 2026-11-09). distance[rider][mount]; the mount rider `self` takes, or -1 when the mounts ran out before it.
 // A mount of the other faction counts this much farther: only the faction's own can trample a dismounted champion
 constexpr float OtherMountPenalty = 20.0f;
-// The mount a rider already runs for counts this much nearer, so it keeps it: picked afresh each tick, the riders' pairs
-// changed as they ran, and bots on foot zig-zagged between three mounts until the champions trampled them (role check,
-// 2026-11-10).
-constexpr float KeptMountBonus = 15.0f;
-
-constexpr float MountCost(float distance, bool otherFaction, bool kept)
+constexpr float MountCost(float distance, bool otherFaction)
 {
-    float const cost = distance + (otherFaction ? OtherMountPenalty : 0.0f) - (kept ? KeptMountBonus : 0.0f);
-    return cost > 0.0f ? cost : 0.0f;
+    return distance + (otherFaction ? OtherMountPenalty : 0.0f);
 }
 
-inline int AssignedMount(std::vector<std::vector<float>> const& distance, size_t self)
+inline int AssignedMount(std::vector<std::vector<float>> const& distance, size_t self,
+                         std::vector<int> const& kept = {})
 {
     size_t const riders = distance.size();
     size_t const mounts = riders ? distance[0].size() : 0;
     std::vector<bool> riderTaken(riders, false);
     std::vector<bool> mountTaken(mounts, false);
+    // A reachable free horse stays assigned to its rider, even when another rider passes closer.
+    for (size_t r = 0; r < riders && r < kept.size(); ++r)
+    {
+        int const m = kept[r];
+        if (m < 0 || static_cast<size_t>(m) >= mounts || mountTaken[m])
+            continue;
+        if (r == self)
+            return m;
+        riderTaken[r] = true;
+        mountTaken[m] = true;
+    }
     for (size_t round = 0; round < riders && round < mounts; ++round)
     {
         int bestRider = -1;

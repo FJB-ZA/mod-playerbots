@@ -12,6 +12,7 @@
 #include "GridNotifiers.h"
 #include "GridNotifiersImpl.h"
 #include "Group.h"
+#include "InstanceScript.h"
 #include "Log.h"
 #include "ObjectMgr.h"
 #include "Playerbots.h"
@@ -37,7 +38,7 @@ uint32 FactionMountEntry(Player* bot)
 
 bool IsJoustMount(uint32 entry) { return entry == NPC_ARGENT_BATTLEWORG || entry == NPC_ARGENT_WARHORSE; }
 
-// The mount each rider on foot last ran for (Toc::KeptMountBonus); bots of one map update together, maps may not
+// The free mount reserved by each rider on foot; bots of one map update together, maps may not
 std::mutex keptMountsLock;
 std::map<ObjectGuid, ObjectGuid> keptMounts;
 
@@ -685,26 +686,8 @@ bool ToCMountAction::Execute(Event /*event*/)
 Unit* ToCMountAction::FindMount(PlayerbotAI* botAI)
 {
     Player* player = botAI->GetBot();
-    std::vector<Unit*> mounts;
-    GuidVector npcs = botAI->GetAiObjectContext()->GetValue<GuidVector>("nearest vehicles")->Get();
-    for (ObjectGuid const& guid : npcs)
-    {
-        Unit* vehicleBase = botAI->GetUnit(guid);
-        if (!vehicleBase || vehicleBase->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE) || !vehicleBase->IsFriendlyTo(player))
-            continue;
-
-        if (!vehicleBase->GetVehicleKit() || !vehicleBase->GetVehicleKit()->GetAvailableSeatCount())
-            continue;
-
-        if (IsJoustMount(vehicleBase->GetEntry()))
-            mounts.push_back(vehicleBase);
-    }
-    if (mounts.empty())
+    if (InstanceScript* instance = player->GetInstanceScript(); !instance || instance->GetBossState(0) == DONE)
         return nullptr;
-    // All riders break equal-distance ties in the same order.
-    auto byGuid = [](Unit* a, Unit* b) { return a->GetGUID() < b->GetGUID(); };
-    std::sort(mounts.begin(), mounts.end(), byGuid);
-
     // The riders still to board: this bot and the other bots of the group alive on foot here
     std::vector<Player*> riders{player};
     if (Group* group = player->GetGroup())
@@ -716,20 +699,41 @@ Unit* ToCMountAction::FindMount(PlayerbotAI* botAI)
                 riders.push_back(member);
         }
 
+    auto byGuid = [](Unit* a, Unit* b) { return a->GetGUID() < b->GetGUID(); };
     std::sort(riders.begin(), riders.end(), byGuid);
     size_t const rider = std::find(riders.begin(), riders.end(), player) - riders.begin();
+
+    GuidVector candidates = botAI->GetAiObjectContext()->GetValue<GuidVector>("nearest vehicles")->Get();
+    GuidVector reservations;
+    for (Player* member : riders)
+    {
+        auto const guid = KeptMount(member->GetGUID());
+        reservations.push_back(guid);
+        if (guid)
+            candidates.push_back(guid);
+    }
+    std::sort(candidates.begin(), candidates.end());
+    candidates.erase(std::unique(candidates.begin(), candidates.end()), candidates.end());
+    std::vector<Unit*> mounts;
+    for (auto guid : candidates)
+    {
+        Unit* mount = botAI->GetUnit(guid);
+        if (mount && mount->IsAlive() && mount->GetMap() == player->GetMap() && IsJoustMount(mount->GetEntry()) &&
+            mount->IsFriendlyTo(player) && !mount->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE) &&
+            mount->GetVehicleKit() && mount->GetVehicleKit()->GetAvailableSeatCount())
+            mounts.push_back(mount);
+    }
+    std::vector<int> kept(riders.size(), -1);
     std::vector<std::vector<float>> distance(riders.size(), std::vector<float>(mounts.size()));
     for (size_t r = 0; r < riders.size(); ++r)
-    {
-        ObjectGuid const kept = KeptMount(riders[r]->GetGUID());
         for (size_t m = 0; m < mounts.size(); ++m)
-            distance[r][m] =
-                Toc::MountCost(riders[r]->GetExactDist(mounts[m]),
-                               !riders[r]->IsInCombat() && mounts[m]->GetEntry() != FactionMountEntry(riders[r]),
-                               mounts[m]->GetGUID() == kept);
-    }
-
-    int const mine = Toc::AssignedMount(distance, rider);
+        {
+            if (mounts[m]->GetGUID() == reservations[r])
+                kept[r] = static_cast<int>(m);
+            bool const otherFaction = mounts[m]->GetEntry() != FactionMountEntry(riders[r]);
+            distance[r][m] = Toc::MountCost(riders[r]->GetExactDist(mounts[m]), otherFaction && !riders[r]->IsInCombat());
+        }
+    int const mine = Toc::AssignedMount(distance, rider, kept);
     KeepMount(player->GetGUID(), mine >= 0 ? mounts[mine]->GetGUID() : ObjectGuid::Empty);
     return mine >= 0 ? mounts[mine] : nullptr;
 }
@@ -743,7 +747,10 @@ bool ToCMountAction::EnterVehicle(Unit* vehicleBase, bool moveIfFar)
     // Keep the tick while still on the way, so a heal or a cast the multiplier lets through doesn't halt the run
     if (dist > INTERACTION_DISTANCE)
     {
-        bool const moving = MoveTo(vehicleBase) || bot->isMoving();
+        if (!bot->isMoving() && botAI->CanMove())
+            AI_VALUE(LastMovement&, "last movement").clear();
+        auto const priority = bot->IsInCombat() ? MovementPriority::MOVEMENT_COMBAT : MovementPriority::MOVEMENT_NORMAL;
+        bool const moving = MoveTo(vehicleBase, INTERACTION_DISTANCE / 2.0f, priority) || bot->isMoving();
         NoteAttempt(vehicleBase, dist, moving ? "on the way" : "can't move to it");
         return moving;
     }
@@ -775,6 +782,7 @@ bool ToCMountAction::EnterVehicle(Unit* vehicleBase, bool moveIfFar)
         return false;
     }
 
+    KeepMount(bot->GetGUID(), ObjectGuid::Empty);
     NoteAttempt(vehicleBase, dist, "boarded");
 
     // Bots can enter the vehicle while on their own mount
