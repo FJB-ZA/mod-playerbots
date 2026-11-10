@@ -605,6 +605,44 @@ bool ToCMountedAction::ChargeCycle(Unit* vehicleBase, Unit* target, std::vector<
     }
 }
 
+bool ToCMountedAction::RideToSpare(Unit* current, uint32 now)
+{
+    if (!Toc::NeedsFreshMount(current->GetHealthPct()) || !bot->HasAura(SPELL_LANCE_EQUIPPED))
+        return false;
+    if (now >= spareCheckAt)
+    {
+        Unit* candidate = ToCMountAction::FindMount(botAI);
+        spare = candidate ? candidate->GetGUID() : ObjectGuid::Empty;
+        spareCheckAt = now + Toc::SpareMountCheckMs;
+    }
+    Unit* next = botAI->GetUnit(spare);
+    if (!next || !next->IsAlive() || !next->GetVehicleKit() || !next->GetVehicleKit()->GetAvailableSeatCount())
+        return false;
+    if (bot->GetDistance(next) > INTERACTION_DISTANCE)
+    {
+        RefreshDefend(current, now);
+        return KeepMoving(current, JOUST_MOVE_SPARE, now) ||
+               MoveJoust(JOUST_MOVE_SPARE, next->GetPositionX(), next->GetPositionY(), now);
+    }
+
+    // A normal spell click moves the rider between vehicles via Unit::_EnterVehicle.
+    // A refused click leaves it on its current mount beside the spare.
+    if (SpellInfo const* ride = RideSpell(next); ride && !bot->GetGlobalCooldownMgr().HasGlobalCooldown(ride))
+    {
+        current->StopMoving();
+        next->HandleSpellClick(bot);
+        if (bot->IsOnVehicle(next))
+        {
+            LOG_INFO("playerbots", "ToC mount: {} changed to a fresh mount before being unhorsed", bot->GetName());
+            KeepMount(bot->GetGUID(), ObjectGuid::Empty);
+            spare.Clear();
+            moveMode = JOUST_MOVE_NONE;
+            return true;
+        }
+    }
+    return RefreshDefend(current, now);
+}
+
 bool ToCMountedAction::Execute(Event /*event*/)
 {
     Unit* vehicleBase = bot->GetVehicleBase();
@@ -639,6 +677,9 @@ bool ToCMountedAction::Execute(Event /*event*/)
         RefreshDefend(vehicleBase, now);
         return true;
     }
+
+    if (RideToSpare(vehicleBase, now))
+        return true;
 
     Unit* target = FindJoustTarget(hostiles);
     if (!target)
@@ -688,14 +729,21 @@ Unit* ToCMountAction::FindMount(PlayerbotAI* botAI)
     Player* player = botAI->GetBot();
     if (InstanceScript* instance = player->GetInstanceScript(); !instance || instance->GetBossState(0) == DONE)
         return nullptr;
-    // The riders still to board: this bot and the other bots of the group alive on foot here
+    bool const replacing = player->GetVehicle() != nullptr;
+    // A rider on foot has first claim. Mounted riders below the replacement threshold
+    // reserve among themselves only while every living rider has a seat.
     std::vector<Player*> riders{player};
     if (Group* group = player->GetGroup())
         for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
         {
             Player* member = ref->GetSource();
-            if (member && member != player && member->IsAlive() && member->GetMap() == player->GetMap() &&
-                !member->GetVehicle() && GET_PLAYERBOT_AI(member))
+            if (!member || member == player || !member->IsAlive() || member->GetMap() != player->GetMap() ||
+                !GET_PLAYERBOT_AI(member))
+                continue;
+            Unit* base = member->GetVehicleBase();
+            if (replacing && !base)
+                return nullptr;
+            if (!base || (replacing && IsJoustMount(base->GetEntry()) && Toc::NeedsFreshMount(base->GetHealthPct())))
                 riders.push_back(member);
         }
 
@@ -720,7 +768,8 @@ Unit* ToCMountAction::FindMount(PlayerbotAI* botAI)
         Unit* mount = botAI->GetUnit(guid);
         if (mount && mount->IsAlive() && mount->GetMap() == player->GetMap() && IsJoustMount(mount->GetEntry()) &&
             mount->IsFriendlyTo(player) && !mount->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE) &&
-            mount->GetVehicleKit() && mount->GetVehicleKit()->GetAvailableSeatCount())
+            mount->GetVehicleKit() && mount->GetVehicleKit()->GetAvailableSeatCount() &&
+            (!replacing || Toc::HealthySpare(mount->GetHealthPct())))
             mounts.push_back(mount);
     }
     std::vector<int> kept(riders.size(), -1);
