@@ -67,6 +67,13 @@ public:
     bool IsActive() override;
 };
 
+class HadronoxTrafficTrigger : public Trigger
+{
+public:
+    HadronoxTrafficTrigger(PlayerbotAI* ai) : Trigger(ai, "hadronox door traffic", 1000) {}
+    bool IsActive() override;
+};
+
 class AnubarakPoundTrigger : public Trigger
 {
 public:

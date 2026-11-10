@@ -46,6 +46,13 @@ public:
     bool Execute(Event event) override;
 };
 
+class HadronoxClearLaneAction : public MovementAction
+{
+public:
+    HadronoxClearLaneAction(PlayerbotAI* ai) : MovementAction(ai, "hadronox clear lane") {}
+    bool Execute(Event event) override;
+};
+
 class AnubarakDodgePoundAction : public AttackAction
 {
 public:

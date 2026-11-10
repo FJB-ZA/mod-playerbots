@@ -9,6 +9,8 @@
 #ifndef _PLAYERBOTS_AN_POLICY_H
 #define _PLAYERBOTS_AN_POLICY_H
 
+#include "FollowTrailPolicy.h"
+
 namespace AzjolNerub
 {
 // Krik'thir the Gatewatcher
@@ -70,6 +72,22 @@ constexpr bool CollectSwarmAdd(bool tank, bool chasesBot, bool chasesParty, bool
 constexpr bool HadronoxRunner(unsigned entry)
 {
     return (entry >= 29062 && entry <= 29064) || (entry >= 29096 && entry <= 29098);
+}
+
+// The upper platform segments of the door routes in boss_hadronox.cpp.
+inline bool InDoorTraffic(float x, float y, float z)
+{
+    if (z < 721.0f || z > 744.0f)
+        return false;
+    using namespace DungeonLead;
+    WalkPoint const point{x, y, z};
+    constexpr WalkPoint landing{571.50f, 576.98f, 727.58f};
+    constexpr WalkPoint entrances[] = {{513.57f, 587.02f, 736.23f}, {537.92f, 580.44f, 732.80f}};
+    constexpr float clearance = 25.0f;
+    for (WalkPoint from : entrances)
+        if (DistanceSquared(point, NearestOnWalk(from, landing, point)) < clearance * clearance)
+            return true;
+    return false;
 }
 
 // Anub'arak
