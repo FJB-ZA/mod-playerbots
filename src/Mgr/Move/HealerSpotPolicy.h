@@ -56,6 +56,12 @@ inline bool HealerSpotClear(FacingMob const* mobs, size_t count, Spot tank, floa
     return !InFrontOfAny(mobs, count, x, y);
 }
 
+// A long run to the far side of a moving pack can leave the tank beyond healing range.
+constexpr float HealerStepMax = 20.0f;
+
+// Is the spot at (x, y) a step the healer at (fromX, fromY) may take?
+constexpr bool HealerStepInReach(float distance) { return distance <= HealerStepMax; }
+
 // How far (x, y) is from the nearest of the mobs; far away with none
 inline float NearestMob(FacingMob const* mobs, size_t count, float x, float y)
 {
