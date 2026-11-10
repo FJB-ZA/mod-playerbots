@@ -2931,6 +2931,11 @@ bool BackLineTakeSpotAction::Execute(Event /*event*/)
     if (!tank || tank == bot || !tank->IsAlive() || tank->GetMap() != bot->GetMap())
         return false;
 
+    // A cast or root can stop the previous step before its movement cooldown expires.
+    // A stationary back-line bot must be able to retry both a clear spot and the fallback to the tank.
+    if (!bot->isMoving())
+        AI_VALUE(LastMovement&, "last movement").clear();
+
     // A mob turned on the healer: into the tank's arms, for its taunt and its swings
     if (bot->GetExactDist2d(tank) > BotMove::HealerToTank &&
         std::any_of(bot->getAttackers().begin(), bot->getAttackers().end(), [bot = bot, tank](Unit* mob)
@@ -3071,10 +3076,6 @@ bool BackLineTakeSpotAction::Execute(Event /*event*/)
         return moved;
     }
     Position nearest = GetNearestPosition(availablePos);
-    // A step a cast or a turn stopped short is over: standing still, the bot is not waiting on it. Held to it for up
-    // to 5 seconds, a fire mage stood in a Karazhan pack 2.6 yards from a mob, its clear spot 20 yards off "refused".
-    if (!bot->isMoving())
-        AI_VALUE(LastMovement&, "last movement").clear();
     bool const moved = MoveTo(bot->GetMapId(), nearest.GetPositionX(), nearest.GetPositionY(), nearest.GetPositionZ(),
                               false, false, false, true, MovementPriority::MOVEMENT_COMBAT);
     Note(Acore::StringFormat("{} spot {:.1f} yd away, {}", toRoomiest ? "roomiest" : "clear",
