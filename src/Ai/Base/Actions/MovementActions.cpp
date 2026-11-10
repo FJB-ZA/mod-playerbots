@@ -2932,7 +2932,9 @@ bool BackLineTakeSpotAction::Execute(Event /*event*/)
         return false;
 
     // A mob turned on the healer: into the tank's arms, for its taunt and its swings
-    if (bot->GetExactDist2d(tank) > BotMove::HealerToTank && !bot->getAttackers().empty())
+    if (bot->GetExactDist2d(tank) > BotMove::HealerToTank &&
+        std::any_of(bot->getAttackers().begin(), bot->getAttackers().end(), [bot = bot, tank](Unit* mob)
+                    { return mob->IsWithinMeleeRange(bot) && !tank->IsWithinMeleeRange(mob); }))
     {
         Note("struck: to the tank");
         return MoveTo(tank, BotMove::HealerToTank / 2.0f, MovementPriority::MOVEMENT_COMBAT);
@@ -2997,7 +2999,7 @@ bool BackLineTakeSpotAction::Execute(Event /*event*/)
     // Why the spots tried were turned down, for the role check's log
     struct
     {
-        uint32 tried = 0, idle = 0, crowded = 0, walls = 0, unseen = 0;
+        uint32 tried = 0, idle = 0, crowded = 0, walls = 0, unseen = 0, far = 0;
     } rejects;
     for (float radius : {BotMove::HealerBack + 2.0f, BotMove::HealerBack + 6.0f})
     {
@@ -3019,6 +3021,11 @@ bool BackLineTakeSpotAction::Execute(Event /*event*/)
                                                                 bot->GetPositionZ(), x, y, z))
             {
                 ++rejects.walls;
+                continue;
+            }
+            if (!BotMove::HealerStepInReach(bot->GetExactDist(x, y, z)))
+            {
+                ++rejects.far;
                 continue;
             }
             if (idleSees(x, y, z))
@@ -3056,10 +3063,11 @@ bool BackLineTakeSpotAction::Execute(Event /*event*/)
     {
         // No clear spot in sight: at least back in the tank's reach and sight
         bool const moved = outOfReach && MoveTo(tank, backTo, MovementPriority::MOVEMENT_COMBAT);
-        Note(Acore::StringFormat("no spot of {} (idle aggro {}, fronts or crowded {}, walls {}, tank unseen {}); {} "
-                                 "mobs, nearest {:.1f} yd; {}",
-                                 rejects.tried, rejects.idle, rejects.crowded, rejects.walls, rejects.unseen,
-                                 mobs.size(), nearestHere, moved ? "to the tank" : "stays"));
+        Note(Acore::StringFormat(
+            "no spot of {} (idle aggro {}, fronts or crowded {}, walls {}, tank unseen {}, too far {}); "
+            "{} mobs, nearest {:.1f} yd; {}",
+            rejects.tried, rejects.idle, rejects.crowded, rejects.walls, rejects.unseen, rejects.far, mobs.size(),
+            nearestHere, moved ? "to the tank" : "stays"));
         return moved;
     }
     Position nearest = GetNearestPosition(availablePos);

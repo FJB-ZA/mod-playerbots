@@ -113,7 +113,8 @@ bool BackLineOutOfPlaceTrigger::IsActive()
         // A mob on the healer itself: to the tank, whose taunt takes it back. Standing still, it beat on the healer
         if (mob->GetVictim() == bot)
         {
-            if (tank && tank != bot && tank->IsAlive() && bot->GetExactDist2d(tank) > BotMove::HealerToTank)
+            if (tank && tank != bot && tank->IsAlive() && bot->GetExactDist2d(tank) > BotMove::HealerToTank &&
+                mob->IsWithinMeleeRange(bot) && !tank->IsWithinMeleeRange(mob))
                 return true;
             continue;
         }
