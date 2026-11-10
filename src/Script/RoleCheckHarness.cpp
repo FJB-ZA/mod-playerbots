@@ -669,6 +669,10 @@ void Status()
             std::string trace = engine->GetLastAction();
             if (trace.size() > 400)
                 trace = trace.substr(trace.size() - 400);
+            if (Unit* mount = bot->GetVehicleBase())
+                LOG_INFO("playerbots", "Rolecheck: {} riding {} at Z {:.1f}, seat Z {:.1f}, rider Z {:.1f}",
+                         bot->GetName(), mount->GetName(), mount->GetPositionZ(),
+                         bot->m_movementInfo.transport.pos.GetPositionZ(), bot->GetPositionZ());
             LOG_INFO("playerbots",
                      "Rolecheck: {} far from the tank: at {:.1f} {:.1f} {:.1f} (tank z {:.1f}), alive {}, combat {}, "
                      "motion {}, falling {}; its last actions: {}",
@@ -1356,7 +1360,8 @@ bool StartEvent(Player* gm, std::vector<Player*> const& bots, uint32 diff)
         if (run.eventMoves && gm->GetExactDist(&run.eventFrom) > 30.0f && !gm->IsBeingTeleported())
         {
             run.eventMoves = false;
-            BringGroup(gm, bots);
+            if (run.mapId != 650)  // teleporting a rider to the herald ejects it
+                BringGroup(gm, bots);
         }
         run.eventWait = run.eventWait > diff ? run.eventWait - diff : 0;
         if (!run.eventWait)
@@ -1416,6 +1421,11 @@ bool StartEvent(Player* gm, std::vector<Player*> const& bots, uint32 diff)
             run.eventWait = 5000;
             return true;
         }
+        // The herald starts the joust for mounted players. Wait for every living rider,
+        // including after a wipe resets the encounter, before the GM talks to him.
+        if (run.mapId == 650 && gm->GetInstanceScript() && gm->GetInstanceScript()->GetBossState(0) != DONE &&
+            std::any_of(bots.begin(), bots.end(), [](Player* bot) { return !bot->IsAlive() || !bot->GetVehicle(); }))
+            return true;
         // Beside it first (a teleport lands at the GM's next session update), then the step
         if (gm->GetExactDist(starter) > 4.0f && ++run.eventBeside[starter->GetGUID()] <= 3)
         {
@@ -1737,7 +1747,7 @@ bool WithStarter(Player* gm, std::vector<Player*> const& bots)
 {
     // (not in a raid: the Coliseum's Barrett walks out of the arena once he has started a stage)
     Creature* starter = !run.raid && run.lastStarter.IsCreature() ? gm->GetMap()->GetCreature(run.lastStarter) : nullptr;
-    if (!starter || !starter->IsAlive() || starter->GetExactDist(&run.lastStarterAt) < 30.0f ||
+    if (run.mapId == 650 || !starter || !starter->IsAlive() || starter->GetExactDist(&run.lastStarterAt) < 30.0f ||
         gm->GetExactDist(starter) < 30.0f)
         return false;
     for (EventGather const& spot : EventGathers)
@@ -1817,6 +1827,13 @@ void HeldPull(Player* gm, std::vector<Player*> const& bots, EventGather const& h
 
 void RaidPull(Player* gm, std::vector<Player*> const& bots, uint32 diff)
 {
+    // The encounter sends each mounted wave into the arena. Generic raid gathers
+    // between waves would dismount riders and start fights early.
+    if (run.mapId == 650 && gm->GetInstanceScript() && gm->GetInstanceScript()->GetBossState(0) != DONE)
+    {
+        StartEvent(gm, bots, diff);
+        return;
+    }
     if (run.walkWait)
     {
         run.walkWait = run.walkWait > diff ? run.walkWait - diff : 0;
@@ -2025,7 +2042,7 @@ void Observe(Player* gm, uint32 diff)
 
     run.sinceFollow += diff;
     // (not while an event step has the GM away, the group still to come after it)
-    if (!run.raid && run.sinceFollow >= FollowMs && !run.eventMoves && run.pullTarget.IsEmpty())
+    if (!run.raid && run.mapId != 650 && run.sinceFollow >= FollowMs && !run.eventMoves && run.pullTarget.IsEmpty())
     {
         run.sinceFollow = 0;
         Follow(gm);
