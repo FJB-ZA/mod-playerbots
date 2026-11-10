@@ -65,6 +65,13 @@ constexpr bool CollectSwarmAdd(bool tank, bool chasesBot, bool chasesParty, bool
     return tank ? (!chasesBot && chasesParty && inPickupRange) : chasesBot;
 }
 
+// Hadronox's door summons march past the platform to fight the boss. The three
+// crusher packs use different entries and must die before he webs the doors.
+constexpr bool HadronoxRunner(unsigned entry)
+{
+    return (entry >= 29062 && entry <= 29064) || (entry >= 29096 && entry <= 29098);
+}
+
 // Anub'arak
 
 // Pound hits everyone in front of him within 15 yards; the slack covers his size, measured from his centre
