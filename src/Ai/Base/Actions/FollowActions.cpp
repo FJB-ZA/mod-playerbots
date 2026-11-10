@@ -27,15 +27,14 @@
 
 namespace
 {
-// A point on the tank's trail, or the follower's position when every route is blocked.
-bool TrailWalk(PlayerbotAI* botAI, Player* bot, Player* leader, Position& to)
+// Use a fixed destination near idle packs. A live follow generator can round the next
+// bend without asking the bot AI to check that leg.
+bool TrailWalk(PlayerbotAI* botAI, Player* bot, Player* leader, DungeonLead::Trail formation, Position& to)
 {
     PlayerbotAI* leaderAI = GET_PLAYERBOT_AI(leader);
     if (!leaderAI || !bot->IsAlive() || bot->IsInCombat() || leader->IsInCombat() || bot->GetMap() != leader->GetMap())
         return false;
     auto const& trail = DungeonLead::StateOf(leaderAI).trail;
-    if (trail.empty())
-        return false;
 
     using DungeonLead::WalkPoint;
     auto coords = [](Position const& p) { return WalkPoint{p.GetPositionX(), p.GetPositionY(), p.GetPositionZ()}; };
@@ -59,8 +58,14 @@ bool TrailWalk(PlayerbotAI* botAI, Player* bot, Player* leader, Position& to)
         }
         return false;
     };
-    if (!pulls(*leader))
+    if (idle.empty())
         return false;
+    // Match the core FollowMovementGenerator. A healer's offset can enter aggro
+    // range even when the shortcut to the tank itself clears the pack.
+    to = leader->GetPosition();
+    leader->MovePositionToFirstCollision(to, bot->GetCombatReach() + formation.distance, formation.angle);
+    if (!pulls(to))
+        return true;
     int const index = DungeonLead::SafeTrailPoint(trail, bot->GetPosition(), pulls);
     to = index >= 0 ? trail[index] : bot->GetPosition();
     return true;
@@ -277,7 +282,7 @@ bool FollowAction::Execute(Event /*event*/)
         DungeonLead::Trail const trail = DungeonLead::TrailFor(ranged, slot, count);
         // Round a pack the tank walked round, by the tank's own trail, not straight through it (FollowTrailPolicy.h)
         Position by;
-        if (TrailWalk(botAI, bot, leader, by))
+        if (TrailWalk(botAI, bot, leader, trail, by))
         {
             if (bot->GetExactDist(&by) < 1.0f)
             {
