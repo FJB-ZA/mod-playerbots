@@ -55,6 +55,16 @@ constexpr bool KrikthirAllows(bool bossWaiting, bool watcherUp, bool dpsAssist, 
     return !(bossWaiting && watcherUp && (dpsAssist || aoe));
 }
 
+// The two kinds of add summoned by Krik'thir's Swarm.
+constexpr bool SwarmAdd(unsigned entry) { return entry == 28735 || entry == 28736; }
+constexpr unsigned LooseSwarm = 3;
+constexpr float SwarmPickupRange = 8.0f;
+
+constexpr bool CollectSwarmAdd(bool tank, bool chasesBot, bool chasesParty, bool inPickupRange)
+{
+    return tank ? (!chasesBot && chasesParty && inPickupRange) : chasesBot;
+}
+
 // Anub'arak
 
 // Pound hits everyone in front of him within 15 yards; the slack covers his size, measured from his centre

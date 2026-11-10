@@ -6,6 +6,7 @@
 
 #include "ANStrategy.h"
 #include "ANMultipliers.h"
+#include "Playerbots.h"
 
 void WotlkDungeonANStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
@@ -19,6 +20,18 @@ void WotlkDungeonANStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     // One skull for the group to kill: the watcher order the damage dealers keep, which the tank's own target is not
     triggers.push_back(new TriggerNode("krik'thir mark",
         { NextAction("krik'thir mark", ACTION_RAID + 3) }));
+
+    triggers.push_back(new TriggerNode("krik'thir loose swarm", {NextAction("krik'thir bring swarm", ACTION_MOVE + 1)}));
+    char const* pickup = nullptr;
+    switch (botAI->GetBot()->getClass())
+    {
+        case CLASS_WARRIOR: pickup = "thunder clap"; break;
+        case CLASS_PALADIN: pickup = "consecration"; break;
+        case CLASS_DRUID: pickup = "swipe (bear)"; break;
+        case CLASS_DEATH_KNIGHT: pickup = "blood boil"; break;
+    }
+    if (pickup)
+        triggers.push_back(new TriggerNode("krik'thir swarm pickup", {NextAction(pickup, ACTION_INTERRUPT + 2)}));
 
     // Hadronox
     // The core AC triggers are very buggy with this boss, but default strat seems to play correctly
