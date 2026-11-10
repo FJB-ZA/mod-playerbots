@@ -29,6 +29,15 @@ public:
     bool isUseful() override;
 };
 
+// The tank marks skull on the watcher the kill order takes first, then on Krik'thir
+class KrikthirMarkAction : public Action
+{
+public:
+    KrikthirMarkAction(PlayerbotAI* botAI) : Action(botAI, "krik'thir mark") {}
+    bool Execute(Event event) override;
+    bool isUseful() override;
+};
+
 class AnubarakDodgePoundAction : public AttackAction
 {
 public:

@@ -50,6 +50,13 @@ public:
     bool IsActive() override;
 };
 
+class KrikthirMarkTrigger : public Trigger
+{
+public:
+    KrikthirMarkTrigger(PlayerbotAI* botAI) : Trigger(botAI, "krik'thir mark") {}
+    bool IsActive() override;
+};
+
 class AnubarakPoundTrigger : public Trigger
 {
 public:

@@ -657,6 +657,14 @@ Wait CheckReady(PlayerbotAI* botAI, State& state)
             member.distance = player == bot || player->GetMap() != bot->GetMap()
                                   ? 0.0f
                                   : std::min(player->GetExactDist(&from), player->GetExactDist(bot));
+            // A bot beside the master it follows stands where the master does (PullReadyPolicy.h)
+            if (member.distance > 0.0f)
+                if (PlayerbotAI* memberAI = GET_PLAYERBOT_AI(player))
+                    if (Player* master = memberAI->GetMaster();
+                        master && master != player && master->IsAlive() && master->GetMap() == bot->GetMap())
+                        member.distance =
+                            GroupDistance(member.distance, true, player->GetExactDist(master),
+                                          std::min(master->GetExactDist(&from), master->GetExactDist(bot)));
             member.healthPct = player->GetHealthPct();
             member.usesMana = player->getPowerType() == POWER_MANA && player->GetMaxPower(POWER_MANA) > 0;
             member.manaPct = member.usesMana ? player->GetPowerPct(POWER_MANA) : 100.0f;

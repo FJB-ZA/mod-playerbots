@@ -17,11 +17,13 @@ class WotlkDungeonANTriggerContext : public NamedObjectContext<Trigger>
         {
             creators["krik'thir web wrap"] = &WotlkDungeonANTriggerContext::krikthir_web_wrap;
             creators["krik'thir watchers"] = &WotlkDungeonANTriggerContext::krikthir_watchers;
+            creators["krik'thir mark"] = &WotlkDungeonANTriggerContext::krikthir_mark;
             creators["anub'arak pound"] = &WotlkDungeonANTriggerContext::anubarak_pound;
         }
     private:
         static Trigger* krikthir_web_wrap(PlayerbotAI* botAI) { return new KrikthirWebWrapTrigger(botAI); }
         static Trigger* krikthir_watchers(PlayerbotAI* botAI) { return new KrikthirWatchersTrigger(botAI); }
+        static Trigger* krikthir_mark(PlayerbotAI* botAI) { return new KrikthirMarkTrigger(botAI); }
         static Trigger* anubarak_pound(PlayerbotAI* botAI) { return new AnubarakPoundTrigger(botAI); }
 };
 
