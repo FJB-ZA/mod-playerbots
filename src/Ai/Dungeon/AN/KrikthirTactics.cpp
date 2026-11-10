@@ -10,6 +10,7 @@
 #include "ANMultipliers.h"
 #include "ANPolicy.h"
 #include "ANTriggers.h"
+#include "ANStrategy.h"
 #include "ChooseTargetActions.h"
 #include "KrikthirSwarmValue.h"
 #include "Playerbots.h"
@@ -95,6 +96,25 @@ Unit* WantedSkull(PlayerbotAI* botAI)
 }
 }  // namespace
 
+// Keep tanking the boss and watchers while the tank's area attacks collect the swarm.
+void WotlkDungeonANStrategy::AppendTargetExclusions(GuidSet& exclusions, TargetValueExclusionType type)
+{
+    if (type != TargetValueExclusionType::TankTarget)
+        return;
+    AiObjectContext* context = botAI->GetAiObjectContext();
+    auto const& attackers = AI_VALUE_REF(GuidVector, "attackers");
+    bool const fightingBoss = std::any_of(attackers.begin(), attackers.end(), [this](ObjectGuid guid)
+    {
+        Unit* mob = botAI->GetUnit(guid);
+        return mob && mob->GetEntry() == NPC_KRIKTHIR && mob->IsAlive() && mob->GetVictim();
+    });
+    if (!fightingBoss)
+        return;
+    for (ObjectGuid guid : attackers)
+        if (Unit* mob = botAI->GetUnit(guid); mob && AzjolNerub::SwarmAdd(mob->GetEntry()))
+            exclusions.insert(guid);
+}
+
 // Gather loose swarmers for one area attack, without chasing each add across the room.
 bool KrikthirSwarmValue::Calculate()
 {
@@ -133,7 +153,7 @@ bool KrikthirBringSwarmAction::Execute(Event /*event*/)
 {
     Unit* tank = AI_VALUE(Unit*, "group main tank");
     if (!tank || tank == bot || !tank->IsAlive() || tank->GetMap() != bot->GetMap() ||
-        bot->GetExactDist2d(tank) <= AzjolNerub::SwarmPickupRange || bot->IsNonMeleeSpellCast(false))
+        bot->GetExactDist2d(tank) <= AzjolNerub::SwarmPickupRange || bot->IsNonMeleeSpellCast(false, false, true))
         return false;
     return MoveTo(tank, AzjolNerub::SwarmPickupRange / 2.0f, MovementPriority::MOVEMENT_COMBAT);
 }
