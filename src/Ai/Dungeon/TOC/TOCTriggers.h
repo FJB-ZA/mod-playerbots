@@ -129,4 +129,20 @@ public:
     bool IsActive() override;
 };
 
+// Out of a fight, with the Argent soldiers waiting too near the bot or its master
+class ToCSoldiersWaitingTrigger : public Trigger
+{
+public:
+    ToCSoldiersWaitingTrigger(PlayerbotAI* botAI) : Trigger(botAI, "toc soldiers waiting") {}
+    bool IsActive() override;
+};
+
+// The tank, in a fight with an Argent Priestess the skull is not on
+class ToCSoldiersMarkTrigger : public Trigger
+{
+public:
+    ToCSoldiersMarkTrigger(PlayerbotAI* botAI) : Trigger(botAI, "toc soldiers mark") {}
+    bool IsActive() override;
+};
+
 #endif

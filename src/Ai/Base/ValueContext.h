@@ -12,6 +12,7 @@
 #include "AlwaysLootListValue.h"
 #include "AoeHealValues.h"
 #include "AoeValues.h"
+#include "ArgentSoldiersValue.h"
 #include "AttackerCountValues.h"
 #include "AttackerWithoutAuraTargetValue.h"
 #include "AttackersValue.h"
@@ -113,6 +114,7 @@ class ValueContext : public NamedObjectContext<UntypedValue>
 public:
     ValueContext()
     {
+        creators["toc argent soldiers"] = &ValueContext::toc_argent_soldiers;
         creators["living training"] = &ValueContext::living_training;
         creators["living craft"] = &ValueContext::living_craft;
         creators["living processing"] = &ValueContext::living_processing;
@@ -366,6 +368,7 @@ public:
     }
 
 private:
+    static UntypedValue* toc_argent_soldiers(PlayerbotAI* ai) { return new ArgentSoldiersValue(ai); }
     static UntypedValue* living_training(PlayerbotAI* botAI) { return new LivingTrainingValue(botAI); }
     static UntypedValue* living_craft(PlayerbotAI* botAI) { return new LivingCraftValue(botAI); }
     static UntypedValue* living_processing(PlayerbotAI* botAI) { return new LivingProcessingValue(botAI); }

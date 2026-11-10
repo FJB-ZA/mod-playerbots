@@ -9,6 +9,7 @@
 #ifndef _PLAYERBOTS_TOC_POLICY_H
 #define _PLAYERBOTS_TOC_POLICY_H
 
+#include <cmath>
 #include <cstdint>
 #include <vector>
 
@@ -129,13 +130,9 @@ struct JoustAction
 // On a joust mount, only the joust moves it.
 constexpr bool JoustAllows(JoustMoment fight, JoustAction action)
 {
-    if (!fight.combat)
-        return true;
-    if (!fight.onVehicle)
-        return action.setup || !action.movement || !fight.spareMount;
-    if (!fight.onJoustMount)
-        return true;
-    return !(action.movement && !action.mountedJoust);
+    if (fight.onVehicle)
+        return !fight.onJoustMount || !action.movement || action.mountedJoust;
+    return !fight.combat || action.setup || !action.movement || !fight.spareMount;
 }
 
 // Spare mounts for the riders on foot: the closest rider and mount pair first, each rider and each mount once. All
@@ -179,6 +176,41 @@ inline int AssignedMount(std::vector<std::vector<float>> const& distance, size_t
         mountTaken[bestMount] = true;
     }
     return -1;
+}
+
+// Stay outside aggro range while the three Argent packs assemble.
+constexpr float SoldierKeepOff = 28.0f;
+constexpr float SoldierWaitAt = 34.0f;
+
+constexpr bool KeepsOffSoldiers(bool soldierFighting, float botToSoldier, float masterToSoldier)
+{
+    return !soldierFighting && (botToSoldier < SoldierKeepOff || masterToSoldier < SoldierKeepOff);
+}
+
+// Where it backs off to: SoldierWaitAt from the soldier, toward the middle of the arena
+inline void SoldierWaitSpot(float soldierX, float soldierY, float& x, float& y)
+{
+    float dx = ArenaCenterX - soldierX;
+    float dy = ArenaCenterY - soldierY;
+    float const length = std::sqrt(dx * dx + dy * dy);
+    if (length < 0.01f)
+    {
+        dx = 0.0f;
+        dy = -1.0f;
+    }
+    else
+    {
+        dx /= length;
+        dy /= length;
+    }
+    x = soldierX + dx * SoldierWaitAt;
+    y = soldierY + dy * SoldierWaitAt;
+}
+
+// Focus the heroic Priestess before she can Mind Control the tank.
+constexpr bool MarksPriestess(bool tank, bool priestessFighting, bool skullOnLivePriestess)
+{
+    return tank && priestessFighting && !skullOnLivePriestess;
 }
 
 // Eadric the Pure

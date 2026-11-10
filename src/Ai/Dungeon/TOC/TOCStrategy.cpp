@@ -20,7 +20,9 @@ void WotlkDungeonToCStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
         { NextAction("toc mounted", ACTION_RAID + 6) }));
     triggers.push_back(new TriggerNode("toc eadric",
         { NextAction("toc eadric", ACTION_RAID + 3) }));
-
+    // The Argent soldiers: keep off them while they wait, and the skull on a Priestess once they fight
+    triggers.push_back(new TriggerNode("toc soldiers waiting", {NextAction("toc soldiers keep off", ACTION_RAID + 3)}));
+    triggers.push_back(new TriggerNode("toc soldiers mark", {NextAction("toc soldiers mark", ACTION_RAID + 3)}));
 }
 
 void WotlkDungeonToCStrategy::InitMultipliers(std::vector<Multiplier*>& multipliers)

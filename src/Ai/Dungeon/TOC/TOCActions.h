@@ -110,4 +110,20 @@ public:
         : MovementAction(botAI, name) {}
     bool Execute(Event event) override;
 };
+
+// Backs off from the waiting Argent soldiers (TOCPolicy.h KeepsOffSoldiers)
+class ToCSoldiersKeepOffAction : public MovementAction
+{
+public:
+    ToCSoldiersKeepOffAction(PlayerbotAI* botAI) : MovementAction(botAI, "toc soldiers keep off") {}
+    bool Execute(Event event) override;
+};
+
+// The tank marks skull on an Argent Priestess in the fight
+class ToCSoldiersMarkAction : public Action
+{
+public:
+    ToCSoldiersMarkAction(PlayerbotAI* botAI) : Action(botAI, "toc soldiers mark") {}
+    bool Execute(Event event) override;
+};
 #endif

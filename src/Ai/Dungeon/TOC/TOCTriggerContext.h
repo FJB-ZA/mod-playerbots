@@ -20,6 +20,8 @@ class WotlkDungeonToCTriggerContext : public NamedObjectContext<Trigger>
             creators["toc mount near"] = &WotlkDungeonToCTriggerContext::toc_mount_near;
             creators["toc mounted"] = &WotlkDungeonToCTriggerContext::toc_mounted;
             creators["toc eadric"] = &WotlkDungeonToCTriggerContext::toc_eadric;
+            creators["toc soldiers waiting"] = &WotlkDungeonToCTriggerContext::toc_soldiers_waiting;
+            creators["toc soldiers mark"] = &WotlkDungeonToCTriggerContext::toc_soldiers_mark;
         }
     private:
         static Trigger* toc_lance(PlayerbotAI* botAI) { return new ToCLanceTrigger(botAI); }
@@ -27,6 +29,8 @@ class WotlkDungeonToCTriggerContext : public NamedObjectContext<Trigger>
         static Trigger* toc_mount_near(PlayerbotAI* botAI) { return new ToCMountNearTrigger(botAI); }
         static Trigger* toc_mounted(PlayerbotAI* botAI) { return new ToCMountedTrigger(botAI); }
         static Trigger* toc_eadric(PlayerbotAI* botAI) { return new ToCEadricTrigger(botAI); }
+        static Trigger* toc_soldiers_waiting(PlayerbotAI* botAI) { return new ToCSoldiersWaitingTrigger(botAI); }
+        static Trigger* toc_soldiers_mark(PlayerbotAI* botAI) { return new ToCSoldiersMarkTrigger(botAI); }
 };
 
 #endif
