@@ -74,7 +74,7 @@ bool BackLineOutOfPlaceTrigger::IsActive()
                (bot->GetExactDist2d(tank) > BotMove::HealerNearTank &&
                 !tank->IsWithinLOS(x, y, z + bot->GetCollisionHeight()));
     }
-    if (bot->IsNonMeleeSpellCast(false))
+    if (bot->IsNonMeleeSpellCast(false, false, true))  // an auto-repeating wand can stop to reposition
     {
         // ...or out of the tank's sight, where no heal reaches it: round the Deadmines' corners a healer casting on the
         // others lost the tank for whole pulls (role check, 2026-11-10: healer back 69%)
