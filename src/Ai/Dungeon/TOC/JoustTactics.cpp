@@ -2,11 +2,13 @@
 
 #include <algorithm>
 #include <cmath>
-#include <mutex>
 #include <map>
+#include <mutex>
 
+#include "ArgentSoldiersValue.h"
 #include "AttackersValue.h"
 #include "CellImpl.h"
+#include "FollowActions.h"
 #include "GridNotifiers.h"
 #include "GridNotifiersImpl.h"
 #include "Group.h"
@@ -562,8 +564,10 @@ bool ToCMountedAction::KeepMoving(Unit* vehicleBase, JoustMove mode, uint32 now)
 
 bool ToCMountedAction::MoveJoust(JoustMove mode, float x, float y, uint32 now)
 {
-    float z = bot->GetPositionZ();
-    bot->UpdateAllowedPositionZ(x, y, z);
+    // A rider's Z includes its seat offset. Obtain the arena floor in world coordinates.
+    float const z = bot->GetMap()->GetHeight(bot->GetPhaseMask(), x, y, Toc::ArenaCenterZ + 6.0f, true, 12.0f);
+    if (std::abs(z - Toc::ArenaCenterZ) > 6.0f)
+        return false;
     AI_VALUE(LastMovement&, "last movement").Set(nullptr);
     if (!MoveTo(bot->GetMapId(), x, y, z, false, false, false, false, MovementPriority::MOVEMENT_COMBAT))
         return false;
@@ -681,7 +685,6 @@ bool ToCMountAction::Execute(Event /*event*/)
 Unit* ToCMountAction::FindMount(PlayerbotAI* botAI)
 {
     Player* player = botAI->GetBot();
-    uint32 preferredEntry = FactionMountEntry(player);
     std::vector<Unit*> mounts;
     GuidVector npcs = botAI->GetAiObjectContext()->GetValue<GuidVector>("nearest vehicles")->Get();
     for (ObjectGuid const& guid : npcs)
@@ -698,6 +701,9 @@ Unit* ToCMountAction::FindMount(PlayerbotAI* botAI)
     }
     if (mounts.empty())
         return nullptr;
+    // All riders break equal-distance ties in the same order.
+    auto byGuid = [](Unit* a, Unit* b) { return a->GetGUID() < b->GetGUID(); };
+    std::sort(mounts.begin(), mounts.end(), byGuid);
 
     // The riders still to board: this bot and the other bots of the group alive on foot here
     std::vector<Player*> riders{player};
@@ -710,16 +716,20 @@ Unit* ToCMountAction::FindMount(PlayerbotAI* botAI)
                 riders.push_back(member);
         }
 
+    std::sort(riders.begin(), riders.end(), byGuid);
+    size_t const rider = std::find(riders.begin(), riders.end(), player) - riders.begin();
     std::vector<std::vector<float>> distance(riders.size(), std::vector<float>(mounts.size()));
     for (size_t r = 0; r < riders.size(); ++r)
     {
         ObjectGuid const kept = KeptMount(riders[r]->GetGUID());
         for (size_t m = 0; m < mounts.size(); ++m)
-            distance[r][m] = Toc::MountCost(riders[r]->GetExactDist(mounts[m]), mounts[m]->GetEntry() != preferredEntry,
-                                            mounts[m]->GetGUID() == kept);
+            distance[r][m] =
+                Toc::MountCost(riders[r]->GetExactDist(mounts[m]),
+                               !riders[r]->IsInCombat() && mounts[m]->GetEntry() != FactionMountEntry(riders[r]),
+                               mounts[m]->GetGUID() == kept);
     }
 
-    int const mine = Toc::AssignedMount(distance, 0);
+    int const mine = Toc::AssignedMount(distance, rider);
     KeepMount(player->GetGUID(), mine >= 0 ? mounts[mine]->GetGUID() : ObjectGuid::Empty);
     return mine >= 0 ? mounts[mine] : nullptr;
 }
@@ -792,12 +802,21 @@ float ToCJoustMultiplier::GetValue(Action* action)
 {
     Toc::JoustMoment fight;
     fight.combat = botAI->GetState() == BOT_STATE_COMBAT;
-    if (!fight.combat)
-        return 1.0f;
-
     Unit* vehicleBase = bot->GetVehicleBase();
     fight.onVehicle = vehicleBase != nullptr;
     fight.onJoustMount = vehicleBase && IsJoustMount(vehicleBase->GetEntry());
+    if (!fight.combat && !fight.onJoustMount)
+    {
+        // Out of a fight a follow would walk the bot back in among the waiting Argent soldiers (KeepsOffSoldiers)
+        if (dynamic_cast<FollowAction*>(action) && !bot->GetVehicle())
+        {
+            ToCSoldiers const soldiers = AI_VALUE(ToCSoldiers, "toc argent soldiers");
+            if (soldiers.nearest &&
+                Toc::KeepsOffSoldiers(soldiers.fighting, soldiers.botDistance, soldiers.masterDistance))
+                return 0.0f;
+        }
+        return 1.0f;
+    }
 
     Toc::JoustAction shape;
     shape.setup = dynamic_cast<ToCMountAction*>(action) || dynamic_cast<ToCLanceAction*>(action) ||
