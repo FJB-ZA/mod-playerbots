@@ -76,6 +76,12 @@ bool BackLineOutOfPlaceTrigger::IsActive()
     }
     if (bot->IsNonMeleeSpellCast(false))
     {
+        // ...or out of the tank's sight, where no heal reaches it: round the Deadmines' corners a healer casting on the
+        // others lost the tank for whole pulls (role check, 2026-11-10: healer back 69%)
+        Unit* tank = AI_VALUE(Unit*, "group main tank");
+        if (PlayerbotAI::IsHeal(bot) && tank && tank != bot && tank->IsAlive() && tank->IsInCombat() &&
+            tank->GetMap() == bot->GetMap() && !bot->IsWithinLOSInMap(tank))
+            return true;
         for (ObjectGuid const& guid : AI_VALUE(GuidVector, "attackers"))
         {
             Unit* mob = botAI->GetUnit(guid);

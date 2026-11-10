@@ -55,6 +55,13 @@ Creature* GetLashingUnderbat(Player* bot, GuidVector const& attackers);
 Unit* UnderbatRallyUnit(Player* bot, GuidVector const& attackers);
 
 bool SpotClearOfUnderbats(Player* bot, GuidVector const& attackers, float x, float y, float z);
+
+// In the front of a mob other than a bat that is not on the bot itself (MeleeSpotPolicy.h)
+bool InPackFront(Player* bot, GuidVector const& attackers, float x, float y);
+
+// The spot by the rally unit, in reach of the target, clear of every bat's lash and every other mob's front
+bool UnderbatRallySpot(Player* bot, Unit* rally, Unit* target, GuidVector const& attackers, float& x, float& y,
+                       float& z);
 }
 
 #endif
