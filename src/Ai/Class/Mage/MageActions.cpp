@@ -5,6 +5,7 @@
  */
 
 #include "MageActions.h"
+#include "BlinkPolicy.h"
 #include "PlayerbotAIConfig.h"
 #include "Playerbots.h"
 #include "ServerFacade.h"
@@ -181,5 +182,13 @@ bool CastBlinkBackAction::isUseful()
             return false;
         z = ground;
     }
+    // Nor away from the group (BlinkPolicy.h)
+    Unit* tank = AI_VALUE(Unit*, "group main tank");
+    bool const hasTank = tank && tank != bot && tank->IsAlive() && tank->GetMap() == bot->GetMap();
+    float const landX = bot->GetPositionX() + Range * std::cos(angle);
+    float const landY = bot->GetPositionY() + Range * std::sin(angle);
+    if (!BotMove::BlinkKeepsGroup(hasTank, hasTank ? bot->GetExactDist2d(tank) : 0.0f,
+                                  hasTank ? tank->GetExactDist2d(landX, landY) : 0.0f))
+        return false;
     return CastSpellAction::isUseful();
 }

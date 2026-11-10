@@ -144,6 +144,16 @@ constexpr bool JoustAllows(JoustMoment fight, JoustAction action)
 // 2026-11-09). distance[rider][mount]; the mount rider `self` takes, or -1 when the mounts ran out before it.
 // A mount of the other faction counts this much farther: only the faction's own can trample a dismounted champion
 constexpr float OtherMountPenalty = 20.0f;
+// The mount a rider already runs for counts this much nearer, so it keeps it: picked afresh each tick, the riders' pairs
+// changed as they ran, and bots on foot zig-zagged between three mounts until the champions trampled them (role check,
+// 2026-11-10).
+constexpr float KeptMountBonus = 15.0f;
+
+constexpr float MountCost(float distance, bool otherFaction, bool kept)
+{
+    float const cost = distance + (otherFaction ? OtherMountPenalty : 0.0f) - (kept ? KeptMountBonus : 0.0f);
+    return cost > 0.0f ? cost : 0.0f;
+}
 
 inline int AssignedMount(std::vector<std::vector<float>> const& distance, size_t self)
 {

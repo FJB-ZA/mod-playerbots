@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <mutex>
+#include <map>
 
 #include "AttackersValue.h"
 #include "CellImpl.h"
@@ -32,6 +34,26 @@ uint32 FactionMountEntry(Player* bot)
 }
 
 bool IsJoustMount(uint32 entry) { return entry == NPC_ARGENT_BATTLEWORG || entry == NPC_ARGENT_WARHORSE; }
+
+// The mount each rider on foot last ran for (Toc::KeptMountBonus); bots of one map update together, maps may not
+std::mutex keptMountsLock;
+std::map<ObjectGuid, ObjectGuid> keptMounts;
+
+ObjectGuid KeptMount(ObjectGuid rider)
+{
+    std::lock_guard<std::mutex> lock(keptMountsLock);
+    auto const it = keptMounts.find(rider);
+    return it == keptMounts.end() ? ObjectGuid::Empty : it->second;
+}
+
+void KeepMount(ObjectGuid rider, ObjectGuid mount)
+{
+    std::lock_guard<std::mutex> lock(keptMountsLock);
+    if (mount.IsEmpty())
+        keptMounts.erase(rider);
+    else
+        keptMounts[rider] = mount;
+}
 
 bool IsEntryIn(std::vector<uint32> const& entries, uint32 entry)
 {
@@ -690,11 +712,15 @@ Unit* ToCMountAction::FindMount(PlayerbotAI* botAI)
 
     std::vector<std::vector<float>> distance(riders.size(), std::vector<float>(mounts.size()));
     for (size_t r = 0; r < riders.size(); ++r)
+    {
+        ObjectGuid const kept = KeptMount(riders[r]->GetGUID());
         for (size_t m = 0; m < mounts.size(); ++m)
-            distance[r][m] = riders[r]->GetExactDist(mounts[m]) +
-                             (mounts[m]->GetEntry() == preferredEntry ? 0.0f : Toc::OtherMountPenalty);
+            distance[r][m] = Toc::MountCost(riders[r]->GetExactDist(mounts[m]), mounts[m]->GetEntry() != preferredEntry,
+                                            mounts[m]->GetGUID() == kept);
+    }
 
     int const mine = Toc::AssignedMount(distance, 0);
+    KeepMount(player->GetGUID(), mine >= 0 ? mounts[mine]->GetGUID() : ObjectGuid::Empty);
     return mine >= 0 ? mounts[mine] : nullptr;
 }
 

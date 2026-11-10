@@ -122,6 +122,11 @@ constexpr float UnderbatSafeArc = 2.6f;
 constexpr uint32_t UnderbatRepositionCooldown = 750;
 constexpr float UnderbatRallyTolerance = 3.0f;
 constexpr float UnderbatRallyMaxRange = 20.0f;
+// Melee park round the tank, not on it: on the tank a rogue stood in the front of every mob the tank held (Underbog
+// Lurkers; role check, 2026-11-10). The ring it searches: radii and angles round the tank.
+constexpr float UnderbatRallyRadii[] = {2.5f, 4.0f, 5.5f};
+constexpr int UnderbatRallyAngles = 16;
+constexpr float UnderbatRallyGap = 5.5f;
 
 constexpr float UnderbatLashWindow() { return UnderbatLashRange + UnderbatLashMargin; }
 
@@ -134,6 +139,12 @@ constexpr bool UnderbatAllowsGetBehind(bool batInLashRange) { return !batInLashR
 constexpr bool WaitsToRally(bool melee, bool hasRally, bool parked, bool throttled)
 {
     return melee && hasRally && !parked && throttled;
+}
+
+// Parked by the tank, and out of the other mobs' fronts
+constexpr bool ParkedAtRally(float distanceToRally, bool inPackFront)
+{
+    return distanceToRally <= UnderbatRallyGap + 1.0f && !inPackFront;
 }
 
 constexpr bool TriesRally(bool melee, bool hasRally, bool parked, bool rallySpotClear)

@@ -43,21 +43,20 @@ bool UBClearUnderbatBackAction::Execute(Event /*event*/)
     if (step.melee)
     {
         Unit* rally = UnderbatRallyUnit(bot, attackers);
-        bool const parked = rally && bot->GetExactDist(rally) <= Underbog::UnderbatRallyTolerance;
+        bool const parked =
+            rally && Underbog::ParkedAtRally(bot->GetExactDist(rally),
+                                             InPackFront(bot, attackers, bot->GetPositionX(), bot->GetPositionY()));
         if (Underbog::WaitsToRally(true, rally != nullptr, parked, step.throttled))
             return false;
 
-        if (rally && !parked)
+        float rx = 0.0f, ry = 0.0f, rz = 0.0f;
+        if (rally && !parked &&
+            Underbog::TriesRally(true, true, parked,
+                                 UnderbatRallySpot(bot, rally, AI_VALUE(Unit*, "current target"), attackers, rx, ry, rz)) &&
+            MoveTo(bot->GetMapId(), rx, ry, rz, false, false, true, true, MovementPriority::MOVEMENT_COMBAT))
         {
-            float const rx = rally->GetPositionX();
-            float const ry = rally->GetPositionY();
-            float const rz = rally->GetPositionZ();
-            if (Underbog::TriesRally(true, true, parked, SpotClearOfUnderbats(bot, attackers, rx, ry, rz)) &&
-                MoveTo(bot->GetMapId(), rx, ry, rz, false, false, true, true, MovementPriority::MOVEMENT_COMBAT))
-            {
-                _lastReposition = getMSTime();
-                return true;
-            }
+            _lastReposition = getMSTime();
+            return true;
         }
     }
     else
