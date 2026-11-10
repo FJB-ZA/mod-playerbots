@@ -13,6 +13,7 @@
 #include "AoeHealValues.h"
 #include "AoeValues.h"
 #include "ArgentSoldiersValue.h"
+#include "KrikthirSwarmValue.h"
 #include "AttackerCountValues.h"
 #include "AttackerWithoutAuraTargetValue.h"
 #include "AttackersValue.h"
@@ -113,6 +114,7 @@ class ValueContext : public NamedObjectContext<UntypedValue>
 public:
     ValueContext()
     {
+        creators["krik'thir loose swarm"] = &ValueContext::krikthir_swarm;
         creators["toc argent soldiers"] = &ValueContext::toc_argent_soldiers;
         creators["living training"] = &ValueContext::living_training;
         creators["living craft"] = &ValueContext::living_craft;
@@ -366,6 +368,7 @@ public:
     }
 
 private:
+    static UntypedValue* krikthir_swarm(PlayerbotAI* ai) { return new KrikthirSwarmValue(ai); }
     static UntypedValue* toc_argent_soldiers(PlayerbotAI* ai) { return new ArgentSoldiersValue(ai); }
     static UntypedValue* living_training(PlayerbotAI* botAI) { return new LivingTrainingValue(botAI); }
     static UntypedValue* living_craft(PlayerbotAI* botAI) { return new LivingCraftValue(botAI); }

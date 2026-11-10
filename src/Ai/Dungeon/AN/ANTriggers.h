@@ -50,6 +50,16 @@ public:
     bool IsActive() override;
 };
 
+class KrikthirSwarmTrigger : public Trigger
+{
+public:
+    KrikthirSwarmTrigger(PlayerbotAI* ai, bool pickup)
+        : Trigger(ai, pickup ? "krik'thir swarm pickup" : "krik'thir loose swarm"), _pickup(pickup) {}
+    bool IsActive() override;
+private:
+    bool const _pickup;
+};
+
 class KrikthirMarkTrigger : public Trigger
 {
 public:

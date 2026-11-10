@@ -11,6 +11,7 @@
 #include "ANPolicy.h"
 #include "ANTriggers.h"
 #include "ChooseTargetActions.h"
+#include "KrikthirSwarmValue.h"
 #include "Playerbots.h"
 #include "RtiTargetValue.h"
 
@@ -93,6 +94,49 @@ Unit* WantedSkull(PlayerbotAI* botAI)
     return boss && boss->IsAlive() && boss->IsInCombat() ? boss : nullptr;
 }
 }  // namespace
+
+// Gather loose swarmers for one area attack, without chasing each add across the room.
+bool KrikthirSwarmValue::Calculate()
+{
+    if (!bot->IsInCombat() || !bot->GetGroup())
+        return false;
+    Unit* tank = AI_VALUE(Unit*, "group main tank");
+    if (!tank || !tank->IsAlive() || tank->GetMap() != bot->GetMap())
+        return false;
+    bool const pickingUp = tank == bot;
+    if (!pickingUp && bot->GetExactDist2d(tank) <= AzjolNerub::SwarmPickupRange)
+        return false;
+
+    unsigned count = 0;
+    for (ObjectGuid const& guid : AI_VALUE(GuidVector, "attackers"))
+    {
+        Unit* mob = botAI->GetUnit(guid);
+        if (!mob || !mob->IsAlive() || !AzjolNerub::SwarmAdd(mob->GetEntry()))
+            continue;
+        Unit* victim = mob->GetVictim();
+        Player* attacked = victim ? victim->ToPlayer() : nullptr;
+        if (!attacked || !AzjolNerub::CollectSwarmAdd(pickingUp, attacked == bot, bot->IsInSameGroupWith(attacked),
+                                                      bot->IsWithinDistInMap(mob, AzjolNerub::SwarmPickupRange)))
+            continue;
+        if (++count >= AzjolNerub::LooseSwarm)
+            return true;
+    }
+    return false;
+}
+
+bool KrikthirSwarmTrigger::IsActive()
+{
+    return (AI_VALUE(Unit*, "group main tank") == bot) == _pickup && AI_VALUE(bool, "krik'thir loose swarm");
+}
+
+bool KrikthirBringSwarmAction::Execute(Event /*event*/)
+{
+    Unit* tank = AI_VALUE(Unit*, "group main tank");
+    if (!tank || tank == bot || !tank->IsAlive() || tank->GetMap() != bot->GetMap() ||
+        bot->GetExactDist2d(tank) <= AzjolNerub::SwarmPickupRange || bot->IsNonMeleeSpellCast(false))
+        return false;
+    return MoveTo(tank, AzjolNerub::SwarmPickupRange / 2.0f, MovementPriority::MOVEMENT_COMBAT);
+}
 
 bool KrikthirMarkTrigger::IsActive()
 {
