@@ -24,6 +24,7 @@
 #include "Group.h"
 #include "Map.h"
 #include "MarkPolicy.h"
+#include "HadronoxPull.h"
 #include "MythicPlusBotMgr.h"
 #include "ObjectMgr.h"
 #include "PackPolicy.h"
@@ -770,7 +771,7 @@ Creature* CurrentPack(PlayerbotAI* botAI, State& state)
     if (!state.pack.IsEmpty())
     {
         Creature* seed = bot->GetMap()->GetCreature(state.pack);
-        if (seed && seed->IsAlive() && !seed->IsInCombat())
+        if (seed && seed->IsAlive() && !seed->IsInCombat() && !AzjolNerub::SkipHadronoxPull(bot, seed))
             return seed;
         ForgetPack(state);
     }
@@ -782,7 +783,10 @@ Creature* CurrentPack(PlayerbotAI* botAI, State& state)
     bool const hasGoal = FindGoal(botAI, state);
     float const leaderToGoal = hasGoal ? bot->GetExactDist(&state.goal) : 0.0f;
     std::vector<Creature*> mobs = Hostiles(botAI);
-    std::erase_if(mobs, [&state](Creature* mob) { return state.skipped.count(mob->GetGUID().GetRawValue()) > 0; });
+    std::erase_if(mobs, [bot, &state](Creature* mob)
+    {
+        return state.skipped.count(mob->GetGUID().GetRawValue()) > 0 || AzjolNerub::SkipHadronoxPull(bot, mob);
+    });
     std::vector<std::vector<Creature*>> packs = SplitPacks(mobs);
     std::vector<G3D::Vector3> const way = hasGoal ? WayAhead(bot, state.goal) : std::vector<G3D::Vector3>();
     std::vector<Player*> members;
@@ -903,7 +907,7 @@ ObjectGuid ExtraPack(Player* bot, std::vector<Creature*> const& pulled, std::vec
     float bestDistance = OVERPULL_REACH;
     for (Creature* mob : mobs)
     {
-        if (std::find(pulled.begin(), pulled.end(), mob) != pulled.end())
+        if (AzjolNerub::SkipHadronoxPull(bot, mob) || std::find(pulled.begin(), pulled.end(), mob) != pulled.end())
             continue;
         float const distance = bot->GetExactDist(mob);
         if (distance < bestDistance)
@@ -1155,6 +1159,13 @@ bool LeadAdvanceAction::isUseful()
             state.stepping = true;
         }
         return bot->GetExactDist(&state.pullSpot) > SPOT_REACHED;
+    }
+
+    if (AzjolNerub::WaitForHadronox(bot))
+    {
+        HoldAdvance(botAI, state);
+        state.idle = false;
+        return false;
     }
 
     // At a trash goal with nothing there to pull: the next one. Idle there, the tank was no leader any more and nothing
