@@ -1839,6 +1839,8 @@ void RaidPull(Player* gm, std::vector<Player*> const& bots, uint32 diff)
         run.walkWait = run.walkWait > diff ? run.walkWait - diff : 0;
         return;
     }
+    if (gm->IsBeingTeleported())
+        return;
     Creature* mob = run.pullTarget.IsEmpty() ? nullptr : gm->GetMap()->GetCreature(run.pullTarget);
     if (!mob || !mob->IsAlive() || mob->IsInCombat() || gm->GetExactDist(mob) > PullFrom + 10.0f)
     {
@@ -1888,9 +1890,13 @@ void RaidPull(Player* gm, std::vector<Player*> const& bots, uint32 diff)
         // On ground it can see, as WalkOn: at the mob's height off a ledge the GM hung in the air (the driver does not
         // fall), and the bots brought over fell and walked back 175 yards below it, minute after minute (Naxxramas)
         Position spot;
-        run.tried.insert(mob->GetGUID());
         if (!PullSpot(gm->GetMap(), mob->GetPosition(), mob->GetAngle(gm), spot, mob, gm))
+        {
+            run.tried.insert(mob->GetGUID());
             return;
+        }
+        if (run.mapId != 650)
+            run.tried.insert(mob->GetGUID());
         run.pullTarget = mob->GetGUID();
         run.gathering = 0;
         run.broughtOver = false;
@@ -1935,8 +1941,14 @@ void RaidPull(Player* gm, std::vector<Player*> const& bots, uint32 diff)
         opener = gm->GetGUID();
         openerHow = "the pull";
     }
-    run.tried.insert(mob->GetGUID());
+    // The arena escort AI can drop the GM before its first swing. Let a surviving
+    // soldier be pulled again and give its approach the same combat state as a ranged hit.
+    bool const arena = run.mapId == 650;
+    if (!arena)
+        run.tried.insert(mob->GetGUID());
     gm->SetGameMaster(false);  // the mob must see the GM to come for it
+    if (arena)
+        mob->EngageWithTarget(gm);
     mob->AI()->AttackStart(gm);
     mob->CallAssistance();
     // The wave it came with
@@ -1949,7 +1961,10 @@ void RaidPull(Player* gm, std::vector<Player*> const& bots, uint32 diff)
         for (Creature* other : wave)
             if (other != mob && other->IsSummon() && Pullable(other, gm))
             {
-                run.tried.insert(other->GetGUID());
+                if (arena)
+                    other->EngageWithTarget(gm);
+                else
+                    run.tried.insert(other->GetGUID());
                 other->AI()->AttackStart(gm);
             }
     }
