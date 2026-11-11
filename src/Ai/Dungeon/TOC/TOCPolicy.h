@@ -180,6 +180,9 @@ inline int AssignedMount(std::vector<std::vector<float>> const& distance, size_t
                     bestRider = int(r);
                     bestMount = int(m);
                 }
+        // Every pair left is taken by a kept horse: nothing to hand out (and no index to write at)
+        if (bestRider < 0)
+            break;
         if (bestRider == int(self))
             return bestMount;
         riderTaken[bestRider] = true;

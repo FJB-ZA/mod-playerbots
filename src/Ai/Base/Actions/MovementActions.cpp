@@ -185,8 +185,11 @@ bool MovementAction::MoveTo(uint32 mapId, float x, float y, float z, bool /*idle
         return false;
     }
 
-    // A short step to under the floor (BotMove::FixSunk): on the ground there, or not at all
-    if (!bot->IsFlying() && !bot->isSwimming() && !bot->GetVehicle() && bot->GetMapId() == mapId &&
+    // A short step to under the floor (BotMove::FixSunk): on the ground there, or not at all. In instances only, where
+    // the grid has no height of its own: in the open world the floor found under the bot's own height can be the storey
+    // above a real destination (an inn's stairs, a road under a bridge), and the step down was put back up on it
+    if (bot->GetMap()->Instanceable() && !bot->IsFlying() && !bot->isSwimming() && !bot->GetVehicle() &&
+        bot->GetMapId() == mapId &&
         BotMove::SinkChecked(bot->GetExactDist2d(x, y), z, bot->GetPositionZ()))
     {
         float const ground = bot->GetMap()->GetHeight(bot->GetPhaseMask(), x, y, bot->GetPositionZ() + BotMove::SinkSlack,

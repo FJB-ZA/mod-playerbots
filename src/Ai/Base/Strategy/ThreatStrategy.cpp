@@ -31,7 +31,10 @@ float ThreatMultiplier::GetValue(Action* action)
     Unit* target = AI_VALUE(Unit*, "current target");
     // A mob that fixates where it likes, or one an area spell all but kills, is nobody's to hold: kill it
     // (ThreatHoldPolicy.h TankKeeps, Trivial)
-    bool const tanksIt = target && BotThreat::TankKeeps(target->GetEntry()) &&
+    // Nor is a player or a player's pet: no tank holds those, and a grouped bot stood six seconds before answering one
+    // beside a fighting tank (review, 2026-11-11)
+    bool const tanksIt = target && !target->IsCharmedOwnedByPlayerOrPlayer() &&
+                         BotThreat::TankKeeps(target->GetEntry()) &&
                          !BotThreat::Trivial(target->GetMaxHealth(), bot->GetMaxHealth());
     if (target && target->IsAlive() && tanksIt && !PlayerbotAI::IsTank(bot))
     {
@@ -48,8 +51,11 @@ float ThreatMultiplier::GetValue(Action* action)
         // The tank's hold starts once the mob is at the tank, or stands (a caster): one still running in from the pull
         // has only the pull's threat on the tank, and a rogue that opened on it as it ran took it, 2000-5000 threat to
         // the tank's 20-300 at five seconds (solo-wow role check, Ramparts and Deadmines, 2026-11-07)
+        // Once held it stays held while it is on the tank: a mob fleeing at low health, or trailing a tank that steps,
+        // moves out of its reach, and counting that as off the tank stopped all damage on it for six seconds
         else if (holder && PlayerbotAI::IsTank(holder) && holder->IsInSameGroupWith(bot) &&
-                 (!target->isMoving() || target->IsWithinMeleeRange(holder)))
+                 (!target->isMoving() || target->IsWithinMeleeRange(holder) ||
+                  tankHold.HeldByTank(target->GetGUID().GetRawValue())))
             on = BotThreat::MobOn::Tank;
         if (!tankHold.MayOpen(target->GetGUID().GetRawValue(), on, getMSTime()))
             return 0.0f;

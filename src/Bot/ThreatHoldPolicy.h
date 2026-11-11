@@ -61,6 +61,13 @@ public:
         return nowMs - it->second.since;
     }
 
+    // Did the tank have the mob when it was last looked at?
+    bool HeldByTank(uint64_t mob) const
+    {
+        auto it = clocks_.find(mob);
+        return it != clocks_.end() && it->second.held;
+    }
+
     // May a damage dealer open on the mob yet?
     bool MayOpen(uint64_t mob, MobOn on, uint32_t nowMs)
     {
