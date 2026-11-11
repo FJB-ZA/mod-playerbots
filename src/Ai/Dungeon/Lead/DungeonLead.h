@@ -71,6 +71,7 @@ struct State
     ObjectGuid overpull;
     uint32 overpullAt = 0;
     uint32 marksCheckedAt = 0;
+    uint32 stepLogAt = 0;  // when the advance last logged a step that would not go
     std::unordered_map<uint64, uint32> oomCalls;  // player's raw guid -> when they called oom
     std::unordered_map<uint64, bool> oomAcked;
     CallState calls;
