@@ -102,7 +102,11 @@ bool BackLineOutOfPlaceTrigger::IsActive()
         return false;
     // Too far back is as wrong as too close: a healer left with the puller, out of the tank's reach or round a corner
     // from it (in Karazhan a healer stood out of the tank's sight for most of a fight, solo-wow role check 2026-11-06)
-    if (tank && tank != bot && tank->IsAlive() && tank->IsInCombat() && tank->GetMap() == bot->GetMap() &&
+    // Only a tank in this fight: the group's tank is found anywhere on the map, and a caster of a group spread over a
+    // zone or a battleground ran to a tank fighting somewhere else (review, 2026-11-11)
+    bool const tankNear = tank && tank != bot && tank->IsAlive() && tank->GetMap() == bot->GetMap() &&
+                          bot->GetExactDist2d(tank) < 60.0f;
+    if (tankNear && tank->IsInCombat() &&
         (bot->GetExactDist2d(tank) > BotMove::HealerNearTank || !bot->IsWithinLOSInMap(tank)))
         return true;
     for (ObjectGuid const& guid : AI_VALUE(GuidVector, "attackers"))
@@ -113,7 +117,7 @@ bool BackLineOutOfPlaceTrigger::IsActive()
         // A mob on the healer itself: to the tank, whose taunt takes it back. Standing still, it beat on the healer
         if (mob->GetVictim() == bot)
         {
-            if (tank && tank != bot && tank->IsAlive() && bot->GetExactDist2d(tank) > BotMove::HealerToTank &&
+            if (tankNear && bot->GetExactDist2d(tank) > BotMove::HealerToTank &&
                 mob->IsWithinMeleeRange(bot) && !tank->IsWithinMeleeRange(mob))
                 return true;
             continue;

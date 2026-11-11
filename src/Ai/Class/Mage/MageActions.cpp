@@ -184,7 +184,9 @@ bool CastBlinkBackAction::isUseful()
     }
     // Nor away from the group (BlinkPolicy.h)
     Unit* tank = AI_VALUE(Unit*, "group main tank");
-    bool const hasTank = tank && tank != bot && tank->IsAlive() && tank->GetMap() == bot->GetMap();
+    // (a tank in this fight: one elsewhere on the map is no group to stay with)
+    bool const hasTank = tank && tank != bot && tank->IsAlive() && tank->GetMap() == bot->GetMap() &&
+                         bot->GetExactDist2d(tank) < 60.0f;
     float const landX = bot->GetPositionX() + Range * std::cos(angle);
     float const landY = bot->GetPositionY() + Range * std::sin(angle);
     if (!BotMove::BlinkKeepsGroup(hasTank, hasTank ? bot->GetExactDist2d(tank) : 0.0f,
