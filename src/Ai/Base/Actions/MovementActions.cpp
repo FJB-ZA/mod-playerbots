@@ -3082,7 +3082,8 @@ bool BackLineTakeSpotAction::Execute(Event /*event*/)
     bool const moved = MoveTo(bot->GetMapId(), nearest.GetPositionX(), nearest.GetPositionY(), nearest.GetPositionZ(),
                               false, false, false, true, MovementPriority::MOVEMENT_COMBAT);
     Note(Acore::StringFormat("{} spot {:.1f} yd away, {}", toRoomiest ? "roomiest" : "clear",
-                             bot->GetExactDist(&nearest), moved ? "moving" : "move refused"));
+                             bot->GetExactDist(&nearest),
+                             moved ? "moving" : botAI->CanMove() ? "move refused" : "held: cannot move"));
     return moved;
 }
 

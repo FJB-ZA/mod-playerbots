@@ -14,8 +14,19 @@
 #include <string>
 #include <vector>
 
+#include "ThreatHoldPolicy.h"
+
 namespace RoleCheck
 {
+// A mob any member kills with an area spell or two needs no tank (ThreatHoldPolicy.h Trivial), so whom it hits is no
+// measure of the tank. Krik'thir's Swarm sends some 46 Skittering Swarmers of 328 health at whoever heals: dead in ten
+// seconds, they were 511 of a 12-minute run's 2,361 mob samples and took "mobs on the tank" from 90% to 72%
+// (Azjol-Nerub, 2026-11-11). Judged against the weakest member in the fight, so the mob is trivial to all of them.
+constexpr bool CountsForAggro(uint32_t mobMaxHealth, uint32_t weakestMemberMaxHealth)
+{
+    return !BotThreat::Trivial(mobMaxHealth, weakestMemberMaxHealth);
+}
+
 // Each count is of samples taken twice a second in a fight, after its first seconds (the tank's time to pick up)
 struct Tally
 {
