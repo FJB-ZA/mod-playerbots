@@ -49,6 +49,8 @@ uint8 constexpr ICON_MOON = RtiTargetValue::moonIndex;
 uint8 constexpr ICON_CROSS = RtiTargetValue::crossIndex;
 uint8 constexpr ICON_SKULL = RtiTargetValue::skullIndex;
 uint32 constexpr GOAL_RESCAN_MS = 5000;
+uint32 constexpr STEP_LOG_MS = 10000;
+time_t constexpr BOSS_BACK_SOON_S = 120;  // an evaded boss respawning within this is still the goal
 uint32 constexpr GOAL_BLOCKED_MS = 10000;
 uint32 constexpr PACK_RESCAN_MS = 1000;
 uint32 constexpr READY_RECHECK_MS = 500;
@@ -210,7 +212,11 @@ bool BossAlive(Map* map, BossSpawn const& spawn, Position& pos)
     if (data && (!map->IsSpawnGroupActive(data->spawnGroupId) ||
                  (data->poolId && !map->GetPoolData().IsSpawnedObject<Creature>(spawn.spawnId))))
         return false;
-    return map->GetCreatureRespawnTime(spawn.spawnId) <= time(nullptr);
+    // A boss that evaded is taken out of the world and put back within the minute; a killed one stays away for a day
+    // or more. Counted as gone for that minute, Krik'thir was passed over for Hadronox ten times in one run, and the
+    // tank walked on past his spot at 22-37 yards as he came back: three wipes, no boss (role check, heroic
+    // Azjol-Nerub, 2026-11-11)
+    return map->GetCreatureRespawnTime(spawn.spawnId) <= time(nullptr) + BOSS_BACK_SOON_S;
 }
 
 // No floor within reach under where it is now
@@ -1406,14 +1412,47 @@ bool LeadAdvanceAction::Execute(Event /*event*/)
         state.advancing = true;
         return true;
     }
-    // Why neither move went: after a wipe the tank stood at the Azjol-Nerub entrance for six minutes, this failing on
-    // goal after goal with a path found to each (role check, 2026-11-11)
-    LOG_INFO("playerbots",
-             "{} cannot step toward its goal from {:.1f} {:.1f} {:.1f}: stop {:.1f} {:.1f} {:.1f} (line z {:.1f}), corner "
-             "{:.1f} {:.1f} {:.1f}, drop {}, through air {}, can move {}, unit state 0x{:X}, stand state {}, path type {}",
-             bot->GetName(), bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), stop.x, stop.y, stop.z, lineZ,
-             corner.x, corner.y, corner.z, drop, throughAir, botAI->CanMove(), bot->GetUnitState(),
-             uint32(bot->getStandState()), uint32(path.GetPathType()));
+    // Neither went: the stretch of the smoothed path instead, whose points lie on the floor the search walks. The
+    // straight leg from the Azjol-Nerub entrance toward a boss 300 yards on (a way the search cuts short) ran over a
+    // drop, the move to its corner was refused, and after a wipe the tank stood at the entrance for eight minutes
+    // (role check, 2026-11-11)
+    PathGenerator smooth(bot);
+    smooth.CalculatePath(state.goal.GetPositionX(), state.goal.GetPositionY(), state.goal.GetPositionZ(), false);
+    Movement::PointsArray const& walk = smooth.GetPath();
+    G3D::Vector3 along = stop;
+    bool hasAlong = false;
+    if (!(smooth.GetPathType() & (PATHFIND_NOPATH | PATHFIND_NOT_USING_PATH)) && walk.size() >= 2)
+    {
+        float gone = 0.0f;
+        for (size_t i = 1; i < walk.size(); ++i)
+        {
+            gone += (walk[i] - walk[i - 1]).length();
+            along = walk[i];
+            hasAlong = true;
+            if (gone >= ADVANCE_STEP)
+                break;
+        }
+    }
+    if (hasAlong && bot->GetExactDist(along.x, along.y, along.z) >= SPOT_REACHED &&
+        MoveTo(bot->GetMapId(), along.x, along.y, along.z, false, false, false, false,
+               MovementPriority::MOVEMENT_NORMAL, true))
+    {
+        state.advancing = true;
+        return true;
+    }
+    // Why no move went, at most every ten seconds
+    if (Elapsed(state.stepLogAt, STEP_LOG_MS))
+    {
+        state.stepLogAt = getMSTime();
+        LOG_INFO("playerbots",
+                 "{} cannot step toward its goal from {:.1f} {:.1f} {:.1f}: stop {:.1f} {:.1f} {:.1f} (line z {:.1f}), "
+                 "corner {:.1f} {:.1f} {:.1f}, drop {}, through air {}, can move {}, unit state 0x{:X}, stand state {}, "
+                 "path type {}; smoothed path type {}, {} points, stretch end {:.1f} {:.1f} {:.1f}",
+                 bot->GetName(), bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), stop.x, stop.y, stop.z,
+                 lineZ, corner.x, corner.y, corner.z, drop, throughAir, botAI->CanMove(), bot->GetUnitState(),
+                 uint32(bot->getStandState()), uint32(path.GetPathType()), uint32(smooth.GetPathType()), walk.size(),
+                 along.x, along.y, along.z);
+    }
     BlockGoal(state);
     return false;
 }
