@@ -12,6 +12,8 @@
 #include "AlwaysLootListValue.h"
 #include "AoeHealValues.h"
 #include "AoeValues.h"
+#include "ArgentSoldiersValue.h"
+#include "KrikthirSwarmValue.h"
 #include "AttackerCountValues.h"
 #include "AttackerWithoutAuraTargetValue.h"
 #include "AttackersValue.h"
@@ -113,6 +115,8 @@ class ValueContext : public NamedObjectContext<UntypedValue>
 public:
     ValueContext()
     {
+        creators["krik'thir loose swarm"] = &ValueContext::krikthir_swarm;
+        creators["toc argent soldiers"] = &ValueContext::toc_argent_soldiers;
         creators["living training"] = &ValueContext::living_training;
         creators["living craft"] = &ValueContext::living_craft;
         creators["living processing"] = &ValueContext::living_processing;
@@ -346,6 +350,7 @@ public:
         creators["has area debuff"] = &ValueContext::has_area_debuff;
 
         creators["main tank"] = &ValueContext::main_tank;
+        creators["group main tank"] = &ValueContext::group_main_tank;
         creators["find target"] = &ValueContext::find_target;
         creators["boss target"] = &ValueContext::boss_target;
         creators["nearest triggers"] = &ValueContext::nearest_triggers;
@@ -365,6 +370,8 @@ public:
     }
 
 private:
+    static UntypedValue* krikthir_swarm(PlayerbotAI* ai) { return new KrikthirSwarmValue(ai); }
+    static UntypedValue* toc_argent_soldiers(PlayerbotAI* ai) { return new ArgentSoldiersValue(ai); }
     static UntypedValue* living_training(PlayerbotAI* botAI) { return new LivingTrainingValue(botAI); }
     static UntypedValue* living_craft(PlayerbotAI* botAI) { return new LivingCraftValue(botAI); }
     static UntypedValue* living_processing(PlayerbotAI* botAI) { return new LivingProcessingValue(botAI); }
@@ -634,6 +641,7 @@ private:
     static UntypedValue* has_area_debuff(PlayerbotAI* botAI) { return new HasAreaDebuffValue(botAI); }
 
     static UntypedValue* main_tank(PlayerbotAI* botAI) { return new PartyMemberMainTankValue(botAI); }
+    static UntypedValue* group_main_tank(PlayerbotAI* botAI) { return new GroupMainTankValue(botAI); }
     static UntypedValue* find_target(PlayerbotAI* botAI) { return new FindTargetValue(botAI); }
     static UntypedValue* boss_target(PlayerbotAI* botAI) { return new BossTargetValue(botAI); }
     static UntypedValue* nearest_triggers(PlayerbotAI* botAI) { return new NearestTriggersValue(botAI); }

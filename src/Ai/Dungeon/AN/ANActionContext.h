@@ -17,11 +17,17 @@ class WotlkDungeonANActionContext : public NamedObjectContext<Action>
         WotlkDungeonANActionContext() {
             creators["attack web wrap"] = &WotlkDungeonANActionContext::attack_web_wrap;
             creators["krik'thir priority"] = &WotlkDungeonANActionContext::krikthir_priority;
+            creators["krik'thir mark"] = &WotlkDungeonANActionContext::krikthir_mark;
+            creators["krik'thir bring swarm"] = &WotlkDungeonANActionContext::krikthir_bring_swarm;
+            creators["hadronox clear lane"] = &WotlkDungeonANActionContext::hadronox_clear_lane;
             creators["dodge pound"] = &WotlkDungeonANActionContext::dodge_pound;
         }
     private:
         static Action* attack_web_wrap(PlayerbotAI* botAI) { return new AttackWebWrapAction(botAI); }
         static Action* krikthir_priority(PlayerbotAI* botAI) { return new WatchersTargetAction(botAI); }
+        static Action* krikthir_mark(PlayerbotAI* botAI) { return new KrikthirMarkAction(botAI); }
+        static Action* krikthir_bring_swarm(PlayerbotAI* ai) { return new KrikthirBringSwarmAction(ai); }
+        static Action* hadronox_clear_lane(PlayerbotAI* ai) { return new HadronoxClearLaneAction(ai); }
         static Action* dodge_pound(PlayerbotAI* botAI) { return new AnubarakDodgePoundAction(botAI); }
 };
 

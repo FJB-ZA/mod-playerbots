@@ -15,6 +15,7 @@
 
 #include "PullStrategy.h"
 #include "AiObjectContext.h"
+#include "Group.h"
 #include "PassiveMultiplier.h"
 #include "Player.h"
 #include "PlayerbotAI.h"
@@ -160,6 +161,23 @@ void PullStrategy::RequestPull(Unit* target, bool resetTime)
     pendingToStart = true;
     if (resetTime)
         pullStartTime = time(nullptr);
+}
+
+bool PullStrategy::FightOnMember(Player* bot)
+{
+    Group* group = bot ? bot->GetGroup() : nullptr;
+    if (!group)
+        return false;
+    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+    {
+        Player* member = ref->GetSource();
+        if (!member || member == bot || !member->IsAlive() || member->GetMap() != bot->GetMap())
+            continue;
+        for (Unit* attacker : member->getAttackers())
+            if (attacker && attacker->IsAlive() && attacker->IsCreature() && attacker->GetVictim() == member)
+                return true;
+    }
+    return false;
 }
 
 void PullStrategy::OnPullStarted() { pendingToStart = false; }

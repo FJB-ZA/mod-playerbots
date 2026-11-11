@@ -10,6 +10,7 @@
 #include "ANTriggers.h"
 #include "Action.h"
 #include "AttackAction.h"
+#include "MovementActions.h"
 #include "PlayerbotAI.h"
 #include "Playerbots.h"
 
@@ -27,6 +28,29 @@ public:
     WatchersTargetAction(PlayerbotAI* botAI) : AttackAction(botAI, "krik'thir priority") {}
     bool Execute(Event event) override;
     bool isUseful() override;
+};
+
+// The tank marks skull on the watcher the kill order takes first, then on Krik'thir
+class KrikthirMarkAction : public Action
+{
+public:
+    KrikthirMarkAction(PlayerbotAI* botAI) : Action(botAI, "krik'thir mark") {}
+    bool Execute(Event event) override;
+    bool isUseful() override;
+};
+
+class KrikthirBringSwarmAction : public MovementAction
+{
+public:
+    KrikthirBringSwarmAction(PlayerbotAI* ai) : MovementAction(ai, "krik'thir bring swarm") {}
+    bool Execute(Event event) override;
+};
+
+class HadronoxClearLaneAction : public MovementAction
+{
+public:
+    HadronoxClearLaneAction(PlayerbotAI* ai) : MovementAction(ai, "hadronox clear lane") {}
+    bool Execute(Event event) override;
 };
 
 class AnubarakDodgePoundAction : public AttackAction

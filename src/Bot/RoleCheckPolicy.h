@@ -14,8 +14,19 @@
 #include <string>
 #include <vector>
 
+#include "ThreatHoldPolicy.h"
+
 namespace RoleCheck
 {
+// A mob any member kills with an area spell or two needs no tank (ThreatHoldPolicy.h Trivial), so whom it hits is no
+// measure of the tank. Krik'thir's Swarm sends some 46 Skittering Swarmers of 328 health at whoever heals: dead in ten
+// seconds, they were 511 of a 12-minute run's 2,361 mob samples and took "mobs on the tank" from 90% to 72%
+// (Azjol-Nerub, 2026-11-11). Judged against the weakest member in the fight, so the mob is trivial to all of them.
+constexpr bool CountsForAggro(uint32_t mobMaxHealth, uint32_t weakestMemberMaxHealth)
+{
+    return !BotThreat::Trivial(mobMaxHealth, weakestMemberMaxHealth);
+}
+
 // Each count is of samples taken twice a second in a fight, after its first seconds (the tank's time to pick up)
 struct Tally
 {
@@ -24,7 +35,7 @@ struct Tally
     uint32_t tankPulls = 0;     // of those, the tank's
     uint32_t mobSamples = 0;    // a mob fighting the group
     uint32_t onTank = 0;        // ...hitting a tank
-    uint32_t facedSamples = 0;  // a mob on the tank, in melee reach of it
+    uint32_t facedSamples = 0;  // a mob on the tank, in melee reach of it and standing (one moving has no facing to keep)
     uint32_t facedAtGroup = 0;  // ...with someone other than a tank in front of it
     uint32_t dpsSamples = 0;    // a damage dealer, while the tank had a target
     uint32_t dpsOnFocus = 0;    // ...on the tank's target or the skull
@@ -35,6 +46,7 @@ struct Tally
     uint32_t deaths = 0;
     uint32_t kills = 0;
     uint32_t bosses = 0;
+    bool cleared = false;  // the run ended with every boss it could reach dead and nothing left to fight
 };
 
 inline constexpr float HealerRange = 10.0f;     // yards from the nearest mob a healer counts as standing back
@@ -74,7 +86,9 @@ inline Line Judge(std::string what, uint32_t part, uint32_t whole, double bound,
 inline std::vector<Line> Judge(Tally const& t, bool leads)
 {
     std::vector<Line> lines;
-    lines.push_back(Line{"fights", double(t.fights), double(MinFights), false, t.fights >= MinFights});
+    // Fewer fights pass only in an instance cleared in them: a raid of one boss and no trash has no third fight to give
+    lines.push_back(Line{"fights", double(t.fights), double(MinFights), false,
+                         t.fights >= MinFights || (t.cleared && t.fights > 0)});
     if (leads)
         lines.push_back(Judge("tank opens the pulls", t.tankPulls, t.pulls, TankPullPct));
     lines.push_back(Judge("mobs on the tank", t.onTank, t.mobSamples, TankAggroPct));

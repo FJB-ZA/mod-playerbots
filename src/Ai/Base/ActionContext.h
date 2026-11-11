@@ -67,6 +67,7 @@
 #include "RpgAction.h"
 #include "RpgSubActions.h"
 #include "RtiAction.h"
+#include "ThreatStrategy.h"
 #include "SayAction.h"
 #include "ShareQuestAction.h"
 #include "StayActions.h"
@@ -100,6 +101,9 @@ public:
         creators["lead marks"] = &ActionContext::lead_marks;
         creators["lead overpull"] = &ActionContext::lead_overpull;
         creators["lead healer call"] = &ActionContext::lead_healer_call;
+        creators["lead join fight"] = &ActionContext::lead_join_fight;
+        creators["hold swings"] = &ActionContext::hold_swings;
+        creators["surface"] = &ActionContext::surface;
         creators["living train"] = &ActionContext::living_train;
         creators["living craft"] = &ActionContext::living_craft;
         creators["living processing"] = &ActionContext::living_processing;
@@ -183,7 +187,7 @@ public:
         creators["move out of enemy contact"] = &ActionContext::move_out_of_enemy_contact;
         creators["set facing"] = &ActionContext::set_facing;
         creators["set behind"] = &ActionContext::set_behind;
-        creators["healer take spot"] = &ActionContext::healer_take_spot;
+        creators["back line take spot"] = &ActionContext::back_line_take_spot;
         creators["attack duel opponent"] = &ActionContext::attack_duel_opponent;
         creators["drop target"] = &ActionContext::drop_target;
         creators["check mail"] = &ActionContext::check_mail;
@@ -336,6 +340,9 @@ private:
     static Action* lead_marks(PlayerbotAI* botAI) { return new LeadMarksAction(botAI); }
     static Action* lead_overpull(PlayerbotAI* botAI) { return new LeadOverpullAction(botAI); }
     static Action* lead_healer_call(PlayerbotAI* botAI) { return new LeadHealerCallAction(botAI); }
+    static Action* lead_join_fight(PlayerbotAI* botAI) { return new LeadJoinFightAction(botAI); }
+    static Action* hold_swings(PlayerbotAI* botAI) { return new HoldSwingsAction(botAI); }
+    static Action* surface(PlayerbotAI* botAI) { return new SurfaceAction(botAI); }
     static Action* living_train(PlayerbotAI* botAI) { return new LivingTrainAction(botAI); }
     static Action* living_craft(PlayerbotAI* botAI) { return new LivingCraftAction(botAI); }
     static Action* living_processing(PlayerbotAI* botAI) { return new LivingProcessingAction(botAI); }
@@ -436,7 +443,7 @@ private:
     static Action* move_out_of_enemy_contact(PlayerbotAI* botAI) { return new MoveOutOfEnemyContactAction(botAI); }
     static Action* set_facing(PlayerbotAI* botAI) { return new SetFacingTargetAction(botAI); }
     static Action* set_behind(PlayerbotAI* botAI) { return new SetBehindTargetAction(botAI); }
-    static Action* healer_take_spot(PlayerbotAI* botAI) { return new HealerTakeSpotAction(botAI); }
+    static Action* back_line_take_spot(PlayerbotAI* botAI) { return new BackLineTakeSpotAction(botAI); }
     static Action* say(PlayerbotAI* botAI) { return new SayAction(botAI); }
     static Action* reveal_gathering_item(PlayerbotAI* botAI) { return new RevealGatheringItemAction(botAI); }
     static Action* outfit(PlayerbotAI* botAI) { return new OutfitAction(botAI); }

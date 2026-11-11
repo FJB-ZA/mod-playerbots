@@ -53,6 +53,36 @@ inline bool TakesDrop(DropMoment drop, float maxDamagePct)
 
 // The leader died while the group is fighting: the group is going down together.
 constexpr bool IsWipe(bool leaderDead, bool inCombat) { return leaderDead && inCombat; }
+
+// A destination sunk under the floor. The core's collision check falls back to the grid height when it finds no ground,
+// and in a dungeon built of one world model that height is 0: a healer's step back in heroic Azjol-Nerub came out at z 0
+// under a floor at 813, and the bot walked straight down through it, out to 500 yards from the group (role check,
+// 2026-11-10). Only a step (SinkReach yards or less) well down (more than SinkSlack under the bot) is looked at:
+// ground is what a search finds below the bot's own height, SinkSearchDown yards down; a destination more than
+// SinkSlack under that ground is put on it, and with no ground found the step is refused. A long walk is the path
+// search's to judge.
+constexpr float SinkReach = 40.0f;
+constexpr float SinkSearchDown = 50.0f;
+constexpr float SinkSlack = 5.0f;
+
+enum class SinkFix
+{
+    Keep,
+    OnGround,
+    Refuse
+};
+
+constexpr bool SinkChecked(float horizontal, float destZ, float botZ)
+{
+    return horizontal <= SinkReach && destZ < botZ - SinkSlack;
+}
+
+constexpr SinkFix FixSunk(float destZ, bool groundFound, float groundZ)
+{
+    if (!groundFound)
+        return SinkFix::Refuse;
+    return destZ < groundZ - SinkSlack ? SinkFix::OnGround : SinkFix::Keep;
+}
 }  // namespace BotMove
 
 #endif

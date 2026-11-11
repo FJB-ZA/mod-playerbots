@@ -80,8 +80,10 @@ bool UnendingBreathOnPartyTrigger::IsActive()
 
 bool DemonicEmpowermentTrigger::IsActive()
 {
+    // Only a pet on the bot's own map: one left behind by a teleport belongs to another map's
+    // update thread, and reading its auras from here crashed the server (2026-11-10)
     Pet* pet = bot->GetPet();
-    if (!pet)
+    if (!pet || !pet->IsInWorld() || pet->FindMap() != bot->FindMap())
         return false;
     return !botAI->HasAura("demonic empowerment", pet);
 }

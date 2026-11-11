@@ -20,6 +20,7 @@ enum TocC_IDs
     SPELL_DEFEND                    = 66482,
     SPELL_BOSS_DEFEND               = 62719,
     SPELL_MINIONS_DEFEND            = 64100,
+    SPELL_LANCE_EQUIPPED            = 62853,  // the lance's equip aura, which the joust mounts ask of a rider
 
     //Eadric
     SPELL_RADIANCE                  = 66935,
@@ -125,6 +126,22 @@ class ToCEadricTrigger : public Trigger
 {
 public:
     ToCEadricTrigger(PlayerbotAI* botAI) : Trigger(botAI, "toc eadric") {}
+    bool IsActive() override;
+};
+
+// Out of a fight, with the Argent soldiers waiting too near the bot or its master
+class ToCSoldiersWaitingTrigger : public Trigger
+{
+public:
+    ToCSoldiersWaitingTrigger(PlayerbotAI* botAI) : Trigger(botAI, "toc soldiers waiting") {}
+    bool IsActive() override;
+};
+
+// The tank, in a fight with an Argent Priestess the skull is not on
+class ToCSoldiersMarkTrigger : public Trigger
+{
+public:
+    ToCSoldiersMarkTrigger(PlayerbotAI* botAI) : Trigger(botAI, "toc soldiers mark") {}
     bool IsActive() override;
 };
 

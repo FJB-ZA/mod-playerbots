@@ -5,6 +5,7 @@
  */
 
 #include "MageActions.h"
+#include "BlinkPolicy.h"
 #include "PlayerbotAIConfig.h"
 #include "Playerbots.h"
 #include "ServerFacade.h"
@@ -156,4 +157,40 @@ bool CastBlinkBackAction::Execute(Event event)
 
     bot->SetOrientation(bot->GetAngle(target) + M_PI);
     return CastSpellAction::Execute(event);
+}
+
+// Blink follows the ground, and off a ledge it drops to the floor below: walked the way the spell does (2-yard steps,
+// a step up of at most 2.65 yards), the way back is not one that drops further than a short fall.
+bool CastBlinkBackAction::isUseful()
+{
+    Unit* target = AI_VALUE(Unit*, "current target");
+    if (!target)
+        return false;
+
+    constexpr float Range = 20.0f;
+    constexpr float Step = 2.0f;
+    constexpr float StepUp = 2.65f;
+    constexpr float MaxDrop = 4.0f;
+    float const angle = bot->GetAngle(target) + M_PI;
+    float z = bot->GetPositionZ();
+    for (float d = Step; d <= Range; d += Step)
+    {
+        float const x = bot->GetPositionX() + d * std::cos(angle);
+        float const y = bot->GetPositionY() + d * std::sin(angle);
+        float const ground = bot->GetMapHeight(x, y, z + StepUp);
+        if (ground <= INVALID_HEIGHT || z - ground > MaxDrop)
+            return false;
+        z = ground;
+    }
+    // Nor away from the group (BlinkPolicy.h)
+    Unit* tank = AI_VALUE(Unit*, "group main tank");
+    // (a tank in this fight: one elsewhere on the map is no group to stay with)
+    bool const hasTank = tank && tank != bot && tank->IsAlive() && tank->GetMap() == bot->GetMap() &&
+                         bot->GetExactDist2d(tank) < 60.0f;
+    float const landX = bot->GetPositionX() + Range * std::cos(angle);
+    float const landY = bot->GetPositionY() + Range * std::sin(angle);
+    if (!BotMove::BlinkKeepsGroup(hasTank, hasTank ? bot->GetExactDist2d(tank) : 0.0f,
+                                  hasTank ? tank->GetExactDist2d(landX, landY) : 0.0f))
+        return false;
+    return CastSpellAction::isUseful();
 }

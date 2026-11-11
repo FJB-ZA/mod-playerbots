@@ -20,6 +20,8 @@ class WotlkDungeonToCActionContext : public NamedObjectContext<Action>
             creators["toc mount"] = &WotlkDungeonToCActionContext::toc_mount;
             creators["toc mounted"] = &WotlkDungeonToCActionContext::toc_mounted;
             creators["toc eadric"] = &WotlkDungeonToCActionContext::toc_eadric;
+            creators["toc soldiers keep off"] = &WotlkDungeonToCActionContext::toc_soldiers_keep_off;
+            creators["toc soldiers mark"] = &WotlkDungeonToCActionContext::toc_soldiers_mark;
         }
     private:
         static Action* toc_lance(PlayerbotAI* botAI) { return new ToCLanceAction(botAI); }
@@ -27,6 +29,8 @@ class WotlkDungeonToCActionContext : public NamedObjectContext<Action>
         static Action* toc_mount(PlayerbotAI* botAI) { return new ToCMountAction(botAI); }
         static Action* toc_mounted(PlayerbotAI* botAI) { return new ToCMountedAction(botAI); }
         static Action* toc_eadric(PlayerbotAI* botAI) { return new ToCEadricAction(botAI); }
+        static Action* toc_soldiers_keep_off(PlayerbotAI* botAI) { return new ToCSoldiersKeepOffAction(botAI); }
+        static Action* toc_soldiers_mark(PlayerbotAI* botAI) { return new ToCSoldiersMarkAction(botAI); }
 };
 
 #endif

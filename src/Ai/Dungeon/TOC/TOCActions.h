@@ -51,9 +51,13 @@ private:
         JOUST_MOVE_NONE,
         JOUST_MOVE_FLEE,
         JOUST_MOVE_KITE,
-        JOUST_MOVE_APPROACH
+        JOUST_MOVE_APPROACH,
+        JOUST_MOVE_SPARE
     };
 
+    bool RideToSpare(Unit* current, uint32 now);
+    ObjectGuid spare;
+    uint32 spareCheckAt = 0;
     void ScanArena(std::vector<Unit*>& hostiles, std::vector<Unit*>& walking);
     Unit* FindJoustTarget(std::vector<Unit*>& hostiles);
     Unit* FindTrampleTarget(std::vector<Unit*>& walking);
@@ -95,6 +99,12 @@ public:
     bool Execute(Event event) override;
     bool EnterVehicle(Unit* vehicleBase, bool moveIfFar);
     static Unit* FindMount(PlayerbotAI* botAI);
+
+private:
+    void NoteAttempt(Unit* vehicleBase, float dist, std::string const& outcome);
+
+    ObjectGuid lastMount;
+    std::string lastOutcome;
 };
 
 class ToCEadricAction : public MovementAction
@@ -102,6 +112,22 @@ class ToCEadricAction : public MovementAction
 public:
     ToCEadricAction(PlayerbotAI* botAI, std::string const name = "toc eadric")
         : MovementAction(botAI, name) {}
+    bool Execute(Event event) override;
+};
+
+// Backs off from the waiting Argent soldiers (TOCPolicy.h KeepsOffSoldiers)
+class ToCSoldiersKeepOffAction : public MovementAction
+{
+public:
+    ToCSoldiersKeepOffAction(PlayerbotAI* botAI) : MovementAction(botAI, "toc soldiers keep off") {}
+    bool Execute(Event event) override;
+};
+
+// The tank marks skull on an Argent Priestess in the fight
+class ToCSoldiersMarkAction : public Action
+{
+public:
+    ToCSoldiersMarkAction(PlayerbotAI* botAI) : Action(botAI, "toc soldiers mark") {}
     bool Execute(Event event) override;
 };
 #endif

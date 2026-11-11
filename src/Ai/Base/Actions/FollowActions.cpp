@@ -5,8 +5,14 @@
  */
 
 #include "FollowActions.h"
+
+#include <algorithm>
+#include <array>
+#include <cmath>
+
 #include "DungeonLead.h"
 #include "Event.h"
+#include "FollowTrailPolicy.h"
 #include "Formations.h"
 #include "Group.h"
 #include "LastMovementValue.h"
@@ -18,12 +24,53 @@
 #include "ServerFacade.h"
 #include "TrailPolicy.h"
 #include "Transport.h"
-#include <algorithm>
-#include <array>
-#include <cmath>
 
 namespace
 {
+// Use a fixed destination near idle packs. A live follow generator can round the next
+// bend without asking the bot AI to check that leg.
+bool TrailWalk(PlayerbotAI* botAI, Player* bot, Player* leader, DungeonLead::Trail formation, Position& to)
+{
+    PlayerbotAI* leaderAI = GET_PLAYERBOT_AI(leader);
+    if (!leaderAI || !bot->IsAlive() || bot->IsInCombat() || leader->IsInCombat() || bot->GetMap() != leader->GetMap())
+        return false;
+    auto const& trail = DungeonLead::StateOf(leaderAI).trail;
+
+    using DungeonLead::WalkPoint;
+    auto coords = [](Position const& p) { return WalkPoint{p.GetPositionX(), p.GetPositionY(), p.GetPositionZ()}; };
+    WalkPoint const from = coords(*bot);
+    std::vector<Creature*> idle;
+    for (ObjectGuid const& guid : botAI->GetAiObjectContext()->GetValue<GuidVector>("possible targets no los")->Get())
+    {
+        Creature* mob = botAI->GetCreature(guid);
+        if (mob && mob->IsAlive() && !mob->IsInCombat() && mob->IsHostileTo(bot))
+            idle.push_back(mob);
+    }
+    auto pulls = [&](Position const& to)
+    {
+        for (Creature* mob : idle)
+        {
+            WalkPoint const at = coords(*mob);
+            WalkPoint const closest = DungeonLead::NearestOnWalk(from, coords(to), at);
+            if (DungeonLead::WalkPulls(from, closest, at, mob->GetAggroRange(bot)) &&
+                mob->IsWithinLOS(closest.x, closest.y, closest.z + bot->GetCollisionHeight()))
+                return true;
+        }
+        return false;
+    };
+    if (idle.empty())
+        return false;
+    // Match the core FollowMovementGenerator. A healer's offset can enter aggro
+    // range even when the shortcut to the tank itself clears the pack.
+    to = leader->GetPosition();
+    leader->MovePositionToFirstCollision(to, bot->GetCombatReach() + formation.distance, formation.angle);
+    if (!pulls(to))
+        return true;
+    int const index = DungeonLead::SafeTrailPoint(trail, bot->GetPosition(), pulls);
+    to = index >= 0 ? trail[index] : bot->GetPosition();
+    return true;
+}
+
     Transport* GetTransportForPosTolerant(Map* map, WorldObject* ref, uint32 phaseMask, float x, float y, float z)
     {
         if (!map || !ref)
@@ -233,7 +280,20 @@ bool FollowAction::Execute(Event /*event*/)
             }
         bool const ranged = PlayerbotAI::IsRanged(bot) || PlayerbotAI::IsHeal(bot);
         DungeonLead::Trail const trail = DungeonLead::TrailFor(ranged, slot, count);
-        moved = Follow(leader, trail.distance, trail.angle);
+        // Round a pack the tank walked round, by the tank's own trail, not straight through it (FollowTrailPolicy.h)
+        Position by;
+        if (TrailWalk(botAI, bot, leader, trail, by))
+        {
+            if (bot->GetExactDist(&by) < 1.0f)
+            {
+                bot->GetMotionMaster()->Clear();
+                bot->StopMoving();
+                return true;
+            }
+            moved = MoveTo(bot->GetMapId(), by.GetPositionX(), by.GetPositionY(), by.GetPositionZ()) || bot->isMoving();
+        }
+        else
+            moved = Follow(leader, trail.distance, trail.angle);
     }
     else if (!target.empty())
     {

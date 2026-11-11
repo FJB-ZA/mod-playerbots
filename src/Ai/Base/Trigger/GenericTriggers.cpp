@@ -727,3 +727,17 @@ bool ForceRebuffPendingTrigger::IsActive()
 {
     return botAI->forceRebuff.IsPending();
 }
+
+bool NeedAirTrigger::IsActive()
+{
+    // The server's own breath timer, as it is sent to the bot: up at half breath, back down once it is nearly full
+    int32 const left = botAI->GetBreathLeft();
+    int32 const max = botAI->GetBreathMax();
+    if (!bot->IsAlive())
+        needAir = false;
+    else if (botAI->IsLosingBreath() && left < max / 2)
+        needAir = true;
+    else if (!botAI->IsLosingBreath() && (left < 0 || left >= max * 9 / 10))
+        needAir = false;
+    return needAir;
+}

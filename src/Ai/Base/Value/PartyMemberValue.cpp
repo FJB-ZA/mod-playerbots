@@ -7,6 +7,7 @@
 #include "PartyMemberValue.h"
 #include "Corpse.h"
 #include "Group.h"
+#include "ObjectAccessor.h"
 #include "Pet.h"
 #include "PlayerbotAI.h"
 #include "ServerFacade.h"
@@ -169,4 +170,16 @@ Unit* PartyMemberMainTankValue::Calculate()
 {
     FindMainTankPlayer findMainTankPlayer;
     return FindPartyMember(findMainTankPlayer);
+}
+
+Unit* GroupMainTankValue::Calculate()
+{
+    Group* group = bot->GetGroup();
+    if (!group)
+        return PlayerbotAI::IsTank(bot) ? bot : nullptr;
+    ObjectGuid const guid = PlayerbotAI::GetMainTankGuid(group);
+    if (guid.IsEmpty())
+        return nullptr;
+    Player* tank = ObjectAccessor::GetPlayer(*bot, guid);
+    return tank && tank->IsInWorld() && tank->GetMap() == bot->GetMap() ? tank : nullptr;
 }

@@ -27,6 +27,7 @@
 #include "RpgTriggers.h"
 #include "RtiTriggers.h"
 #include "StuckTriggers.h"
+#include "ThreatStrategy.h"
 #include "TravelTriggers.h"
 #include "WaitForAttackTriggers.h"
 
@@ -50,6 +51,7 @@ public:
         creators["living arena"] = &TriggerContext::living_arena;
         creators["dungeon lead"] = &TriggerContext::dungeon_lead;
         creators["lead healer"] = &TriggerContext::lead_healer;
+        creators["lead fight away"] = &TriggerContext::lead_fight_away;
         creators["lead needs mana"] = &TriggerContext::lead_needs_mana;
         creators["explosive orb"] = &TriggerContext::explosive_orb;
         creators["often"] = &TriggerContext::often;
@@ -121,7 +123,7 @@ public:
         creators["enemy out of melee"] = &TriggerContext::EnemyOutOfMelee;
         creators["enemy out of spell"] = &TriggerContext::EnemyOutOfSpell;
         creators["enemy too close for spell"] = &TriggerContext::enemy_too_close_for_spell;
-        creators["healer out of place"] = &TriggerContext::healer_out_of_place;
+        creators["back line out of place"] = &TriggerContext::back_line_out_of_place;
         creators["enemy too close for shoot"] = &TriggerContext::enemy_too_close_for_shoot;
         creators["enemy too close for auto shot"] = &TriggerContext::enemy_too_close_for_auto_shot;
         creators["enemy too close for melee"] = &TriggerContext::enemy_too_close_for_melee;
@@ -139,6 +141,8 @@ public:
         creators["being attacked"] = &TriggerContext::BeingAttacked;
         creators["medium threat"] = &TriggerContext::MediumThreat;
         creators["low tank threat"] = &TriggerContext::low_tank_threat;
+        creators["swings near tank threat"] = &TriggerContext::swings_near_tank_threat;
+        creators["need air"] = &TriggerContext::need_air;
 
         creators["dead"] = &TriggerContext::Dead;
         creators["corpse near"] = &TriggerContext::corpse_near;
@@ -363,6 +367,7 @@ private:
     static Trigger* living_arena(PlayerbotAI* botAI) { return new LivingArenaTrigger(botAI); }
     static Trigger* dungeon_lead(PlayerbotAI* botAI) { return new DungeonLeadTrigger(botAI); }
     static Trigger* lead_healer(PlayerbotAI* botAI) { return new LeadHealerTrigger(botAI); }
+    static Trigger* lead_fight_away(PlayerbotAI* botAI) { return new LeadFightAwayTrigger(botAI); }
     static Trigger* lead_needs_mana(PlayerbotAI* botAI) { return new LeadNeedsManaTrigger(botAI); }
     static Trigger* explosive_orb(PlayerbotAI* botAI) { return new ExplosiveOrbTrigger(botAI); }
     static Trigger* often(PlayerbotAI* botAI) { return new RandomTrigger(botAI, "often", 5); }
@@ -370,7 +375,7 @@ private:
     static Trigger* EnemyOutOfMelee(PlayerbotAI* botAI) { return new EnemyOutOfMeleeTrigger(botAI); }
     static Trigger* EnemyOutOfSpell(PlayerbotAI* botAI) { return new EnemyOutOfSpellRangeTrigger(botAI); }
     static Trigger* enemy_too_close_for_spell(PlayerbotAI* botAI) { return new EnemyTooCloseForSpellTrigger(botAI); }
-    static Trigger* healer_out_of_place(PlayerbotAI* botAI) { return new HealerOutOfPlaceTrigger(botAI); }
+    static Trigger* back_line_out_of_place(PlayerbotAI* botAI) { return new BackLineOutOfPlaceTrigger(botAI); }
     static Trigger* enemy_too_close_for_auto_shot(PlayerbotAI* botAI)
     {
         return new EnemyTooCloseForAutoShotTrigger(botAI);
@@ -395,6 +400,8 @@ private:
     static Trigger* BeingAttacked(PlayerbotAI* botAI) { return new BeingAttackedTrigger(botAI); }
     static Trigger* MediumThreat(PlayerbotAI* botAI) { return new MediumThreatTrigger(botAI); }
     static Trigger* low_tank_threat(PlayerbotAI* botAI) { return new LowTankThreatTrigger(botAI); }
+    static Trigger* swings_near_tank_threat(PlayerbotAI* botAI) { return new SwingsNearTankThreatTrigger(botAI); }
+    static Trigger* need_air(PlayerbotAI* botAI) { return new NeedAirTrigger(botAI); }
     // static Trigger* MediumThreat(PlayerbotAI* botAI) { return new MediumThreatTrigger(botAI); }
     static Trigger* Dead(PlayerbotAI* botAI) { return new DeadTrigger(botAI); }
     static Trigger* corpse_near(PlayerbotAI* botAI) { return new CorpseNearTrigger(botAI); }

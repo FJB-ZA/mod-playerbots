@@ -2,12 +2,19 @@
 
 #include <algorithm>
 #include <cmath>
+#include <map>
+#include <mutex>
 
+#include "ArgentSoldiersValue.h"
 #include "AttackersValue.h"
 #include "CellImpl.h"
+#include "FollowActions.h"
 #include "GridNotifiers.h"
 #include "GridNotifiersImpl.h"
 #include "Group.h"
+#include "InstanceScript.h"
+#include "Log.h"
+#include "ObjectMgr.h"
 #include "Playerbots.h"
 #include "SpellMgr.h"
 #include "TOCActions.h"
@@ -30,6 +37,26 @@ uint32 FactionMountEntry(Player* bot)
 }
 
 bool IsJoustMount(uint32 entry) { return entry == NPC_ARGENT_BATTLEWORG || entry == NPC_ARGENT_WARHORSE; }
+
+// The free mount reserved by each rider on foot; bots of one map update together, maps may not
+std::mutex keptMountsLock;
+std::map<ObjectGuid, ObjectGuid> keptMounts;
+
+ObjectGuid KeptMount(ObjectGuid rider)
+{
+    std::lock_guard<std::mutex> lock(keptMountsLock);
+    auto const it = keptMounts.find(rider);
+    return it == keptMounts.end() ? ObjectGuid::Empty : it->second;
+}
+
+void KeepMount(ObjectGuid rider, ObjectGuid mount)
+{
+    std::lock_guard<std::mutex> lock(keptMountsLock);
+    if (mount.IsEmpty())
+        keptMounts.erase(rider);
+    else
+        keptMounts[rider] = mount;
+}
 
 bool IsEntryIn(std::vector<uint32> const& entries, uint32 entry)
 {
@@ -58,6 +85,13 @@ void ExtendCooldown(Unit* vehicleBase, uint32 spellId, uint32 duration)
         vehicleBase->AddSpellCooldown(spellId, 0, duration);
 }
 
+// The spell a click on the mount casts: Ride Vehicle (67830 for both joust mounts, from npc_spellclick_spells)
+SpellInfo const* RideSpell(Unit* vehicleBase)
+{
+    SpellClickInfoMapBounds clicks = sObjectMgr->GetSpellClickInfoMapBounds(vehicleBase->GetEntry());
+    return clicks.first != clicks.second ? sSpellMgr->GetSpellInfo(clicks.first->second.spellId) : nullptr;
+}
+
 bool IsShielded(Unit* unit) { return unit->HasAura(SPELL_BOSS_DEFEND) || unit->HasAura(SPELL_MINIONS_DEFEND); }
 
 uint8 DefendStacks(Unit* unit)
@@ -76,16 +110,20 @@ public:
     }
 };
 
-bool BothMountsNear(Player* bot)
+// The joust is on while any joust mount is left. Asking for both kinds fails once one kind runs out, and they do over
+// wipes: a dismounted champion despawns the battleworg it remounts on (a warhorse in a Horde run) and a dead mount
+// never respawns (spawntime 999999). The lance then came off and the mount trigger went quiet, yet the joust
+// multiplier, which needs just one free mount, still held the bot on foot with nothing allowed to run.
+bool JoustMountNear(Player* bot)
 {
-    return bot->FindNearestCreature(NPC_ARGENT_WARHORSE, 100.0f) &&
+    return bot->FindNearestCreature(NPC_ARGENT_WARHORSE, 100.0f) ||
            bot->FindNearestCreature(NPC_ARGENT_BATTLEWORG, 100.0f);
 }
 }  // namespace
 
 bool ToCLanceTrigger::IsActive()
 {
-    if (bot->GetVehicle() || !BothMountsNear(bot))
+    if (bot->GetVehicle() || !JoustMountNear(bot))
         return false;
 
     if (!bot->HasItemOrGemWithIdEquipped(ITEM_LANCE, 1))
@@ -99,7 +137,7 @@ bool ToCUELanceTrigger::IsActive()
     if (bot->GetVehicle() || !bot->HasItemOrGemWithIdEquipped(ITEM_LANCE, 1))
         return false;
 
-    return !BothMountsNear(bot);
+    return !JoustMountNear(bot);
 }
 
 bool ToCMountedTrigger::IsActive()
@@ -108,7 +146,8 @@ bool ToCMountedTrigger::IsActive()
     return vehicleBase && bot->GetVehicle() && IsJoustMount(vehicleBase->GetEntry());
 }
 
-bool ToCMountNearTrigger::IsActive() { return !bot->GetVehicle() && BothMountsNear(bot); }
+// The same free-mount test as the joust multiplier, so a bot it holds on foot is always one this sends to a mount
+bool ToCMountNearTrigger::IsActive() { return !bot->GetVehicle() && ToCMountAction::FindMount(botAI); }
 
 bool ToCLanceAction::Execute(Event /*event*/)
 {
@@ -526,8 +565,10 @@ bool ToCMountedAction::KeepMoving(Unit* vehicleBase, JoustMove mode, uint32 now)
 
 bool ToCMountedAction::MoveJoust(JoustMove mode, float x, float y, uint32 now)
 {
-    float z = bot->GetPositionZ();
-    bot->UpdateAllowedPositionZ(x, y, z);
+    // A rider's Z includes its seat offset. Obtain the arena floor in world coordinates.
+    float const z = bot->GetMap()->GetHeight(bot->GetPhaseMask(), x, y, Toc::ArenaCenterZ + 6.0f, true, 12.0f);
+    if (std::abs(z - Toc::ArenaCenterZ) > 6.0f)
+        return false;
     AI_VALUE(LastMovement&, "last movement").Set(nullptr);
     if (!MoveTo(bot->GetMapId(), x, y, z, false, false, false, false, MovementPriority::MOVEMENT_COMBAT))
         return false;
@@ -564,6 +605,44 @@ bool ToCMountedAction::ChargeCycle(Unit* vehicleBase, Unit* target, std::vector<
     }
 }
 
+bool ToCMountedAction::RideToSpare(Unit* current, uint32 now)
+{
+    if (!Toc::NeedsFreshMount(current->GetHealthPct()) || !bot->HasAura(SPELL_LANCE_EQUIPPED))
+        return false;
+    if (now >= spareCheckAt)
+    {
+        Unit* candidate = ToCMountAction::FindMount(botAI);
+        spare = candidate ? candidate->GetGUID() : ObjectGuid::Empty;
+        spareCheckAt = now + Toc::SpareMountCheckMs;
+    }
+    Unit* next = botAI->GetUnit(spare);
+    if (!next || !next->IsAlive() || !next->GetVehicleKit() || !next->GetVehicleKit()->GetAvailableSeatCount())
+        return false;
+    if (bot->GetDistance(next) > INTERACTION_DISTANCE)
+    {
+        RefreshDefend(current, now);
+        return KeepMoving(current, JOUST_MOVE_SPARE, now) ||
+               MoveJoust(JOUST_MOVE_SPARE, next->GetPositionX(), next->GetPositionY(), now);
+    }
+
+    // A normal spell click moves the rider between vehicles via Unit::_EnterVehicle.
+    // A refused click leaves it on its current mount beside the spare.
+    if (SpellInfo const* ride = RideSpell(next); ride && !bot->GetGlobalCooldownMgr().HasGlobalCooldown(ride))
+    {
+        current->StopMoving();
+        next->HandleSpellClick(bot);
+        if (bot->IsOnVehicle(next))
+        {
+            LOG_INFO("playerbots", "ToC mount: {} changed to a fresh mount before being unhorsed", bot->GetName());
+            KeepMount(bot->GetGUID(), ObjectGuid::Empty);
+            spare.Clear();
+            moveMode = JOUST_MOVE_NONE;
+            return true;
+        }
+    }
+    return RefreshDefend(current, now);
+}
+
 bool ToCMountedAction::Execute(Event /*event*/)
 {
     Unit* vehicleBase = bot->GetVehicleBase();
@@ -598,6 +677,9 @@ bool ToCMountedAction::Execute(Event /*event*/)
         RefreshDefend(vehicleBase, now);
         return true;
     }
+
+    if (RideToSpare(vehicleBase, now))
+        return true;
 
     Unit* target = FindJoustTarget(hostiles);
     if (!target)
@@ -640,33 +722,69 @@ bool ToCMountAction::Execute(Event /*event*/)
     return EnterVehicle(vehicleToEnter, true);
 }
 
-// Prefers the faction's own mount, the only one that can trample a dismounted champion.
+// Each bot on foot its own free mount (Toc::AssignedMount), the faction's own preferred: only it can trample a
+// dismounted champion.
 Unit* ToCMountAction::FindMount(PlayerbotAI* botAI)
 {
     Player* player = botAI->GetBot();
-    Unit* preferredMount = nullptr;
-    Unit* otherMount = nullptr;
-    uint32 preferredEntry = FactionMountEntry(player);
-    GuidVector npcs = botAI->GetAiObjectContext()->GetValue<GuidVector>("nearest vehicles")->Get();
-    for (ObjectGuid const& guid : npcs)
+    if (InstanceScript* instance = player->GetInstanceScript(); !instance || instance->GetBossState(0) == DONE)
+        return nullptr;
+    bool const replacing = player->GetVehicle() != nullptr;
+    // A rider on foot has first claim. Mounted riders below the replacement threshold
+    // reserve among themselves only while every living rider has a seat.
+    std::vector<Player*> riders{player};
+    if (Group* group = player->GetGroup())
+        for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+        {
+            Player* member = ref->GetSource();
+            if (!member || member == player || !member->IsAlive() || member->GetMap() != player->GetMap() ||
+                !GET_PLAYERBOT_AI(member))
+                continue;
+            Unit* base = member->GetVehicleBase();
+            if (replacing && !base)
+                return nullptr;
+            if (!base || (replacing && IsJoustMount(base->GetEntry()) && Toc::NeedsFreshMount(base->GetHealthPct())))
+                riders.push_back(member);
+        }
+
+    auto byGuid = [](Unit* a, Unit* b) { return a->GetGUID() < b->GetGUID(); };
+    std::sort(riders.begin(), riders.end(), byGuid);
+    size_t const rider = std::find(riders.begin(), riders.end(), player) - riders.begin();
+
+    GuidVector candidates = botAI->GetAiObjectContext()->GetValue<GuidVector>("nearest vehicles")->Get();
+    GuidVector reservations;
+    for (Player* member : riders)
     {
-        Unit* vehicleBase = botAI->GetUnit(guid);
-        if (!vehicleBase || vehicleBase->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE) || !vehicleBase->IsFriendlyTo(player))
-            continue;
-
-        if (!vehicleBase->GetVehicleKit() || !vehicleBase->GetVehicleKit()->GetAvailableSeatCount())
-            continue;
-
-        uint32 entry = vehicleBase->GetEntry();
-        if (!IsJoustMount(entry))
-            continue;
-
-        Unit*& slot = entry == preferredEntry ? preferredMount : otherMount;
-        if (!slot || player->GetExactDist(slot) > player->GetExactDist(vehicleBase))
-            slot = vehicleBase;
+        auto const guid = KeptMount(member->GetGUID());
+        reservations.push_back(guid);
+        if (guid)
+            candidates.push_back(guid);
     }
-
-    return preferredMount ? preferredMount : otherMount;
+    std::sort(candidates.begin(), candidates.end());
+    candidates.erase(std::unique(candidates.begin(), candidates.end()), candidates.end());
+    std::vector<Unit*> mounts;
+    for (auto guid : candidates)
+    {
+        Unit* mount = botAI->GetUnit(guid);
+        if (mount && mount->IsAlive() && mount->GetMap() == player->GetMap() && IsJoustMount(mount->GetEntry()) &&
+            mount->IsFriendlyTo(player) && !mount->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE) &&
+            mount->GetVehicleKit() && mount->GetVehicleKit()->GetAvailableSeatCount() &&
+            (!replacing || Toc::HealthySpare(mount->GetHealthPct())))
+            mounts.push_back(mount);
+    }
+    std::vector<int> kept(riders.size(), -1);
+    std::vector<std::vector<float>> distance(riders.size(), std::vector<float>(mounts.size()));
+    for (size_t r = 0; r < riders.size(); ++r)
+        for (size_t m = 0; m < mounts.size(); ++m)
+        {
+            if (mounts[m]->GetGUID() == reservations[r])
+                kept[r] = static_cast<int>(m);
+            bool const otherFaction = mounts[m]->GetEntry() != FactionMountEntry(riders[r]);
+            distance[r][m] = Toc::MountCost(riders[r]->GetExactDist(mounts[m]), otherFaction && !riders[r]->IsInCombat());
+        }
+    int const mine = Toc::AssignedMount(distance, rider, kept);
+    KeepMount(player->GetGUID(), mine >= 0 ? mounts[mine]->GetGUID() : ObjectGuid::Empty);
+    return mine >= 0 ? mounts[mine] : nullptr;
 }
 
 bool ToCMountAction::EnterVehicle(Unit* vehicleBase, bool moveIfFar)
@@ -675,16 +793,46 @@ bool ToCMountAction::EnterVehicle(Unit* vehicleBase, bool moveIfFar)
     if (dist > INTERACTION_DISTANCE && !moveIfFar)
         return false;
 
+    // Keep the tick while still on the way, so a heal or a cast the multiplier lets through doesn't halt the run
     if (dist > INTERACTION_DISTANCE)
-        return MoveTo(vehicleBase);
+    {
+        if (!bot->isMoving() && botAI->CanMove())
+            AI_VALUE(LastMovement&, "last movement").clear();
+        auto const priority = bot->IsInCombat() ? MovementPriority::MOVEMENT_COMBAT : MovementPriority::MOVEMENT_NORMAL;
+        bool const moving = MoveTo(vehicleBase, INTERACTION_DISTANCE / 2.0f, priority) || bot->isMoving();
+        NoteAttempt(vehicleBase, dist, moving ? "on the way" : "can't move to it");
+        return moving;
+    }
+
+    // The mount turns away a rider without the lance's aura (npc_toc5_player_vehicle::BeforeSpellClick)
+    if (!bot->HasAura(SPELL_LANCE_EQUIPPED))
+    {
+        NoteAttempt(vehicleBase, dist, "no Lance Equipped aura");
+        return false;
+    }
+
+    // Ride Vehicle is on the global cooldown, so a click in the 1.5 s after a heal fails SPELL_FAILED_NOT_READY. A bot
+    // that then heals again restarts it every tick and never boards: hold the tick until the cooldown runs out.
+    SpellInfo const* ride = RideSpell(vehicleBase);
+    if (ride && bot->GetGlobalCooldownMgr().HasGlobalCooldown(ride))
+    {
+        NoteAttempt(vehicleBase, dist, "waiting out the global cooldown");
+        return true;
+    }
 
     botAI->RemoveShapeshift();
     bot->GetMotionMaster()->Clear();
     bot->StopMoving();
-    vehicleBase->HandleSpellClick(bot);
+    bool const clicked = vehicleBase->HandleSpellClick(bot);
 
     if (!bot->IsOnVehicle(vehicleBase))
+    {
+        NoteAttempt(vehicleBase, dist, clicked ? "ride cast failed" : "spell click refused");
         return false;
+    }
+
+    KeepMount(bot->GetGUID(), ObjectGuid::Empty);
+    NoteAttempt(vehicleBase, dist, "boarded");
 
     // Bots can enter the vehicle while on their own mount
     WorldPacket emptyPacket;
@@ -692,16 +840,40 @@ bool ToCMountAction::EnterVehicle(Unit* vehicleBase, bool moveIfFar)
     return true;
 }
 
+// One line each time the mount or the outcome changes, to show what keeps a bot on foot from boarding mid-fight
+void ToCMountAction::NoteAttempt(Unit* vehicleBase, float dist, std::string const& outcome)
+{
+    if (vehicleBase->GetGUID() == lastMount && outcome == lastOutcome)
+        return;
+
+    lastMount = vehicleBase->GetGUID();
+    lastOutcome = outcome;
+    LOG_INFO("playerbots",
+             "ToC mount: {} to {} {} at {:.1f} yd: {}; in combat {}, health {:.0f}%, lance equipped {}, stunned {}",
+             bot->GetName(), vehicleBase->GetName(), vehicleBase->GetGUID().GetCounter(), dist, outcome,
+             bot->IsInCombat(), bot->GetHealthPct(), bot->HasItemOrGemWithIdEquipped(ITEM_LANCE, 1),
+             bot->HasUnitState(UNIT_STATE_STUNNED));
+}
+
 float ToCJoustMultiplier::GetValue(Action* action)
 {
     Toc::JoustMoment fight;
     fight.combat = botAI->GetState() == BOT_STATE_COMBAT;
-    if (!fight.combat)
-        return 1.0f;
-
     Unit* vehicleBase = bot->GetVehicleBase();
     fight.onVehicle = vehicleBase != nullptr;
     fight.onJoustMount = vehicleBase && IsJoustMount(vehicleBase->GetEntry());
+    if (!fight.combat && !fight.onJoustMount)
+    {
+        // Out of a fight a follow would walk the bot back in among the waiting Argent soldiers (KeepsOffSoldiers)
+        if (dynamic_cast<FollowAction*>(action) && !bot->GetVehicle())
+        {
+            ToCSoldiers const soldiers = AI_VALUE(ToCSoldiers, "toc argent soldiers");
+            if (soldiers.nearest &&
+                Toc::KeepsOffSoldiers(soldiers.fighting, soldiers.botDistance, soldiers.masterDistance))
+                return 0.0f;
+        }
+        return 1.0f;
+    }
 
     Toc::JoustAction shape;
     shape.setup = dynamic_cast<ToCMountAction*>(action) || dynamic_cast<ToCLanceAction*>(action) ||
@@ -709,8 +881,8 @@ float ToCJoustMultiplier::GetValue(Action* action)
     shape.movement = dynamic_cast<MovementAction*>(action) != nullptr;
     shape.mountedJoust = dynamic_cast<ToCMountedAction*>(action) != nullptr;
 
-    // The mount scan is cached, so only an unmounted bot that isn't getting ready pays for it
-    if (!fight.onVehicle && !shape.setup)
+    // The mount scan is cached, so only an unmounted bot about to move somewhere else pays for it
+    if (!fight.onVehicle && !shape.setup && shape.movement)
         fight.spareMount = SpareMountNearby();
 
     return Toc::JoustAllows(fight, shape) ? 1.0f : 0.0f;

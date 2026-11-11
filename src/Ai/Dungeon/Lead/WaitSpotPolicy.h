@@ -20,6 +20,8 @@ struct PathSpot
 {
     float distToPack = 0.0f;
     bool seesPack = false;
+    bool nearOtherPack = false;  // inside the aggro reach of another pack not yet pulled: no place to gather
+    bool inAggro = false;        // inside some mob's aggro range: walking there starts the fight before the pull
 };
 
 // Mobs aggro at about 20 yards at equal level; the group stands beyond that.
@@ -27,6 +29,19 @@ constexpr float SafeDistance = 26.0f;
 constexpr float RangedPullDistance = 30.0f;
 // A corner further than this from the pack means a long walk back after the pull; pull in sight instead.
 constexpr float MaxCornerDistance = 42.0f;
+
+// The style for this pack. Bosses do not follow round corners, so they are pulled in sight. Casters stand where they
+// are and cast at a tank they can see, and the group ran on to them: chasing a Coilfang Siren 33 yards into the next
+// hall of the Steamvault brought 21 mobs (solo-wow role check, 2026-11-07). Any tank that stops before a pull takes a
+// pack with casters round a corner, where they must walk in.
+constexpr PullStyle StyleForPack(PullStyle style, bool casters, bool boss)
+{
+    if (boss)
+        return style == PullStyle::Corner ? PullStyle::Ranged : style;
+    if (casters && style == PullStyle::Ranged)
+        return PullStyle::Corner;
+    return style;
+}
 
 // Index of the spot to gather at, or -1 to walk straight in.
 constexpr int WaitSpot(PathSpot const* spots, size_t count, PullStyle style)
@@ -37,7 +52,8 @@ constexpr int WaitSpot(PathSpot const* spots, size_t count, PullStyle style)
     {
         int corner = -1;
         for (size_t i = 0; i < count; ++i)
-            if (!spots[i].seesPack && spots[i].distToPack >= SafeDistance && spots[i].distToPack <= MaxCornerDistance)
+            if (!spots[i].seesPack && !spots[i].nearOtherPack && spots[i].distToPack >= SafeDistance &&
+                spots[i].distToPack <= MaxCornerDistance)
                 corner = static_cast<int>(i);
         if (corner >= 0)
             return corner;
@@ -47,6 +63,8 @@ constexpr int WaitSpot(PathSpot const* spots, size_t count, PullStyle style)
     {
         if (spots[i].distToPack < SafeDistance)
             break;
+        if (spots[i].nearOtherPack)
+            continue;
         ranged = static_cast<int>(i);
         if (spots[i].seesPack && spots[i].distToPack <= RangedPullDistance)
             break;
@@ -58,11 +76,38 @@ constexpr int WaitSpot(PathSpot const* spots, size_t count, PullStyle style)
 constexpr float PullSpotDistance = 28.0f;
 
 // Where the tank steps to from the gathering spot to see the pack in pull range, or -1 if no spot on the path does.
+// Not inside any mob's aggro range, nor near another pack: stepping into the middle of Trollgore's room in heroic
+// Drak'Tharon Keep brought 12 mobs before the pull went off (solo-wow role check, 2026-11-07).
 constexpr int PullSpot(PathSpot const* spots, size_t count, int from)
 {
     for (size_t i = from < 0 ? 0 : static_cast<size_t>(from); i < count; ++i)
-        if (spots[i].seesPack && spots[i].distToPack <= PullSpotDistance)
+        if (spots[i].seesPack && spots[i].distToPack <= PullSpotDistance && !spots[i].inAggro &&
+            !spots[i].nearOtherPack)
             return static_cast<int>(i);
+    return -1;
+}
+
+// The ground the tank has walked, newest last, one point every TrailStep yards out of a fight
+constexpr float TrailStep = 5.0f;
+constexpr size_t TrailPoints = 24;
+// Back along the trail no further than this from the pack: a longer walk back after the pull loses the pack
+constexpr float MaxTrailDistance = 45.0f;
+
+// With no spot on the way to the pack (the tank already stands inside its reach, as it does in a crowded room once the
+// last pack is dead), the group falls back along the trail it came by: the newest point clear of this pack and of every
+// other. Walking straight in from the middle of the Deadmines goblin foundry pulled 12-16 mobs and wiped the group
+// (solo-wow role check, 2026-11-07). With outOfSight, for a corner pull with no corner on the way, only a point the
+// pack cannot see. Index into the trail, or -1.
+constexpr int TrailSpot(PathSpot const* trail, size_t count, bool outOfSight = false)
+{
+    for (size_t i = count; i > 0; --i)
+    {
+        PathSpot const& spot = trail[i - 1];
+        if (spot.distToPack > MaxTrailDistance)
+            return -1;
+        if (spot.distToPack >= SafeDistance && !spot.nearOtherPack && !(outOfSight && spot.seesPack))
+            return static_cast<int>(i - 1);
+    }
     return -1;
 }
 }  // namespace DungeonLead

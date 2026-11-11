@@ -127,6 +127,10 @@ class CastKillingSpreeAction : public CastMeleeSpellAction
 {
 public:
     CastKillingSpreeAction(PlayerbotAI* botAI) : CastMeleeSpellAction(botAI, "killing spree") {}
+
+    // It strikes random enemies near the rogue, not only its target
+    ActionThreatType getThreatType() override { return ActionThreatType::Aoe; }
+    bool isUseful() override;
 };
 
 class CastKickOnEnemyHealerAction : public CastSpellOnEnemyHealerAction

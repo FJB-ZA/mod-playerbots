@@ -9,8 +9,10 @@
 
 #include "Action.h"
 #include "LastMovementValue.h"
+#include "MeleeSpotPolicy.h"
 #include "PlayerbotAIConfig.h"
 #include <cmath>
+#include <vector>
 
 class Player;
 class PlayerbotAI;
@@ -83,6 +85,15 @@ private:
     void DoMovePoint(Unit* unit, float x, float y, float z, bool generatePath, bool backwards);
 };
 
+// Straight up to the water's surface for air ("need air")
+class SurfaceAction : public MovementAction
+{
+public:
+    SurfaceAction(PlayerbotAI* botAI) : MovementAction(botAI, "surface") {}
+
+    bool Execute(Event event) override;
+};
+
 class FleeAction : public MovementAction
 {
 public:
@@ -148,6 +159,12 @@ public:
     TankFaceAction(PlayerbotAI* botAI) : CombatFormationMoveAction(botAI, "tank face") {}
 
     bool Execute(Event event) override;
+
+private:
+    // A pack ringing the tank: a step out through its widest gap, so it closes up on one side (MeleeSpotPolicy.h)
+    bool GatherPack();
+
+    uint32 lastGather = 0;
 };
 
 class RearFlankAction : public MovementAction
@@ -248,15 +265,33 @@ public:
 
     // Is (x, y) in front of the target, or of another mob fighting the group near it and not the bot itself?
     static bool InFrontOfMobs(PlayerbotAI* botAI, Unit* target, float x, float y);
+
+private:
+    // The target and the rest of its pack whose fronts a melee spot keeps out of
+    static std::vector<BotMove::FacingMob> PackFronts(PlayerbotAI* botAI, Unit* target);
 };
 
-// A healer to its spot: back from the mobs others hold, out of their fronts, near the tank (HealerSpotPolicy.h)
-class HealerTakeSpotAction : public CombatFormationMoveAction
+// Where a mob in the fight stands, or will once it reaches its victim: what the back line keeps clear of
+// (HealerSpotPolicy.h, Arriving)
+BotMove::FacingMob StandingOf(Unit* mob);
+
+// A healer or ranged damage dealer to its spot: back from the mobs others hold, out of their fronts, near the tank
+// (HealerSpotPolicy.h)
+class BackLineTakeSpotAction : public CombatFormationMoveAction
 {
 public:
-    HealerTakeSpotAction(PlayerbotAI* botAI) : CombatFormationMoveAction(botAI, "healer take spot") {}
+    BackLineTakeSpotAction(PlayerbotAI* botAI) : CombatFormationMoveAction(botAI, "back line take spot") {}
 
     bool Execute(Event event) override;
+
+    // What the last run did, and how long ago: where it went, or why no spot would do (for the role check's log)
+    std::string LastNote() const;
+
+private:
+    void Note(std::string const& why);
+
+    std::string lastNote;
+    uint32 lastNoteAt = 0;
 };
 
 class MoveOutOfCollisionAction : public MovementAction

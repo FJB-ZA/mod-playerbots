@@ -50,6 +50,30 @@ public:
     bool IsActive() override;
 };
 
+class KrikthirSwarmTrigger : public Trigger
+{
+public:
+    KrikthirSwarmTrigger(PlayerbotAI* ai, bool pickup)
+        : Trigger(ai, pickup ? "krik'thir swarm pickup" : "krik'thir loose swarm"), _pickup(pickup) {}
+    bool IsActive() override;
+private:
+    bool const _pickup;
+};
+
+class KrikthirMarkTrigger : public Trigger
+{
+public:
+    KrikthirMarkTrigger(PlayerbotAI* botAI) : Trigger(botAI, "krik'thir mark") {}
+    bool IsActive() override;
+};
+
+class HadronoxTrafficTrigger : public Trigger
+{
+public:
+    HadronoxTrafficTrigger(PlayerbotAI* ai) : Trigger(ai, "hadronox door traffic", 1000) {}
+    bool IsActive() override;
+};
+
 class AnubarakPoundTrigger : public Trigger
 {
 public:

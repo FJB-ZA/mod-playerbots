@@ -5,6 +5,8 @@
  */
 
 #include "UBShared.h"
+#include "Map.h"
+#include "MeleeSpotPolicy.h"
 #include "Creature.h"
 #include "Group.h"
 #include "ObjectAccessor.h"
@@ -230,6 +232,54 @@ bool SpotClearOfUnderbats(Player* bot, GuidVector const& attackers, float x, flo
     }
 
     return true;
+}
+
+bool InPackFront(Player* bot, GuidVector const& attackers, float x, float y)
+{
+    for (ObjectGuid guid : attackers)
+    {
+        Unit* mob = ObjectAccessor::GetUnit(*bot, guid);
+        if (!mob || !mob->IsAlive() || mob->GetVictim() == bot || mob->GetEntry() == NPC_UNDERBAT)
+            continue;
+        BotMove::FacingMob const front{mob->GetPositionX(), mob->GetPositionY(), mob->GetOrientation(),
+                                       mob->GetCombatReach()};
+        if (BotMove::InFront(front, x, y))
+            return true;
+    }
+    return false;
+}
+
+// A ring round the rally unit: a mob the tank holds faces it, so its front runs through the tank and out behind it;
+// the clear spots are beside the mobs. In melee reach of the bot's target, or the bot leaves to reach it again.
+bool UnderbatRallySpot(Player* bot, Unit* rally, Unit* target, GuidVector const& attackers, float& x, float& y, float& z)
+{
+    bool found = false;
+    float bestDist = 0.0f;
+    for (float radius : Underbog::UnderbatRallyRadii)
+        for (int step = 0; step < Underbog::UnderbatRallyAngles; ++step)
+        {
+            float const angle = 2.0f * float(M_PI) * step / Underbog::UnderbatRallyAngles;
+            float sx = rally->GetPositionX() + radius * std::cos(angle);
+            float sy = rally->GetPositionY() + radius * std::sin(angle);
+            float sz = rally->GetPositionZ();
+            if (!bot->GetMap()->CheckCollisionAndGetValidCoords(rally, rally->GetPositionX(), rally->GetPositionY(),
+                                                                rally->GetPositionZ(), sx, sy, sz))
+                continue;
+            if (target && target->GetExactDist2d(sx, sy) > bot->GetMeleeRange(target) - 0.5f)
+                continue;
+            if (InPackFront(bot, attackers, sx, sy) || !SpotClearOfUnderbats(bot, attackers, sx, sy, sz))
+                continue;
+            float const dist = bot->GetExactDist(sx, sy, sz);
+            if (!found || dist < bestDist)
+            {
+                found = true;
+                bestDist = dist;
+                x = sx;
+                y = sy;
+                z = sz;
+            }
+        }
+    return found;
 }
 
 bool RetreatPathUnsafe(Player* bot, GuidVector const& mushrooms, float destX, float destY)

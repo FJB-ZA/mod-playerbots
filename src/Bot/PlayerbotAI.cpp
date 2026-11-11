@@ -1228,6 +1228,32 @@ void PlayerbotAI::HandleBotOutgoingPacket(WorldPacket const& packet)
 
     switch (packet.GetOpcode())
     {
+        case SMSG_START_MIRROR_TIMER:
+        {
+            WorldPacket p(packet);
+            p.rpos(0);
+            uint32 timer, value, maxValue;
+            int32 scale;
+            p >> timer >> value >> maxValue >> scale;
+            if (timer == BREATH_TIMER)
+            {
+                breathValue = int32(value);
+                breathMax = int32(maxValue);
+                breathScale = scale;
+                breathAt = getMSTime();
+            }
+            return;
+        }
+        case SMSG_STOP_MIRROR_TIMER:
+        {
+            WorldPacket p(packet);
+            p.rpos(0);
+            uint32 timer;
+            p >> timer;
+            if (timer == BREATH_TIMER)
+                breathMax = 0;
+            return;
+        }
         case SMSG_SPELL_FAILURE:
         {
             WorldPacket p(packet);
@@ -7127,4 +7153,13 @@ void PlayerbotAI::EvaluateHealerDpsStrategy()
         ChangeStrategy("-healer dps", BOT_STATE_COMBAT);
     else
         ChangeStrategy("+healer dps", BOT_STATE_COMBAT);
+}
+
+int32 PlayerbotAI::GetBreathLeft() const
+{
+    if (breathMax <= 0)
+        return -1;
+
+    int64 const left = int64(breathValue) + int64(breathScale) * int64(getMSTimeDiff(breathAt, getMSTime()));
+    return int32(std::clamp<int64>(left, 0, breathMax));
 }
