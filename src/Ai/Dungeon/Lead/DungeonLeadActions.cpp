@@ -49,6 +49,7 @@ uint8 constexpr ICON_MOON = RtiTargetValue::moonIndex;
 uint8 constexpr ICON_CROSS = RtiTargetValue::crossIndex;
 uint8 constexpr ICON_SKULL = RtiTargetValue::skullIndex;
 uint32 constexpr GOAL_RESCAN_MS = 5000;
+time_t constexpr BOSS_BACK_SOON_S = 120;  // an evaded boss respawning within this is still the goal
 uint32 constexpr GOAL_BLOCKED_MS = 10000;
 uint32 constexpr PACK_RESCAN_MS = 1000;
 uint32 constexpr READY_RECHECK_MS = 500;
@@ -210,7 +211,11 @@ bool BossAlive(Map* map, BossSpawn const& spawn, Position& pos)
     if (data && (!map->IsSpawnGroupActive(data->spawnGroupId) ||
                  (data->poolId && !map->GetPoolData().IsSpawnedObject<Creature>(spawn.spawnId))))
         return false;
-    return map->GetCreatureRespawnTime(spawn.spawnId) <= time(nullptr);
+    // A boss that evaded is taken out of the world and put back within the minute; a killed one stays away for a day
+    // or more. Counted as gone for that minute, Krik'thir was passed over for Hadronox ten times in one run, and the
+    // tank walked on past his spot at 22-37 yards as he came back: three wipes, no boss (role check, heroic
+    // Azjol-Nerub, 2026-11-11)
+    return map->GetCreatureRespawnTime(spawn.spawnId) <= time(nullptr) + BOSS_BACK_SOON_S;
 }
 
 // No floor within reach under where it is now
