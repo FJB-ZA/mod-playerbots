@@ -260,12 +260,41 @@ bool FindGoal(PlayerbotAI* botAI, State& state)
         return state.hasGoal;
     state.goalCheckedAt = getMSTime();
     state.hasGoal = false;
+    uint32 const before = state.goalSpawn;
     state.goalSpawn = 0;
 
     Player* bot = botAI->GetBot();
     uint32 const mapId = bot->GetMapId();
     if (NearestAlive(bot, BossSpawns(mapId), state))
+    {
+        // A new boss to walk to: every boss of the map and why it is or is not a goal. After Watcher Silthik's pack the
+        // tank's goal went from Krik'thir at 44 yards to Hadronox at 161 with nothing blocked, and it walked past
+        // Krik'thir at 3 yards into a wipe (role check, Azjol-Nerub, 2026-11-11)
+        if (before && before != state.goalSpawn)
+        {
+            std::string bosses;
+            for (BossSpawn const& spawn : BossSpawns(mapId))
+            {
+                if (!(spawn.spawnMask & (1 << bot->GetMap()->GetSpawnMode())))
+                    continue;
+                Creature* creature = nullptr;
+                auto const bounds = bot->GetMap()->GetCreatureBySpawnIdStore().equal_range(spawn.spawnId);
+                for (auto itr = bounds.first; itr != bounds.second && !creature; ++itr)
+                    if (itr->second && itr->second->IsInWorld())
+                        creature = itr->second;
+                Position pos;
+                bool const alive = BossAlive(bot->GetMap(), spawn, pos);
+                bosses += Acore::StringFormat(
+                    " [{} spawn {}{}: goal {}, {:.0f} yd, {}, flags 0x{:X}, blocked {}]",
+                    creature ? creature->GetName() : "not loaded", spawn.spawnId,
+                    spawn.spawnId == state.goalSpawn ? " (chosen)" : spawn.spawnId == before ? " (was)" : "", alive,
+                    bot->GetExactDist(&pos), !creature ? "-" : creature->IsAlive() ? "alive" : "dead",
+                    creature ? creature->GetUInt32Value(UNIT_FIELD_FLAGS) : 0, state.blockedGoals.count(spawn.spawnId));
+            }
+            LOG_INFO("playerbots", "{} leads to a new boss:{}", bot->GetName(), bosses);
+        }
         return true;
+    }
     bool const keyRun = MythicPlusBotMgr::instance().IsRunGroup(bot->GetGroup());
     if ((keyRun || !state.blockedGoals.empty()) && NearestAlive(bot, TrashSpawns(mapId), state))
         return true;
@@ -674,6 +703,7 @@ Wait CheckReady(PlayerbotAI* botAI, State& state)
             member.healer = PlayerbotAI::IsHeal(player);
             member.resting = IsResting(player);
             member.bot = !IsRealPlayer(player) && !IsSelfBot(player);
+            member.held = state.stepping && member.bot;
 
             uint64 const raw = player->GetGUID().GetRawValue();
             if (state.oomCalls.count(raw))
@@ -1376,6 +1406,14 @@ bool LeadAdvanceAction::Execute(Event /*event*/)
         state.advancing = true;
         return true;
     }
+    // Why neither move went: after a wipe the tank stood at the Azjol-Nerub entrance for six minutes, this failing on
+    // goal after goal with a path found to each (role check, 2026-11-11)
+    LOG_INFO("playerbots",
+             "{} cannot step toward its goal from {:.1f} {:.1f} {:.1f}: stop {:.1f} {:.1f} {:.1f} (line z {:.1f}), corner "
+             "{:.1f} {:.1f} {:.1f}, drop {}, through air {}, can move {}, unit state 0x{:X}, stand state {}, path type {}",
+             bot->GetName(), bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), stop.x, stop.y, stop.z, lineZ,
+             corner.x, corner.y, corner.z, drop, throughAir, botAI->CanMove(), bot->GetUnitState(),
+             uint32(bot->getStandState()), uint32(path.GetPathType()));
     BlockGoal(state);
     return false;
 }

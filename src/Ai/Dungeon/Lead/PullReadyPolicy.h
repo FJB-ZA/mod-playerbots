@@ -38,6 +38,10 @@ struct Member
     bool resting = false;  // sitting with food or drink
     bool calledOom = false;
     bool bot = true;
+    // Told to stay put while the tank steps out to pull (LeadHoldMultiplier): it cannot close the gap it is asked to.
+    // The tank stood at its pull spot 90 seconds waiting on a mage held 28 yards back, and Krik'thir's 200-second
+    // timer ran out on the watcher packs: four wipes (role check, heroic Azjol-Nerub, 2026-11-11)
+    bool held = false;
     uint32_t waitedMs = 0;  // how long the tank has already waited on this member
 };
 
@@ -67,7 +71,7 @@ constexpr Wait WaitFor(Member const& member, Tier tier)
     if (member.calledOom && !OomCleared(tier, member.manaPct, member.resting))
         return Wait::CalledOom;
     bool const givenUp = member.bot && member.waitedMs >= MaxBotWaitMs;
-    if (GatherRadius(tier) > 0.0f && member.distance > GatherRadius(tier) && !givenUp)
+    if (GatherRadius(tier) > 0.0f && member.distance > GatherRadius(tier) && !givenUp && !member.held)
         return Wait::Behind;
     if (givenUp)
         return Wait::None;
