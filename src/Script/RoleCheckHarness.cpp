@@ -790,12 +790,18 @@ void Sample(Player* gm, std::vector<Player*> const& bots)
         }
     }
 
+    // The weakest living bot: a mob trivial to it is trivial to them all (RoleCheckPolicy.h CountsForAggro)
+    uint32 weakest = 0;
+    for (Player* bot : bots)
+        if (bot->IsAlive() && (!weakest || bot->GetMaxHealth() < weakest))
+            weakest = bot->GetMaxHealth();
+
     // With the tank dead nobody holds the mobs: that shows in the deaths, not here
     for (Creature* mob : tank ? mobs : std::vector<Creature*>())
     {
         Unit* victim = mob->GetVictim();
         Player* hit = victim ? victim->ToPlayer() : nullptr;
-        if (!victim || !RunPlayerOf(victim))
+        if (!victim || !RunPlayerOf(victim) || !RoleCheck::CountsForAggro(mob->GetMaxHealth(), weakest))
             continue;
         ++t.mobSamples;
         ++run.fightMobSamples;
