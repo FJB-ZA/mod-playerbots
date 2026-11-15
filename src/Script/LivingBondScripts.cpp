@@ -4,7 +4,13 @@
  * or (at your option) any later version.
  */
 
+#include <algorithm>
+#include <cstdlib>
+
 #include "Battleground.h"
+#include "CharacterCache.h"
+#include "Chat.h"
+#include "DBCStores.h"
 #include "CellImpl.h"
 #include "Creature.h"
 #include "GameTime.h"
@@ -15,6 +21,7 @@
 #include "GuildMgr.h"
 #include "Item.h"
 #include "LivingBondMgr.h"
+#include "LivingBondProtocol.h"
 #include "LivingWorldMgr.h"
 #include "ObjectAccessor.h"
 #include "Player.h"
@@ -24,6 +31,7 @@
 #include "Spell.h"
 #include "WorldPacket.h"
 #include "SpellInfo.h"
+#include "LFGMgr.h"
 
 using LivingWorld::BondEvent;
 
@@ -335,6 +343,7 @@ public:
                 continue;
             Player* friendPlayer = ObjectAccessor::FindPlayerByLowGUID(other);
             if (IsRealPlayer(friendPlayer) && CanWhisper(player, friendPlayer) &&
+                !LivingBondMgr::instance().Avoids(other, player->GetGUID().GetCounter()) &&
                 LivingBondMgr::instance().TryGreet(player->GetGUID().GetCounter(), other, true))
                 player->Whisper("Just logged on. Hi " + friendPlayer->GetName() + "!", LANG_UNIVERSAL, friendPlayer);
         }
@@ -384,6 +393,7 @@ private:
                 break;
             Player* bot = ObjectAccessor::FindPlayerByLowGUID(botGuid);
             if (!CanWhisper(bot, player) || !LivingWorldMgr::instance().IsEnabled(bot) ||
+                LivingBondMgr::instance().Avoids(player->GetGUID().GetCounter(), botGuid) ||
                 !LivingBondMgr::instance().TryGreet(botGuid, player->GetGUID().GetCounter(), true))
                 continue;
             bot->Whisper(LoginGreeting(LivingWorld::SharedTopic(bond), player->GetName()), LANG_UNIVERSAL, player);
@@ -403,6 +413,8 @@ private:
             if (bot == player || !LivingWorldMgr::instance().IsEnabled(bot) || bot->IsInCombat() || player->IsInCombat())
                 continue;
             uint32 const botGuid = bot->GetGUID().GetCounter();
+            if (LivingBondMgr::instance().Avoids(playerGuid, botGuid))
+                continue;
             LivingWorld::Attitude const attitude = LivingBondMgr::instance().AttitudeOf(botGuid, playerGuid);
             if (attitude == LivingWorld::Attitude::Neutral || attitude == LivingWorld::Attitude::Wary ||
                 !LivingBondMgr::instance().TryGreet(botGuid, playerGuid, false))
@@ -438,8 +450,113 @@ private:
     std::unordered_map<uint32, State> _players;
 };
 
+namespace
+{
+namespace Protocol = LivingWorld::BondsProtocol;
+
+void SendBonds(Player* player, std::string const& body)
+{
+    WorldPacket data;
+    ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_ADDON, player, player,
+                                 std::string(Protocol::Prefix) + '\t' + body);
+    player->SendDirectMessage(&data);
+}
+
+bool FillRow(Protocol::Row& row, uint32 botGuid, LivingWorld::Bond const& bond, bool avoided, uint32 now)
+{
+    CharacterCacheEntry const* entry =
+        sCharacterCache->GetCharacterCacheByGuid(ObjectGuid::Create<HighGuid::Player>(botGuid));
+    if (!entry)
+        return false;  // deleted since
+    row.guid = botGuid;
+    row.name = entry->Name;
+    row.classId = entry->Class;
+    row.race = entry->Race;
+    row.gender = entry->Sex;
+    row.level = entry->Level;
+    row.bond = bond;
+    row.secondsAgo = bond.lastSeen && now > bond.lastSeen ? now - bond.lastSeen : 0;
+    row.avoided = avoided;
+    if (Player* bot = ObjectAccessor::FindConnectedPlayer(entry->Guid))
+    {
+        row.online = bot->IsInWorld();
+        row.level = bot->GetLevel();
+        if (AreaTableEntry const* zone = sAreaTableStore.LookupEntry(bot->GetZoneId()))
+            row.zone = zone->area_name[0];
+    }
+    return true;
+}
+
+// What every bot that knows the player thinks of them, strongest feelings first, and the bots they avoid.
+void SendList(Player* player)
+{
+    uint32 const playerGuid = player->GetGUID().GetCounter();
+    uint32 const now = uint32(GameTime::GetGameTime().count());
+    auto known = LivingBondMgr::instance().KnownBy(playerGuid);
+    std::stable_sort(known.begin(), known.end(), [](auto const& a, auto const& b)
+                     { return std::abs(a.second.score) > std::abs(b.second.score); });
+    std::vector<uint32> const avoided = LivingBondMgr::instance().AvoidedBy(playerGuid);
+    std::vector<Protocol::Row> rows;
+    for (auto const& [botGuid, bond] : known)
+    {
+        if (rows.size() >= Protocol::MaxRows)
+            break;
+        Protocol::Row row;
+        if (FillRow(row, botGuid, bond, std::find(avoided.begin(), avoided.end(), botGuid) != avoided.end(), now))
+            rows.push_back(std::move(row));
+    }
+    for (uint32 botGuid : avoided)
+    {
+        if (std::any_of(rows.begin(), rows.end(), [botGuid](auto const& row) { return row.guid == botGuid; }))
+            continue;
+        Protocol::Row row;
+        if (FillRow(row, botGuid, LivingBondMgr::instance().Get(botGuid, playerGuid), true, now))
+            rows.push_back(std::move(row));
+    }
+    SendBonds(player, Protocol::FormatBegin(rows.size()));
+    for (Protocol::Row const& row : rows)
+        SendBonds(player, Protocol::FormatRow(row));
+    SendBonds(player, "E");
+}
+}  // namespace
+
+// The SoloWowBonds addon: lists what the bots think of the player and saves the bots they avoid.
+class LivingBondAddonScript : public PlayerScript
+{
+public:
+    LivingBondAddonScript() : PlayerScript("LivingBondAddonScript", {PLAYERHOOK_CAN_PLAYER_USE_PRIVATE_CHAT}) {}
+
+    using PlayerScript::OnPlayerCanUseChat;
+
+    bool OnPlayerCanUseChat(Player* player, uint32 type, uint32 language, std::string& msg, Player* receiver) override
+    {
+        std::string const prefix = std::string(Protocol::Prefix) + '\t';
+        if (language != LANG_ADDON || type != CHAT_MSG_WHISPER || receiver != player || msg.rfind(prefix, 0) != 0)
+            return true;
+
+        Protocol::ParsedRequest const request = Protocol::Parse(std::string_view(msg).substr(prefix.size()));
+        if (request.kind == Protocol::Request::Query)
+            SendList(player);
+        else if (request.kind == Protocol::Request::Avoid)
+        {
+            // Any other account's character: a bot, or someone's alt the player never wants grouped with
+            CharacterCacheEntry const* entry =
+                sCharacterCache->GetCharacterCacheByGuid(ObjectGuid::Create<HighGuid::Player>(request.guid));
+            if (entry && entry->AccountId != player->GetSession()->GetAccountId())
+            {
+                LivingBondMgr::instance().SetAvoided(player->GetGUID().GetCounter(), request.guid, request.avoid);
+                SendBonds(player, Protocol::FormatSaved(request.guid, request.avoid));
+            }
+        }
+        return false;
+    }
+};
+
 void AddLivingBondScripts()
 {
+    lfg::LFGMgr::SetAvoidCheck([](ObjectGuid player, ObjectGuid bot)
+                               { return LivingBondMgr::instance().Avoids(player.GetCounter(), bot.GetCounter()); });
+    new LivingBondAddonScript();
     new LivingBondTalkScript();
     new LivingBondPlayerScript();
     new LivingBondGroupScript();

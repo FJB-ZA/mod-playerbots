@@ -7,6 +7,7 @@
 #include "GuildManagementActions.h"
 #include "BroadcastHelper.h"
 #include "GuildMgr.h"
+#include "LivingBondMgr.h"
 #include "GuildPackets.h"
 #include "Playerbots.h"
 #include "ServerFacade.h"
@@ -94,6 +95,9 @@ bool GuildInviteAction::isUseful()
 
 bool GuildInviteAction::PlayerIsValid(Player* member)
 {
+    // A player who avoids this bot (SoloWowBonds) is never recruited by it
+    if (LivingBondMgr::instance().Avoids(member->GetGUID().GetCounter(), bot->GetGUID().GetCounter()))
+        return false;
     return !member->GetGuildId() && (sWorld->getBoolConfig(CONFIG_ALLOW_TWO_SIDE_INTERACTION_GUILD) ||
                                      (bot->GetTeamId() == member->GetTeamId()));
 }

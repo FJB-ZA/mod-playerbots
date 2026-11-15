@@ -31,6 +31,11 @@ void PlayerbotsDatabaseConnection::DoPrepareStatements()
                      "REPLACE INTO playerbots_living_bonds (bot, other, score, quests, bosses, battlegrounds, minutes, "
                      "helps, duels, kills, ninjas, slights, last_seen) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                      CONNECTION_ASYNC);
+    PrepareStatement(PLAYERBOTS_SEL_BOND_AVOIDS, "SELECT player, bot FROM playerbots_bond_avoids", CONNECTION_SYNCH);
+    PrepareStatement(PLAYERBOTS_REP_BOND_AVOID, "REPLACE INTO playerbots_bond_avoids (player, bot, set_at) VALUES (?, ?, ?)",
+                     CONNECTION_ASYNC);
+    PrepareStatement(PLAYERBOTS_DEL_BOND_AVOID, "DELETE FROM playerbots_bond_avoids WHERE player = ? AND bot = ?",
+                     CONNECTION_ASYNC);
 
     PrepareStatement(PLAYERBOTS_SEL_CUSTOM_STRATEGY_BY_OWNER, "SELECT DISTINCT name FROM playerbots_custom_strategy WHERE owner = ?", CONNECTION_SYNCH);
     PrepareStatement(PLAYERBOTS_SEL_CUSTOM_STRATEGY_BY_OWNER_AND_NAME, "SELECT idx, action_line FROM playerbots_custom_strategy WHERE owner = ? AND name = ? ORDER BY idx", CONNECTION_SYNCH);

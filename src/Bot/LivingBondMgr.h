@@ -9,6 +9,7 @@
 
 #include <array>
 #include <mutex>
+#include <unordered_set>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -51,6 +52,13 @@ public:
     void OnGroupLeave(uint32 group, Player* member);
     void OnGroupDisband(uint32 group);
 
+    // Bots a player chose to avoid (the SoloWowBonds addon). Kept apart from the bonds: avoiding a bot is the player's
+    // private choice and does not change how the bot feels. An avoided bot stops whispering, greeting and inviting the
+    // player, never picks them for role-play, and the Dungeon Finder keeps it out of their groups.
+    bool Avoids(uint32 player, uint32 bot);
+    void SetAvoided(uint32 player, uint32 bot, bool avoided);
+    std::vector<uint32> AvoidedBy(uint32 player);
+
 private:
     static uint64 Key(uint32 bot, uint32 other) { return (uint64(bot) << 32) | other; }
     void CreditGroupTime(Player* a, Player* b, uint32 seconds);
@@ -61,6 +69,7 @@ private:
     std::unordered_map<uint32, std::unordered_map<uint32, uint32>> _groupJoins;  // group -> member -> joined
     std::unordered_map<uint64, std::array<uint32, 3>> _lastGreet;               // pair -> [in person, whisper, guild invite]
     std::unordered_map<uint64, uint32> _lastKill;                               // bot, victim -> time of the kill
+    std::unordered_set<uint64> _avoids;                                         // player, bot
 };
 
 #endif

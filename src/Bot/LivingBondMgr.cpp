@@ -29,10 +29,20 @@ LivingBondMgr& LivingBondMgr::instance()
 
 void LivingBondMgr::Load()
 {
+    std::lock_guard<std::mutex> lock(_mutex);
+    _avoids.clear();
+    if (PreparedQueryResult result =
+            PlayerbotsDatabase.Query(PlayerbotsDatabase.GetPreparedStatement(PLAYERBOTS_SEL_BOND_AVOIDS)))
+    {
+        do
+        {
+            Field* fields = result->Fetch();
+            _avoids.insert(Key(fields[0].Get<uint32>(), fields[1].Get<uint32>()));
+        } while (result->NextRow());
+    }
     if (!sPlayerbotAIConfig.LivingWorldEnabled)
         return;
 
-    std::lock_guard<std::mutex> lock(_mutex);
     _bonds.clear();
     _lastEvent.clear();
     _groupJoins.clear();
@@ -257,4 +267,38 @@ void LivingBondMgr::OnGroupDisband(uint32 group)
             if (a && b)
                 CreditGroupTime(a, b, now - std::max(members[i].second, members[j].second));
         }
+}
+
+bool LivingBondMgr::Avoids(uint32 player, uint32 bot)
+{
+    std::lock_guard<std::mutex> lock(_mutex);
+    return _avoids.count(Key(player, bot)) != 0;
+}
+
+void LivingBondMgr::SetAvoided(uint32 player, uint32 bot, bool avoided)
+{
+    if (!player || !bot || player == bot)
+        return;
+    {
+        std::lock_guard<std::mutex> lock(_mutex);
+        if (avoided ? !_avoids.insert(Key(player, bot)).second : !_avoids.erase(Key(player, bot)))
+            return;
+    }
+    auto* statement =
+        PlayerbotsDatabase.GetPreparedStatement(avoided ? PLAYERBOTS_REP_BOND_AVOID : PLAYERBOTS_DEL_BOND_AVOID);
+    statement->SetData(0, player);
+    statement->SetData(1, bot);
+    if (avoided)
+        statement->SetData(2, Now());
+    PlayerbotsDatabase.Execute(statement);
+}
+
+std::vector<uint32> LivingBondMgr::AvoidedBy(uint32 player)
+{
+    std::vector<uint32> bots;
+    std::lock_guard<std::mutex> lock(_mutex);
+    for (uint64 key : _avoids)
+        if (uint32(key >> 32) == player)
+            bots.push_back(uint32(key & 0xFFFFFFFF));
+    return bots;
 }
