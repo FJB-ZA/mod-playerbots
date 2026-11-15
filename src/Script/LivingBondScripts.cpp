@@ -41,38 +41,10 @@ namespace
 {
 LivingBondMgr& Bonds() { return LivingBondMgr::instance(); }
 
-// A living bot says what just happened between it and a real player: in party (or raid) chat when the player is in
-// `via` (a group the bot was just in) or the bot's group, else aloud when the player is near enough to hear. Quiet
-// towards a player who avoids it, and at most once a minute per player.
+// A living bot says what just happened between it and a real player (LivingBondMgr::Comment)
 bool Comment(Player* bot, Player* player, Deed deed, Group* via = nullptr)
 {
-    if (!bot || !player || !IsRealPlayer(player) || IsRealPlayer(bot) || !LivingWorldMgr::instance().IsEnabled(bot))
-        return false;
-    uint32 const botGuid = bot->GetGUID().GetCounter();
-    uint32 const playerGuid = player->GetGUID().GetCounter();
-    if (Bonds().Avoids(playerGuid, botGuid))
-        return false;
-    bool const friends = Bonds().AttitudeOf(botGuid, playerGuid) >= LivingWorld::Attitude::Friendly;
-    std::string const text = LivingWorld::DeedComment(
-        deed, player->GetName(), friends, uint32(GameTime::GetGameTime().count()) ^ botGuid);
-    if (text.empty())
-        return false;
-    Group* group = via && via->IsMember(player->GetGUID()) ? via : bot->GetGroup();
-    bool const party = group && group->IsMember(player->GetGUID());
-    if (!party && (!bot->IsInWorld() || !player->IsInWorld() || !bot->IsWithinDistInMap(player, 60.0f)))
-        return false;  // nobody to hear it
-    if (!Bonds().TryComment(botGuid, playerGuid))
-        return false;
-    if (party)
-    {
-        WorldPacket data;
-        ChatHandler::BuildChatPacket(data, group->isRaidGroup() ? CHAT_MSG_RAID : CHAT_MSG_PARTY, LANG_UNIVERSAL, bot,
-                                     nullptr, text);
-        group->BroadcastPacket(&data, false);
-        return true;
-    }
-    bot->Say(text, LANG_UNIVERSAL);
-    return true;
+    return Bonds().Comment(bot, player, deed, via);
 }
 
 // Group members on the same map and close enough to have shared the moment.

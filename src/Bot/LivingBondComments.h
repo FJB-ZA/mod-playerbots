@@ -12,6 +12,8 @@
 #include <string>
 #include <string_view>
 
+#include "LivingBondPolicy.h"
+
 // What a living bot says when a player wrongs it or is good to it, and when it does the same to a player: one line,
 // in party chat when they share a group, or aloud when near (LivingBondScripts.cpp). Pure, so tests check it.
 namespace LivingWorld
@@ -49,6 +51,54 @@ enum class Deed : uint8_t
 };
 
 inline constexpr uint32_t CommentCooldown = 60;  // seconds between one bot's comments about one player
+
+// Each deed for the GM test command (.playerbots bonds test <name>): its name, the bond event it is, and whether the
+// bot did it (so the player remembers it) or the player did (so the bot does)
+struct DeedInfo
+{
+    std::string_view name;
+    BondEvent event;
+    bool byBot;
+};
+
+inline DeedInfo const& InfoFor(Deed deed)
+{
+    static std::array<DeedInfo, size_t(Deed::Count)> const all = {{
+        {"ninja", BondEvent::Ninja, false},
+        {"ninja-unusable", BondEvent::Ninja, false},
+        {"kill", BondEvent::KilledBy, false},
+        {"gank", BondEvent::Ganked, false},
+        {"kick", BondEvent::Kicked, false},
+        {"abandon", BondEvent::Abandoned, false},
+        {"rude", BondEvent::RudeEmote, false},
+        {"bot-ninja", BondEvent::Ninja, true},
+        {"bot-kill", BondEvent::KilledBy, true},
+        {"bot-gank", BondEvent::Ganked, true},
+        {"bot-kick", BondEvent::Kicked, true},
+        {"bot-abandon", BondEvent::Abandoned, true},
+        {"rez", BondEvent::Resurrected, false},
+        {"heal", BondEvent::Healed, false},
+        {"buff", BondEvent::Buffed, false},
+        {"gift", BondEvent::Gift, false},
+        {"wave", BondEvent::FriendlyEmote, false},
+        {"duel-won", BondEvent::Duel, false},
+        {"bot-rez", BondEvent::Resurrected, true},
+        {"bot-heal", BondEvent::Healed, true},
+        {"bot-buff", BondEvent::Buffed, true},
+        {"bot-gift", BondEvent::Gift, true},
+        {"duel-lost", BondEvent::Duel, true},
+    }};
+    return all[size_t(deed)];
+}
+
+// The deed with this name; Deed::Count when there's none
+inline Deed DeedNamed(std::string_view name)
+{
+    for (uint8_t d = 0; d < uint8_t(Deed::Count); ++d)
+        if (InfoFor(Deed(d)).name == name)
+            return Deed(d);
+    return Deed::Count;
+}
 
 namespace Detail
 {

@@ -9,6 +9,7 @@
 
 #include <array>
 #include <mutex>
+#include <optional>
 #include <unordered_set>
 #include <unordered_map>
 #include <utility>
@@ -18,6 +19,7 @@
 #include "LivingBondComments.h"
 #include "LivingBondPolicy.h"
 
+class Group;
 class Player;
 
 // Remembers, per living random bot, how it feels about each character it has played with or
@@ -30,8 +32,16 @@ public:
     void Load();
     // Records an event in `bot`'s memory of `other`, unless that kind of event was counted for the
     // pair within its cooldown. Ignored unless `bot` is a living random bot, or a real player and `other` a
-    // living random bot (the player's side). True when counted.
-    bool Record(Player* bot, Player* other, LivingWorld::BondEvent event);
+    // living random bot (the player's side). True when counted. `ignoreCooldown` is for the GM test command.
+    bool Record(Player* bot, Player* other, LivingWorld::BondEvent event, bool ignoreCooldown = false);
+    // A living bot says what just happened between it and a real player (LivingBondComments.h): in party (or raid)
+    // chat when the player is in `via` (a group the bot was just in) or the bot's group, else aloud when the player
+    // is near enough to hear. Quiet towards a player who avoids it, and at most once a minute per player unless
+    // `force` (the GM test command, which may also pick the friend line or not). True when said.
+    bool Comment(Player* bot, Player* player, LivingWorld::Deed deed, Group* via = nullptr, bool force = false,
+                 std::optional<bool> friendLine = {});
+    // Both sides of the bond between two characters, gone (the GM test command's clean-up).
+    void Forget(uint32 a, uint32 b);
     // Seconds since `bot` last counted `event` for `other` (0 and false when never).
     bool SecondsSince(uint32 bot, uint32 other, LivingWorld::BondEvent event, uint32& seconds);
     LivingWorld::Bond Get(uint32 bot, uint32 other);
