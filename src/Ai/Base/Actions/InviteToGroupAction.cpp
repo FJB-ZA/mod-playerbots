@@ -17,6 +17,7 @@
 #include "BroadcastHelper.h"
 #include "Event.h"
 #include "GuildMgr.h"
+#include "LivingBondMgr.h"
 #include "PlayerbotOperations.h"
 #include "PlayerbotWorldThreadProcessor.h"
 #include "Playerbots.h"
@@ -28,6 +29,10 @@ bool InviteToGroupAction::Invite(Player* inviter, Player* player)
         return false;
 
     if (inviter == player)
+        return false;
+
+    // A player who avoids this bot (SoloWowBonds) gets no invites from it
+    if (LivingBondMgr::instance().Avoids(player->GetGUID().GetCounter(), inviter->GetGUID().GetCounter()))
         return false;
 
     if (!GET_PLAYERBOT_AI(player) && !botAI->GetSecurity()->CheckLevelFor(PLAYERBOT_SECURITY_INVITE, true, player))

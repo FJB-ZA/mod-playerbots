@@ -10,6 +10,7 @@
 #include "Event.h"
 #include "Formations.h"
 #include "GuildCreateActions.h"
+#include "LivingBondMgr.h"
 #include "Playerbots.h"
 #include "PossibleRpgTargetsValue.h"
 #include "RpgSubActions.h"
@@ -177,6 +178,10 @@ bool ChooseRpgTargetAction::Execute(Event /*event*/)
         {
             Player* player = guidP.GetPlayer();
             if (!player)
+                continue;
+
+            // A player who avoids this bot (SoloWowBonds) is never its role-play target: no duels, trades or emotes
+            if (LivingBondMgr::instance().Avoids(player->GetGUID().GetCounter(), bot->GetGUID().GetCounter()))
                 continue;
 
             if (GET_PLAYERBOT_AI(player))
