@@ -319,9 +319,14 @@ std::string Unready(Player* bot, uint16 wantedPath)
     // A plain bot that still knows a path's spells fights with them
     if (wantedPath == SubclassPaths::PlainClass)
         for (SubclassPaths::Path const* other : SubclassPaths::ClassPaths(bot->getClass()))
+        {
             for (SubclassPaths::SpellSwap const& swap : other->swaps)
                 if (bot->HasSpell(swap.replacement))
                     wrong.push_back(Acore::StringFormat("path spell {}", swap.replacement));
+            for (uint32 spellId : other->grants)
+                if (bot->HasSpell(spellId))
+                    wrong.push_back(Acore::StringFormat("path spell {}", spellId));
+        }
     std::string why;
     for (std::string const& each : wrong)
         why += (why.empty() ? "" : ", ") + each;

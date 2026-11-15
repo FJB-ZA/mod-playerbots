@@ -12,10 +12,12 @@
 #include "GladiatorActionContext.h"
 #include "GladiatorTriggerContext.h"
 #include "NamedObjectContext.h"
+#include "RangerActionContext.h"
 
 inline void AddSubclassActionContexts(SharedNamedObjectContextList<Action>& actionContexts)
 {
     actionContexts.Add(new SubclassGladiatorActionContext());
+    actionContexts.Add(new SubclassRangerActionContext());
 }
 
 inline void AddSubclassTriggerContexts(SharedNamedObjectContextList<Trigger>& triggerContexts)

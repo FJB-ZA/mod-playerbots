@@ -386,7 +386,8 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
                 engine->addStrategy("mm", false);
             else // if (tab == HUNTER_TAB_SURVIVAL)
                 engine->addStrategy("surv", false);
-            engine->addStrategiesNoInit("cc", "dps assist", "aoe", "bdps", nullptr);
+            engine->addStrategiesNoInit("cc", "dps assist", "aoe", "bdps",
+                                        "ranger", nullptr);  // Field Dressing, only a Ranger (path 3) knows it
             break;
 
         case CLASS_ROGUE:
@@ -551,7 +552,7 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
             nonCombatEngine->addStrategiesNoInit("cure", nullptr);
             break;
         case CLASS_HUNTER:
-            nonCombatEngine->addStrategiesNoInit("bdps", "dps assist", "pet", nullptr);
+            nonCombatEngine->addStrategiesNoInit("bdps", "dps assist", "pet", "ranger", nullptr);
             break;
         case CLASS_SHAMAN:
             nonCombatEngine->addStrategiesNoInit("dps assist", "cure", nullptr);

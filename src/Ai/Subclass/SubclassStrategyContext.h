@@ -11,6 +11,7 @@
 
 #include "GladiatorStrategy.h"
 #include "NamedObjectContext.h"
+#include "RangerStrategy.h"
 #include "Strategy.h"
 
 class SubclassStrategyContext : public NamedObjectContext<Strategy>
@@ -19,10 +20,12 @@ public:
     SubclassStrategyContext() : NamedObjectContext<Strategy>(false, true)
     {
         creators["gladiator"] = &SubclassStrategyContext::gladiator;  // warrior, path 1
+        creators["ranger"] = &SubclassStrategyContext::ranger;        // hunter, path 3
     }
 
 private:
     static Strategy* gladiator(PlayerbotAI* botAI) { return new GladiatorStrategy(botAI); }
+    static Strategy* ranger(PlayerbotAI* botAI) { return new RangerStrategy(botAI); }
 };
 
 #endif

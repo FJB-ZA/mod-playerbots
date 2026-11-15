@@ -196,6 +196,7 @@ private:
     void InitTalents(uint32 specNo);
     void InitTalentsByTemplate(uint32 specNo);
     bool PathTreeOpen() const;
+    bool PetlessPath() const;  // the active slot follows a path without pets (the Ranger)
     void InitQuests(std::list<uint32>& questMap, bool withRewardItem = true);
     void ClearInventory();
     void ClearAllItems();
