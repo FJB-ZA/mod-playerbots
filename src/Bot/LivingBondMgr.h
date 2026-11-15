@@ -15,19 +15,22 @@
 #include <vector>
 
 #include "Define.h"
+#include "LivingBondComments.h"
 #include "LivingBondPolicy.h"
 
 class Player;
 
 // Remembers, per living random bot, how it feels about each character it has played with or
-// against. Hooks run on map threads, so every access is locked; saving is asynchronous.
+// against, and per real player, what each living bot has done to them (the player's side, shown in the
+// SoloWowBonds addon's Bonds tab). Hooks run on map threads, so every access is locked; saving is asynchronous.
 class LivingBondMgr
 {
 public:
     static LivingBondMgr& instance();
     void Load();
     // Records an event in `bot`'s memory of `other`, unless that kind of event was counted for the
-    // pair within its cooldown. Ignored unless `bot` is a living random bot. True when counted.
+    // pair within its cooldown. Ignored unless `bot` is a living random bot, or a real player and `other` a
+    // living random bot (the player's side). True when counted.
     bool Record(Player* bot, Player* other, LivingWorld::BondEvent event);
     // Seconds since `bot` last counted `event` for `other` (0 and false when never).
     bool SecondsSince(uint32 bot, uint32 other, LivingWorld::BondEvent event, uint32& seconds);
@@ -37,10 +40,14 @@ public:
     LivingWorld::Attitude AttitudeOf(uint32 bot, uint32 other);
     // Bots that have a bond with `other`, best first.
     std::vector<std::pair<uint32, LivingWorld::Bond>> KnownBy(uint32 other);
+    // Everyone `owner` has a bond with (for a player, the bots), in no order.
+    std::vector<std::pair<uint32, LivingWorld::Bond>> BondsOf(uint32 owner);
     // True (and starts the cooldown) when `bot` may greet `other` again in this channel.
     bool TryGreet(uint32 bot, uint32 other, bool whisper);
     // True (and starts the weekly cooldown) when `bot` may offer `other` its guild again.
     bool TryGuildInvite(uint32 bot, uint32 other);
+    // True (and starts the cooldown) when `bot` may comment on something between it and `other` again.
+    bool TryComment(uint32 bot, uint32 other);
     // World PvP kills by living bots, so a bot does not camp the corpse: it leaves alone a character it
     // killed within the gank window unless that character attacks it again.
     void RecordKill(Player* killer, Player* victim);
@@ -67,7 +74,7 @@ private:
     std::unordered_map<uint64, LivingWorld::Bond> _bonds;
     std::unordered_map<uint64, std::array<uint32, size_t(LivingWorld::BondEvent::Count)>> _lastEvent;
     std::unordered_map<uint32, std::unordered_map<uint32, uint32>> _groupJoins;  // group -> member -> joined
-    std::unordered_map<uint64, std::array<uint32, 3>> _lastGreet;               // pair -> [in person, whisper, guild invite]
+    std::unordered_map<uint64, std::array<uint32, 4>> _lastGreet;  // pair -> [in person, whisper, guild invite, comment]
     std::unordered_map<uint64, uint32> _lastKill;                               // bot, victim -> time of the kill
     std::unordered_set<uint64> _avoids;                                         // player, bot
 };

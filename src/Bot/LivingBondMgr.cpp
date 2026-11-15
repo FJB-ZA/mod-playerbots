@@ -13,6 +13,7 @@
 #include "Log.h"
 #include "ObjectAccessor.h"
 #include "Player.h"
+#include "PlayerbotAI.h"
 #include "PlayerbotsDatabase.h"
 #include "QueryResult.h"
 
@@ -72,8 +73,13 @@ void LivingBondMgr::Load()
 
 bool LivingBondMgr::Record(Player* bot, Player* other, LivingWorld::BondEvent event)
 {
-    if (!bot || !other || bot == other || event >= LivingWorld::BondEvent::Count ||
-        !LivingWorldMgr::instance().IsEnabled(bot))
+    if (!bot || !other || bot == other || event >= LivingWorld::BondEvent::Count)
+        return false;
+    // A living bot remembers everyone; a real player remembers only living bots (the player's side of the bond,
+    // for the Bonds tab). Bots act on their own memory, so the player's side changes nothing they do except where
+    // both directions are weighed (arena team chemistry).
+    if (!LivingWorldMgr::instance().IsEnabled(bot) &&
+        !(IsRealPlayer(bot) && LivingWorldMgr::instance().IsEnabled(other)))
         return false;
 
     uint32 const botGuid = bot->GetGUID().GetCounter();
@@ -181,6 +187,16 @@ std::vector<std::pair<uint32, LivingWorld::Bond>> LivingBondMgr::KnownBy(uint32 
     return known;
 }
 
+std::vector<std::pair<uint32, LivingWorld::Bond>> LivingBondMgr::BondsOf(uint32 owner)
+{
+    std::vector<std::pair<uint32, LivingWorld::Bond>> bonds;
+    std::lock_guard<std::mutex> lock(_mutex);
+    for (auto const& [key, bond] : _bonds)
+        if (uint32(key >> 32) == owner)
+            bonds.emplace_back(uint32(key & 0xFFFFFFFF), bond);
+    return bonds;
+}
+
 bool LivingBondMgr::TryGreet(uint32 bot, uint32 other, bool whisper)
 {
     uint32 const now = Now();
@@ -199,6 +215,17 @@ bool LivingBondMgr::TryGuildInvite(uint32 bot, uint32 other)
     std::lock_guard<std::mutex> lock(_mutex);
     uint32& last = _lastGreet[Key(bot, other)][2];
     if (last && now - last < LivingWorld::GuildInviteCooldown)
+        return false;
+    last = now;
+    return true;
+}
+
+bool LivingBondMgr::TryComment(uint32 bot, uint32 other)
+{
+    uint32 const now = Now();
+    std::lock_guard<std::mutex> lock(_mutex);
+    uint32& last = _lastGreet[Key(bot, other)][3];
+    if (last && now - last < LivingWorld::CommentCooldown)
         return false;
     last = now;
     return true;
