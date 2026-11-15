@@ -16,7 +16,7 @@
 
 // The SoloWowBonds addon's hidden whispers (addons/SoloWowBonds in solo-wow). The player whispers themself
 // "SoloWowBonds\t<body>"; the server answers the same way.
-//   client: "Q"                    list what the bots think of me
+//   client: "Q"                    list what the bots think of me, and what I think of them
 //           "A\t<guid>\t<1|0>"      avoid (1) or stop avoiding (0) a bot
 //   server: "B\t<rows>"            a list starts
 //           "R\t<row fields>"      one bot (FormatRow)
@@ -81,6 +81,7 @@ struct Row
     bool avoided = false;
     bool online = false;
     std::string zone;         // where the bot is, when online
+    Bond mine;                // the player's side: what the bot has done to them
 };
 
 // Names and zones never hold tabs; a stray one is cut so the row's fields stay in place.
@@ -94,7 +95,8 @@ inline std::string Clean(std::string_view text)
 }
 
 // R guid name class race gender level attitude score quests bosses battlegrounds minutes helps duels kills ninjas
-//   slights ago avoided online zone
+//   slights ago avoided online zone, then the player's side: myAttitude myScore myHelps myDuels myKills myNinjas
+//   mySlights (after the zone, so an older addon reads the rest as before)
 inline std::string FormatRow(Row const& row)
 {
     std::string out = "R";
@@ -126,6 +128,13 @@ inline std::string FormatRow(Row const& row)
     add(row.online ? 1 : 0);
     out += '\t';
     out += Clean(row.zone);
+    add(unsigned(AttitudeFor(row.mine.score)));
+    add(int(row.mine.score));
+    add(row.mine.helps);
+    add(row.mine.duels);
+    add(row.mine.kills);
+    add(row.mine.ninjas);
+    add(row.mine.slights);
     return out;
 }
 

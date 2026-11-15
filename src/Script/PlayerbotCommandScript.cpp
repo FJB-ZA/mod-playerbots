@@ -4,12 +4,16 @@
  * or (at your option) any later version.
  */
 
+#include <optional>
+#include <sstream>
+
 #include "BattleGroundTactics.h"
 #include "Chat.h"
 #include "CharacterCache.h"
 #include "ChatCommandTags.h"
 #include "GuildTaskMgr.h"
 #include "LivingBondMgr.h"
+#include "LivingWorldMgr.h"
 #include "ObjectMgr.h"
 #include "PerfMonitor.h"
 #include "PlayerbotAI.h"
@@ -115,13 +119,104 @@ public:
         return RandomPlayerbotMgr::HandlePlayerbotConsoleCommand(handler, args);
     }
 
-    // .playerbots bonds <bot name>: who a living bot likes and dislikes, and why.
+    static std::string Feeling(LivingWorld::Bond const& bond)
+    {
+        return Acore::StringFormat("{} ({})", LivingWorld::AttitudeName(LivingWorld::AttitudeFor(bond.score)),
+                                   bond.score);
+    }
+
+    // .playerbots bonds test ..., with a living bot targeted, to try the Bonds tab and the bots' comments quickly:
+    //   <deed> [friend]  acts the deed out between you and the bot: the bond changes as if it happened (cooldowns
+    //                    skipped) and the bot says its line (the friend line with "friend")
+    //   all [friend]     the bot says its line for every deed, nothing recorded
+    //   forget           both sides of your bond with the bot, gone
+    //   list             the deeds
+    static bool HandleBondsTestCommand(ChatHandler* handler, std::string const& args)
+    {
+        std::istringstream in(args);
+        std::string what, option;
+        in >> what >> option;
+        if (what.empty() || what == "list")
+        {
+            handler->SendSysMessage("Usage: .playerbots bonds test <deed>|all|forget [friend], with a living bot "
+                                    "targeted. The bot speaks in party chat if grouped with you, else /say within 60 yd.");
+            std::string toBot, byBot;
+            for (uint8 d = 0; d < uint8(LivingWorld::Deed::Count); ++d)
+            {
+                LivingWorld::DeedInfo const& info = LivingWorld::InfoFor(LivingWorld::Deed(d));
+                (info.byBot ? byBot : toBot) += " " + std::string(info.name);
+            }
+            handler->SendSysMessage("You to the bot:" + toBot);
+            handler->SendSysMessage("The bot to you:" + byBot);
+            return true;
+        }
+        Player* player = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
+        Player* bot = handler->getSelectedPlayer();
+        if (!player || !bot || bot == player || !LivingWorldMgr::instance().IsEnabled(bot))
+        {
+            handler->SendSysMessage("Target a living-world bot first (in game).");
+            return true;
+        }
+        LivingBondMgr& bonds = LivingBondMgr::instance();
+        uint32 const botGuid = bot->GetGUID().GetCounter();
+        uint32 const playerGuid = player->GetGUID().GetCounter();
+        if (what == "forget")
+        {
+            bonds.Forget(playerGuid, botGuid);
+            handler->SendSysMessage(Acore::StringFormat("Forgot both sides of your bond with {}.", bot->GetName()));
+            return true;
+        }
+        if (bonds.Avoids(playerGuid, botGuid))
+        {
+            handler->SendSysMessage(Acore::StringFormat("You avoid {}, so it stays quiet: /bonds unavoid {} first.",
+                                                        bot->GetName(), bot->GetName()));
+            return true;
+        }
+        std::optional<bool> const friendLine = option == "friend" ? std::optional<bool>(true) : std::nullopt;
+        char const* const unheard = "It couldn't be heard: group with it, or stand within 60 yards.";
+        if (what == "all")
+        {
+            uint32 said = 0;
+            for (uint8 d = 0; d < uint8(LivingWorld::Deed::Count); ++d)
+                said += bonds.Comment(bot, player, LivingWorld::Deed(d), nullptr, true, friendLine.value_or(false));
+            if (!said)
+                handler->SendSysMessage(unheard);
+            return true;
+        }
+        LivingWorld::Deed const deed = LivingWorld::DeedNamed(what);
+        if (deed == LivingWorld::Deed::Count)
+        {
+            handler->SendSysMessage(Acore::StringFormat("No deed called '{}': .playerbots bonds test list", what));
+            return true;
+        }
+        LivingWorld::DeedInfo const& info = LivingWorld::InfoFor(deed);
+        Player* remembers = info.byBot ? player : bot;
+        Player* about = info.byBot ? bot : player;
+        if (info.event == LivingWorld::BondEvent::Ganked)  // a gank is a kill too
+            bonds.Record(remembers, about, LivingWorld::BondEvent::KilledBy, true);
+        bonds.Record(remembers, about, info.event, true);  // nothing for a goodbye (no bond event)
+        if (deed == LivingWorld::Deed::SaidGoodbye)
+        {
+            bonds.SayFarewell(playerGuid);         // leaving your group in the next five minutes isn't abandoning it
+            bonds.TakeFarewellReply(playerGuid);   // the targeted bot answers below, not the first one in the group
+        }
+        bool const said = bonds.Comment(bot, player, deed, nullptr, true, friendLine);
+        handler->SendSysMessage(Acore::StringFormat("{} now thinks of you: {}. You think of it: {}.{}", bot->GetName(),
+                                                    Feeling(bonds.Get(botGuid, playerGuid)),
+                                                    Feeling(bonds.Get(playerGuid, botGuid)),
+                                                    said ? "" : std::string(" ") + unheard));
+        return true;
+    }
+
+    // .playerbots bonds <bot name>: who a living bot likes and dislikes, and why. .playerbots bonds test: see above.
     static bool HandleBondsCommand(ChatHandler* handler, char const* args)
     {
         std::string name = args ? args : "";
+        if (name == "test" || name.rfind("test ", 0) == 0)
+            return HandleBondsTestCommand(handler, name.substr(4));
         if (name.empty() || !normalizePlayerName(name))
         {
-            handler->SendSysMessage("Usage: .playerbots bonds <bot name>");
+            handler->SendSysMessage("Usage: .playerbots bonds <bot name>, or .playerbots bonds test (with a bot targeted)");
             return true;
         }
         ObjectGuid const guid = sCharacterCache->GetCharacterGuidByName(name);

@@ -8,13 +8,17 @@
 
 #include <algorithm>
 
+#include "Chat.h"
 #include "GameTime.h"
+#include "Group.h"
 #include "LivingWorldMgr.h"
 #include "Log.h"
 #include "ObjectAccessor.h"
 #include "Player.h"
+#include "PlayerbotAI.h"
 #include "PlayerbotsDatabase.h"
 #include "QueryResult.h"
+#include "WorldPacket.h"
 
 namespace
 {
@@ -70,10 +74,15 @@ void LivingBondMgr::Load()
     LOG_INFO("playerbots", "Loaded {} living-world bot bonds", _bonds.size());
 }
 
-bool LivingBondMgr::Record(Player* bot, Player* other, LivingWorld::BondEvent event)
+bool LivingBondMgr::Record(Player* bot, Player* other, LivingWorld::BondEvent event, bool ignoreCooldown)
 {
-    if (!bot || !other || bot == other || event >= LivingWorld::BondEvent::Count ||
-        !LivingWorldMgr::instance().IsEnabled(bot))
+    if (!bot || !other || bot == other || event >= LivingWorld::BondEvent::Count)
+        return false;
+    // A living bot remembers everyone; a real player remembers only living bots (the player's side of the bond,
+    // for the Bonds tab). Bots act on their own memory, so the player's side changes nothing they do except where
+    // both directions are weighed (arena team chemistry).
+    if (!LivingWorldMgr::instance().IsEnabled(bot) &&
+        !(IsRealPlayer(bot) && LivingWorldMgr::instance().IsEnabled(other)))
         return false;
 
     uint32 const botGuid = bot->GetGUID().GetCounter();
@@ -83,7 +92,7 @@ bool LivingBondMgr::Record(Player* bot, Player* other, LivingWorld::BondEvent ev
     {
         std::lock_guard<std::mutex> lock(_mutex);
         uint32& last = _lastEvent[Key(botGuid, otherGuid)][size_t(event)];
-        if (last && now - last < LivingWorld::BondCooldown(event))
+        if (!ignoreCooldown && last && now - last < LivingWorld::BondCooldown(event))
             return false;
         last = now;
         LivingWorld::Bond& stored = _bonds[Key(botGuid, otherGuid)];
@@ -181,6 +190,16 @@ std::vector<std::pair<uint32, LivingWorld::Bond>> LivingBondMgr::KnownBy(uint32 
     return known;
 }
 
+std::vector<std::pair<uint32, LivingWorld::Bond>> LivingBondMgr::BondsOf(uint32 owner)
+{
+    std::vector<std::pair<uint32, LivingWorld::Bond>> bonds;
+    std::lock_guard<std::mutex> lock(_mutex);
+    for (auto const& [key, bond] : _bonds)
+        if (uint32(key >> 32) == owner)
+            bonds.emplace_back(uint32(key & 0xFFFFFFFF), bond);
+    return bonds;
+}
+
 bool LivingBondMgr::TryGreet(uint32 bot, uint32 other, bool whisper)
 {
     uint32 const now = Now();
@@ -202,6 +221,95 @@ bool LivingBondMgr::TryGuildInvite(uint32 bot, uint32 other)
         return false;
     last = now;
     return true;
+}
+
+bool LivingBondMgr::Comment(Player* bot, Player* player, LivingWorld::Deed deed, Group* via, bool force,
+                            std::optional<bool> friendLine)
+{
+    if (!bot || !player || !IsRealPlayer(player) || IsRealPlayer(bot) || !LivingWorldMgr::instance().IsEnabled(bot))
+        return false;
+    uint32 const botGuid = bot->GetGUID().GetCounter();
+    uint32 const playerGuid = player->GetGUID().GetCounter();
+    if (Avoids(playerGuid, botGuid))
+        return false;
+    bool const friends = friendLine ? *friendLine : AttitudeOf(botGuid, playerGuid) >= LivingWorld::Attitude::Friendly;
+    std::string const text = LivingWorld::DeedComment(deed, player->GetName(), friends, Now() ^ botGuid);
+    if (text.empty())
+        return false;
+    Group* group = via && via->IsMember(player->GetGUID()) ? via : bot->GetGroup();
+    bool const party = group && group->IsMember(player->GetGUID());
+    if (!party && (!bot->IsInWorld() || !player->IsInWorld() || !bot->IsWithinDistInMap(player, 60.0f)))
+        return false;  // nobody to hear it
+    if (!force && !TryComment(botGuid, playerGuid))
+        return false;
+    if (party)
+    {
+        WorldPacket data;
+        ChatHandler::BuildChatPacket(data, group->isRaidGroup() ? CHAT_MSG_RAID : CHAT_MSG_PARTY, LANG_UNIVERSAL, bot,
+                                     nullptr, text);
+        group->BroadcastPacket(&data, false);
+        return true;
+    }
+    bot->Say(text, LANG_UNIVERSAL);
+    return true;
+}
+
+void LivingBondMgr::Forget(uint32 a, uint32 b)
+{
+    {
+        std::lock_guard<std::mutex> lock(_mutex);
+        for (uint64 const key : {Key(a, b), Key(b, a)})
+        {
+            _bonds.erase(key);
+            _lastEvent.erase(key);
+            _lastGreet.erase(key);
+        }
+    }
+    for (auto const& [owner, other] : {std::pair{a, b}, std::pair{b, a}})
+    {
+        auto* statement = PlayerbotsDatabase.GetPreparedStatement(PLAYERBOTS_DEL_LIVING_BOND);
+        statement->SetData(0, owner);
+        statement->SetData(1, other);
+        PlayerbotsDatabase.Execute(statement);
+    }
+}
+
+bool LivingBondMgr::TryComment(uint32 bot, uint32 other)
+{
+    uint32 const now = Now();
+    std::lock_guard<std::mutex> lock(_mutex);
+    uint32& last = _lastGreet[Key(bot, other)][3];
+    if (last && now - last < LivingWorld::CommentCooldown)
+        return false;
+    last = now;
+    return true;
+}
+
+void LivingBondMgr::SayFarewell(uint32 player)
+{
+    uint32 const now = Now();
+    std::lock_guard<std::mutex> lock(_mutex);
+    _farewells[player] = now;
+    _farewellReplies.insert(player);
+}
+
+bool LivingBondMgr::TakeFarewellReply(uint32 player)
+{
+    std::lock_guard<std::mutex> lock(_mutex);
+    return _farewellReplies.erase(player) > 0;
+}
+
+bool LivingBondMgr::SaidFarewell(uint32 player)
+{
+    uint32 const now = Now();
+    std::lock_guard<std::mutex> lock(_mutex);
+    auto const it = _farewells.find(player);
+    if (it == _farewells.end())
+        return false;
+    if (now - it->second < LivingWorld::FarewellWindow)
+        return true;
+    _farewells.erase(it);
+    return false;
 }
 
 void LivingBondMgr::OnGroupJoin(uint32 group, uint32 member)

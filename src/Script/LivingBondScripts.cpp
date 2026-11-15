@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <unordered_map>
 
 #include "Battleground.h"
 #include "CharacterCache.h"
@@ -19,6 +20,7 @@
 #include "Group.h"
 #include "Guild.h"
 #include "GuildMgr.h"
+#include "InstanceScript.h"
 #include "Item.h"
 #include "LivingBondMgr.h"
 #include "LivingBondProtocol.h"
@@ -32,12 +34,55 @@
 #include "WorldPacket.h"
 #include "SpellInfo.h"
 #include "LFGMgr.h"
+#include "Map.h"
 
 using LivingWorld::BondEvent;
+using LivingWorld::Deed;
 
 namespace
 {
 LivingBondMgr& Bonds() { return LivingBondMgr::instance(); }
+
+// A living bot says what just happened between it and a real player (LivingBondMgr::Comment)
+bool Comment(Player* bot, Player* player, Deed deed, Group* via = nullptr)
+{
+    return Bonds().Comment(bot, player, deed, via);
+}
+
+// Leaving once the run is over is not abandoning anyone: a finished dungeon finder run, or every boss the
+// instance tracks dead (an instance that tracks none can't tell, so it counts as unfinished).
+bool DungeonFinished(Group* group, Map* map)
+{
+    if (group->isLFGGroup() && sLFGMgr->GetState(group->GetGUID()) == lfg::LFG_STATE_FINISHED_DUNGEON)
+        return true;
+    if (InstanceMap* instance = map->ToInstanceMap())
+        if (InstanceScript* script = instance->GetInstanceScript())
+            return script->GetEncounterCount() > 0 && script->AllBossesDone();
+    return false;
+}
+
+// A real player said goodbye to their group: leaving it soon after isn't abandoning anyone, and a bot in it says
+// goodbye back (FarewellReply, on the player's next update so it follows their line). False when it wasn't a real
+// player in a group.
+bool Farewell(Player* player, Group* group)
+{
+    if (!player || !group || !IsRealPlayer(player))
+        return false;
+    Bonds().SayFarewell(player->GetGUID().GetCounter());
+    return true;
+}
+
+// The first living bot in the player's group that can be heard says goodbye back
+void FarewellReply(Player* player)
+{
+    Group* group = player->GetGroup();
+    if (!group)
+        return;
+    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+        if (Player* member = ref->GetSource())
+            if (member != player && Comment(member, player, Deed::SaidGoodbye, group))
+                return;
+}
 
 // Group members on the same map and close enough to have shared the moment.
 std::vector<Player*> NearbyGroup(Player* player, float range)
@@ -108,7 +153,8 @@ public:
                        {PLAYERHOOK_ON_PLAYER_COMPLETE_QUEST, PLAYERHOOK_ON_CREATURE_KILL,
                         PLAYERHOOK_ON_CREATURE_KILLED_BY_PET, PLAYERHOOK_ON_PVP_KILL,
                         PLAYERHOOK_ON_GROUP_ROLL_REWARD_ITEM, PLAYERHOOK_ON_DUEL_END, PLAYERHOOK_ON_TEXT_EMOTE,
-                        PLAYERHOOK_ON_SPELL_CAST, PLAYERHOOK_CAN_SET_TRADE_ITEM})
+                        PLAYERHOOK_ON_SPELL_CAST, PLAYERHOOK_CAN_SET_TRADE_ITEM,
+                        PLAYERHOOK_CAN_PLAYER_USE_GROUP_CHAT})
     {
     }
 
@@ -131,10 +177,17 @@ public:
         uint32 seconds = 0;
         bool const killedBefore = Bonds().SecondsSince(killed->GetGUID().GetCounter(), killer->GetGUID().GetCounter(),
                                                         BondEvent::KilledBy, seconds);
-        Bonds().Record(killed, killer, BondEvent::KilledBy);
-        if (LivingWorld::IsGank(seconds, killedBefore, killer->GetLevel(), killed->GetLevel()))
+        bool const counted = Bonds().Record(killed, killer, BondEvent::KilledBy);
+        bool const ganked = LivingWorld::IsGank(seconds, killedBefore, killer->GetLevel(), killed->GetLevel());
+        if (ganked)
             Bonds().Record(killed, killer, BondEvent::Ganked);
         Bonds().RecordKill(killer, killed);
+        // The bot says what it thinks of it: the one killed, or the one that killed the player
+        if (counted)
+        {
+            Comment(killed, killer, ganked ? Deed::GankedBot : Deed::KilledBot);
+            Comment(killer, killed, ganked ? Deed::BotGanked : Deed::BotKilled);
+        }
     }
 
     // Everyone who rolled for the item remembers a winner who needed gear it can't use or wouldn't wear.
@@ -152,19 +205,33 @@ public:
         if (!LivingWorld::IsNinjaNeed(canUse, bodyArmour, tier,
                                       LivingWorld::BestArmourTier(winner->getClass(), winner->GetLevel())))
             return;
-        // One of the bots that wanted it says something (once: the others just remember).
+        // One of the bots that wanted it says something (once: the others just remember). Players who wanted it
+        // remember too (their side of the bond), and a bot that ninja'd from a player owns up, or gloats.
+        Deed const deed = canUse ? Deed::NinjaArmour : Deed::NinjaUnusable;
         bool spoken = false;
+        Player* wronged = nullptr;
         for (auto const& [guid, vote] : roll->playerVote)
-            if (guid != winner->GetGUID() && (vote == NEED || vote == GREED))
-                if (Player* rival = ObjectAccessor::FindPlayer(guid))
-                    if (Bonds().Record(rival, winner, BondEvent::Ninja) && !spoken && rival->IsInWorld() &&
-                        rival->IsWithinDistInMap(winner, 100.0f))
-                    {
-                        rival->Say(canUse ? "Really, " + winner->GetName() + "? That's not even your armour type."
-                                          : "Really, " + winner->GetName() + "? You can't even use that.",
-                                   LANG_UNIVERSAL);
-                        spoken = true;
-                    }
+        {
+            if (guid == winner->GetGUID() || (vote != NEED && vote != GREED))
+                continue;
+            Player* rival = ObjectAccessor::FindPlayer(guid);
+            if (!rival || !Bonds().Record(rival, winner, BondEvent::Ninja))
+                continue;
+            if (IsRealPlayer(rival))
+            {
+                wronged = wronged ? wronged : rival;
+                continue;
+            }
+            if (spoken || !rival->IsInWorld() || !rival->IsWithinDistInMap(winner, 100.0f))
+                continue;
+            spoken = true;
+            if (IsRealPlayer(winner))
+                Comment(rival, winner, deed);
+            else
+                rival->Say(LivingWorld::DeedComment(deed, winner->GetName(), false, 0), LANG_UNIVERSAL);
+        }
+        if (wronged)
+            Comment(winner, wronged, Deed::BotNinjaed);
     }
 
     // A finished duel is sparring, win or lose (an interrupted one doesn't count).
@@ -172,18 +239,35 @@ public:
     {
         if (!winner || !loser || type != DUEL_WON)
             return;
-        Bonds().Record(winner, loser, BondEvent::Duel);
-        Bonds().Record(loser, winner, BondEvent::Duel);
+        bool const counted = Bonds().Record(winner, loser, BondEvent::Duel);
+        if (Bonds().Record(loser, winner, BondEvent::Duel) || counted)
+            Done(loser, winner, Deed::LostDuelToYou, Deed::WonDuelAgainstYou);
     }
 
     void OnPlayerTextEmote(Player* player, uint32 textEmote, uint32 /*emoteNum*/, ObjectGuid guid) override
     {
+        if (!player)
+            return;
+        // /bye in a group is a goodbye to it (a bot says goodbye back, not thanks for the wave)
+        bool const farewell = textEmote == TEXT_EMOTE_BYE && Farewell(player, player->GetGroup());
         int8 const tone = LivingWorld::EmoteTone(textEmote);
-        if (!player || !tone || !guid.IsPlayer())
+        if (!tone || !guid.IsPlayer())
             return;
         if (Player* target = ObjectAccessor::FindPlayer(guid))
-            if (target->IsWithinDistInMap(player, 40.0f))
-                Bonds().Record(target, player, tone > 0 ? BondEvent::FriendlyEmote : BondEvent::RudeEmote);
+            if (target->IsWithinDistInMap(player, 40.0f) &&
+                Bonds().Record(target, player, tone > 0 ? BondEvent::FriendlyEmote : BondEvent::RudeEmote) &&
+                !farewell)
+                Comment(target, player, tone > 0 ? Deed::FriendlyToBot : Deed::RudeToBot);
+    }
+
+    using PlayerScript::OnPlayerCanUseChat;
+
+    // A goodbye in party or raid chat ("bye", "gtg", "thanks all", ...) excuses leaving the group soon after
+    bool OnPlayerCanUseChat(Player* player, uint32 /*type*/, uint32 language, std::string& msg, Group* group) override
+    {
+        if (player && language != LANG_ADDON && LivingWorld::IsFarewell(msg))
+            Farewell(player, group);
+        return true;
     }
 
     // Help from outside the group stands out; inside a group, healing and buffing are expected.
@@ -201,15 +285,19 @@ public:
             return;
         if (info->HasEffect(SPELL_EFFECT_RESURRECT) || info->HasEffect(SPELL_EFFECT_RESURRECT_NEW))
         {
-            Bonds().Record(target, caster, BondEvent::Resurrected);
+            if (Bonds().Record(target, caster, BondEvent::Resurrected))
+                Done(target, caster, Deed::RezzedBot, Deed::BotRezzed);
             return;
         }
         if (caster->IsInSameGroupWith(target) || caster->IsHostileTo(target))
             return;
         if (IsHeal(info))
-            Bonds().Record(target, caster, BondEvent::Healed);
-        else if (IsLongBuff(info))
-            Bonds().Record(target, caster, BondEvent::Buffed);
+        {
+            if (Bonds().Record(target, caster, BondEvent::Healed))
+                Done(target, caster, Deed::HealedBot, Deed::BotHealed);
+        }
+        else if (IsLongBuff(info) && Bonds().Record(target, caster, BondEvent::Buffed))
+            Done(target, caster, Deed::BuffedBot, Deed::BotBuffed);
     }
 
     // The core has no trade-completed hook, so an item offered in the trade window counts as a gift
@@ -218,8 +306,18 @@ public:
     {
         if (player)
             if (TradeData* trade = player->GetTradeData())
-                Bonds().Record(trade->GetTrader(), player, BondEvent::Gift);
+                if (Bonds().Record(trade->GetTrader(), player, BondEvent::Gift))
+                    Done(trade->GetTrader(), player, Deed::GiftToBot, Deed::BotGift);
         return true;
+    }
+
+private:
+    // `doer` did something to `receiver`: a bot on the receiving end says so to the player, or a bot that did it
+    // says so to the player it did it to (Comment skips whichever isn't a living bot speaking to a real player)
+    static void Done(Player* receiver, Player* doer, Deed toBot, Deed byBot)
+    {
+        Comment(receiver, doer, toBot);
+        Comment(doer, receiver, byBot);
     }
 };
 
@@ -252,13 +350,37 @@ public:
         Player* removed = ObjectAccessor::FindPlayer(guid);
         if (!removed)
             return;
+        // A kicked bot has a word for the player who kicked it (to the group it was in); a bot that kicked a player
+        // says why, if the player is near. Someone leaving a dungeon early gets one comment: from a bot left behind,
+        // or from the bot that left, to the group.
         if (method == GROUP_REMOVEMETHOD_KICK || method == GROUP_REMOVEMETHOD_KICK_LFG)
-            Bonds().Record(removed, ObjectAccessor::FindPlayer(kicker), BondEvent::Kicked);
-        else if (method == GROUP_REMOVEMETHOD_LEAVE && removed->GetMap() && removed->GetMap()->IsDungeon())
+        {
+            Player* by = ObjectAccessor::FindPlayer(kicker);
+            if (Bonds().Record(removed, by, BondEvent::Kicked))
+            {
+                Comment(removed, by, Deed::KickedBot, group);
+                Comment(by, removed, Deed::BotKicked);
+            }
+        }
+        else if (method == GROUP_REMOVEMETHOD_LEAVE && removed->GetMap() && removed->GetMap()->IsDungeon() &&
+                 !DungeonFinished(group, removed->GetMap()) && !Bonds().SaidFarewell(removed->GetGUID().GetCounter()))
+        {
+            bool commented = false;
             for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
                 if (Player* member = ref->GetSource())
-                    if (member != removed && member->GetMapId() == removed->GetMapId())
-                        Bonds().Record(member, removed, BondEvent::Abandoned);
+                    if (member != removed && member->GetMapId() == removed->GetMapId() &&
+                        Bonds().Record(member, removed, BondEvent::Abandoned) && !commented)
+                    {
+                        if (IsRealPlayer(removed) && !IsRealPlayer(member))
+                        {
+                            commented = Comment(member, removed, Deed::AbandonedBot, group);
+                        }
+                        else if (IsRealPlayer(member) && !IsRealPlayer(removed))
+                        {
+                            commented = Comment(removed, member, Deed::BotAbandoned, group);
+                        }
+                    }
+        }
         Bonds().OnGroupLeave(group->GetGUID().GetCounter(), removed);
     }
 
@@ -283,9 +405,12 @@ public:
         for (Player* bot : bots)
             for (Player* player : players)
                 if (player->GetBgTeamId() == bot->GetBgTeamId())
-                    Bonds().Record(bot, player,
-                                   bot->GetBgTeamId() == winnerTeam ? BondEvent::BattlegroundWin
-                                                                    : BondEvent::BattlegroundLoss);
+                {
+                    BondEvent const event =
+                        bot->GetBgTeamId() == winnerTeam ? BondEvent::BattlegroundWin : BondEvent::BattlegroundLoss;
+                    Bonds().Record(bot, player, event);
+                    Bonds().Record(player, bot, event);  // the player's side
+                }
     }
 };
 
@@ -375,6 +500,8 @@ public:
             GreetAtLogin(player);
         if (scan)
             GreetNearby(player);
+        if (Bonds().TakeFarewellReply(guid))
+            FarewellReply(player);
     }
 
 private:
@@ -462,7 +589,8 @@ void SendBonds(Player* player, std::string const& body)
     player->SendDirectMessage(&data);
 }
 
-bool FillRow(Protocol::Row& row, uint32 botGuid, LivingWorld::Bond const& bond, bool avoided, uint32 now)
+bool FillRow(Protocol::Row& row, uint32 botGuid, LivingWorld::Bond const& bond, LivingWorld::Bond const& mine,
+             bool avoided, uint32 now)
 {
     CharacterCacheEntry const* entry =
         sCharacterCache->GetCharacterCacheByGuid(ObjectGuid::Create<HighGuid::Player>(botGuid));
@@ -475,7 +603,9 @@ bool FillRow(Protocol::Row& row, uint32 botGuid, LivingWorld::Bond const& bond, 
     row.gender = entry->Sex;
     row.level = entry->Level;
     row.bond = bond;
-    row.secondsAgo = bond.lastSeen && now > bond.lastSeen ? now - bond.lastSeen : 0;
+    row.mine = mine;
+    uint32 const lastSeen = std::max(bond.lastSeen, mine.lastSeen);
+    row.secondsAgo = lastSeen && now > lastSeen ? now - lastSeen : 0;
     row.avoided = avoided;
     if (Player* bot = ObjectAccessor::FindConnectedPlayer(entry->Guid))
     {
@@ -487,22 +617,36 @@ bool FillRow(Protocol::Row& row, uint32 botGuid, LivingWorld::Bond const& bond, 
     return true;
 }
 
-// What every bot that knows the player thinks of them, strongest feelings first, and the bots they avoid.
+// Every bot that knows the player or that the player knows: what it thinks of them and what they think of it, the
+// strongest feelings either way first, then the bots they avoid.
 void SendList(Player* player)
 {
+    LivingBondMgr& bonds = LivingBondMgr::instance();
     uint32 const playerGuid = player->GetGUID().GetCounter();
     uint32 const now = uint32(GameTime::GetGameTime().count());
-    auto known = LivingBondMgr::instance().KnownBy(playerGuid);
-    std::stable_sort(known.begin(), known.end(), [](auto const& a, auto const& b)
-                     { return std::abs(a.second.score) > std::abs(b.second.score); });
-    std::vector<uint32> const avoided = LivingBondMgr::instance().AvoidedBy(playerGuid);
+    struct Both
+    {
+        LivingWorld::Bond theirs, mine;
+    };
+    std::unordered_map<uint32, Both> both;
+    for (auto const& [botGuid, bond] : bonds.KnownBy(playerGuid))
+        both[botGuid].theirs = bond;
+    for (auto const& [botGuid, bond] : bonds.BondsOf(playerGuid))
+        both[botGuid].mine = bond;
+    std::vector<std::pair<uint32, Both>> known(both.begin(), both.end());
+    auto const strength = [](Both const& b) { return std::max(std::abs(b.theirs.score), std::abs(b.mine.score)); };
+    std::sort(known.begin(), known.end(), [&strength](auto const& a, auto const& b)
+              { return strength(a.second) != strength(b.second) ? strength(a.second) > strength(b.second)
+                                                                : a.first < b.first; });
+    std::vector<uint32> const avoided = bonds.AvoidedBy(playerGuid);
     std::vector<Protocol::Row> rows;
-    for (auto const& [botGuid, bond] : known)
+    for (auto const& [botGuid, pair] : known)
     {
         if (rows.size() >= Protocol::MaxRows)
             break;
         Protocol::Row row;
-        if (FillRow(row, botGuid, bond, std::find(avoided.begin(), avoided.end(), botGuid) != avoided.end(), now))
+        if (FillRow(row, botGuid, pair.theirs, pair.mine,
+                    std::find(avoided.begin(), avoided.end(), botGuid) != avoided.end(), now))
             rows.push_back(std::move(row));
     }
     for (uint32 botGuid : avoided)
@@ -510,7 +654,7 @@ void SendList(Player* player)
         if (std::any_of(rows.begin(), rows.end(), [botGuid](auto const& row) { return row.guid == botGuid; }))
             continue;
         Protocol::Row row;
-        if (FillRow(row, botGuid, LivingBondMgr::instance().Get(botGuid, playerGuid), true, now))
+        if (FillRow(row, botGuid, bonds.Get(botGuid, playerGuid), bonds.Get(playerGuid, botGuid), true, now))
             rows.push_back(std::move(row));
     }
     SendBonds(player, Protocol::FormatBegin(rows.size()));
