@@ -20,6 +20,7 @@
 #include "Group.h"
 #include "Guild.h"
 #include "GuildMgr.h"
+#include "InstanceScript.h"
 #include "Item.h"
 #include "LivingBondMgr.h"
 #include "LivingBondProtocol.h"
@@ -33,6 +34,7 @@
 #include "WorldPacket.h"
 #include "SpellInfo.h"
 #include "LFGMgr.h"
+#include "Map.h"
 
 using LivingWorld::BondEvent;
 using LivingWorld::Deed;
@@ -45,6 +47,18 @@ LivingBondMgr& Bonds() { return LivingBondMgr::instance(); }
 bool Comment(Player* bot, Player* player, Deed deed, Group* via = nullptr)
 {
     return Bonds().Comment(bot, player, deed, via);
+}
+
+// Leaving once the run is over is not abandoning anyone: a finished dungeon finder run, or every boss the
+// instance tracks dead (an instance that tracks none can't tell, so it counts as unfinished).
+bool DungeonFinished(Group* group, Map* map)
+{
+    if (group->isLFGGroup() && sLFGMgr->GetState(group->GetGUID()) == lfg::LFG_STATE_FINISHED_DUNGEON)
+        return true;
+    if (InstanceMap* instance = map->ToInstanceMap())
+        if (InstanceScript* script = instance->GetInstanceScript())
+            return script->GetEncounterCount() > 0 && script->AllBossesDone();
+    return false;
 }
 
 // Group members on the same map and close enough to have shared the moment.
@@ -309,7 +323,8 @@ public:
                 Comment(by, removed, Deed::BotKicked);
             }
         }
-        else if (method == GROUP_REMOVEMETHOD_LEAVE && removed->GetMap() && removed->GetMap()->IsDungeon())
+        else if (method == GROUP_REMOVEMETHOD_LEAVE && removed->GetMap() && removed->GetMap()->IsDungeon() &&
+                 !DungeonFinished(group, removed->GetMap()))
         {
             bool commented = false;
             for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
