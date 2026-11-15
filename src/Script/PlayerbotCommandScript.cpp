@@ -194,7 +194,12 @@ public:
         Player* about = info.byBot ? bot : player;
         if (info.event == LivingWorld::BondEvent::Ganked)  // a gank is a kill too
             bonds.Record(remembers, about, LivingWorld::BondEvent::KilledBy, true);
-        bonds.Record(remembers, about, info.event, true);
+        bonds.Record(remembers, about, info.event, true);  // nothing for a goodbye (no bond event)
+        if (deed == LivingWorld::Deed::SaidGoodbye)
+        {
+            bonds.SayFarewell(playerGuid);         // leaving your group in the next five minutes isn't abandoning it
+            bonds.TakeFarewellReply(playerGuid);   // the targeted bot answers below, not the first one in the group
+        }
         bool const said = bonds.Comment(bot, player, deed, nullptr, true, friendLine);
         handler->SendSysMessage(Acore::StringFormat("{} now thinks of you: {}. You think of it: {}.{}", bot->GetName(),
                                                     Feeling(bonds.Get(botGuid, playerGuid)),

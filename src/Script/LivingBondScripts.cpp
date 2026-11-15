@@ -61,6 +61,29 @@ bool DungeonFinished(Group* group, Map* map)
     return false;
 }
 
+// A real player said goodbye to their group: leaving it soon after isn't abandoning anyone, and a bot in it says
+// goodbye back (FarewellReply, on the player's next update so it follows their line). False when it wasn't a real
+// player in a group.
+bool Farewell(Player* player, Group* group)
+{
+    if (!player || !group || !IsRealPlayer(player))
+        return false;
+    Bonds().SayFarewell(player->GetGUID().GetCounter());
+    return true;
+}
+
+// The first living bot in the player's group that can be heard says goodbye back
+void FarewellReply(Player* player)
+{
+    Group* group = player->GetGroup();
+    if (!group)
+        return;
+    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+        if (Player* member = ref->GetSource())
+            if (member != player && Comment(member, player, Deed::SaidGoodbye, group))
+                return;
+}
+
 // Group members on the same map and close enough to have shared the moment.
 std::vector<Player*> NearbyGroup(Player* player, float range)
 {
@@ -130,7 +153,8 @@ public:
                        {PLAYERHOOK_ON_PLAYER_COMPLETE_QUEST, PLAYERHOOK_ON_CREATURE_KILL,
                         PLAYERHOOK_ON_CREATURE_KILLED_BY_PET, PLAYERHOOK_ON_PVP_KILL,
                         PLAYERHOOK_ON_GROUP_ROLL_REWARD_ITEM, PLAYERHOOK_ON_DUEL_END, PLAYERHOOK_ON_TEXT_EMOTE,
-                        PLAYERHOOK_ON_SPELL_CAST, PLAYERHOOK_CAN_SET_TRADE_ITEM})
+                        PLAYERHOOK_ON_SPELL_CAST, PLAYERHOOK_CAN_SET_TRADE_ITEM,
+                        PLAYERHOOK_CAN_PLAYER_USE_GROUP_CHAT})
     {
     }
 
@@ -222,13 +246,28 @@ public:
 
     void OnPlayerTextEmote(Player* player, uint32 textEmote, uint32 /*emoteNum*/, ObjectGuid guid) override
     {
+        if (!player)
+            return;
+        // /bye in a group is a goodbye to it (a bot says goodbye back, not thanks for the wave)
+        bool const farewell = textEmote == TEXT_EMOTE_BYE && Farewell(player, player->GetGroup());
         int8 const tone = LivingWorld::EmoteTone(textEmote);
-        if (!player || !tone || !guid.IsPlayer())
+        if (!tone || !guid.IsPlayer())
             return;
         if (Player* target = ObjectAccessor::FindPlayer(guid))
             if (target->IsWithinDistInMap(player, 40.0f) &&
-                Bonds().Record(target, player, tone > 0 ? BondEvent::FriendlyEmote : BondEvent::RudeEmote))
+                Bonds().Record(target, player, tone > 0 ? BondEvent::FriendlyEmote : BondEvent::RudeEmote) &&
+                !farewell)
                 Comment(target, player, tone > 0 ? Deed::FriendlyToBot : Deed::RudeToBot);
+    }
+
+    using PlayerScript::OnPlayerCanUseChat;
+
+    // A goodbye in party or raid chat ("bye", "gtg", "thanks all", ...) excuses leaving the group soon after
+    bool OnPlayerCanUseChat(Player* player, uint32 /*type*/, uint32 language, std::string& msg, Group* group) override
+    {
+        if (player && language != LANG_ADDON && LivingWorld::IsFarewell(msg))
+            Farewell(player, group);
+        return true;
     }
 
     // Help from outside the group stands out; inside a group, healing and buffing are expected.
@@ -324,7 +363,7 @@ public:
             }
         }
         else if (method == GROUP_REMOVEMETHOD_LEAVE && removed->GetMap() && removed->GetMap()->IsDungeon() &&
-                 !DungeonFinished(group, removed->GetMap()))
+                 !DungeonFinished(group, removed->GetMap()) && !Bonds().SaidFarewell(removed->GetGUID().GetCounter()))
         {
             bool commented = false;
             for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
@@ -461,6 +500,8 @@ public:
             GreetAtLogin(player);
         if (scan)
             GreetNearby(player);
+        if (Bonds().TakeFarewellReply(guid))
+            FarewellReply(player);
     }
 
 private:

@@ -58,6 +58,11 @@ public:
     bool TryGuildInvite(uint32 bot, uint32 other);
     // True (and starts the cooldown) when `bot` may comment on something between it and `other` again.
     bool TryComment(uint32 bot, uint32 other);
+    // `player` said goodbye to their group; leaving it within LivingWorld::FarewellWindow isn't abandoning anyone
+    void SayFarewell(uint32 player);
+    bool SaidFarewell(uint32 player);
+    // True once after SayFarewell: a bot answers on the player's next update, so its goodbye follows theirs in chat
+    bool TakeFarewellReply(uint32 player);
     // World PvP kills by living bots, so a bot does not camp the corpse: it leaves alone a character it
     // killed within the gank window unless that character attacks it again.
     void RecordKill(Player* killer, Player* victim);
@@ -86,6 +91,8 @@ private:
     std::unordered_map<uint32, std::unordered_map<uint32, uint32>> _groupJoins;  // group -> member -> joined
     std::unordered_map<uint64, std::array<uint32, 4>> _lastGreet;  // pair -> [in person, whisper, guild invite, comment]
     std::unordered_map<uint64, uint32> _lastKill;                               // bot, victim -> time of the kill
+    std::unordered_map<uint32, uint32> _farewells;                              // player -> when they said goodbye
+    std::unordered_set<uint32> _farewellReplies;                                // players a bot should answer
     std::unordered_set<uint64> _avoids;                                         // player, bot
 };
 

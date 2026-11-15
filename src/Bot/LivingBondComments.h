@@ -47,13 +47,47 @@ enum class Deed : uint8_t
     BotBuffed,
     BotGift,
     WonDuelAgainstYou,
+    // The player said goodbye to the group before leaving (IsFarewell): no bond event, a bot just says goodbye back
+    SaidGoodbye,
     Count
 };
 
 inline constexpr uint32_t CommentCooldown = 60;  // seconds between one bot's comments about one player
+// A goodbye in party chat (or /bye, or /bonds bye) excuses leaving the group within this many seconds: the bots
+// don't count it as abandoning them
+inline constexpr uint32_t FarewellWindow = 300;
 
-// Each deed for the GM test command (.playerbots bonds test <name>): its name, the bond event it is, and whether the
-// bot did it (so the player remembers it) or the player did (so the bot does)
+// True when a chat line says the player is done and leaving: "bye", "gtg", "thanks all", "I'm done for now", ...
+// Whole words only, case and punctuation ignored, apostrophes dropped ("I'm" is "im").
+inline bool IsFarewell(std::string_view text)
+{
+    std::string words = " ";
+    for (char c : text)
+    {
+        if (c == '\'')
+            continue;
+        char const lower = (c >= 'A' && c <= 'Z') ? char(c - 'A' + 'a') : c;
+        if ((lower >= 'a' && lower <= 'z') || (lower >= '0' && lower <= '9'))
+            words += lower;
+        else if (words.back() != ' ')
+            words += ' ';
+    }
+    if (words.back() != ' ')
+        words += ' ';
+    static constexpr std::string_view farewells[] = {
+        "bye", "byebye", "bye bye", "goodbye", "cya", "cyas", "see ya", "see you", "gtg", "g2g", "got to go",
+        "gotta go", "have to go", "need to go", "gn", "good night", "goodnight", "laters", "ttyl", "farewell",
+        "thanks all", "thanks everyone", "thanks guys", "thanks for the group", "thanks for the run", "ty all",
+        "thx all", "ty for the group", "ty for the run", "im done", "i am done", "done for now", "done for today",
+        "done for the night", "heading off", "signing off", "logging off", "im off"};
+    for (std::string_view farewell : farewells)
+        if (words.find(" " + std::string(farewell) + " ") != std::string::npos)
+            return true;
+    return false;
+}
+
+// Each deed for the GM test command (.playerbots bonds test <name>): its name, the bond event it is (Count: none), and
+// whether the bot did it (so the player remembers it) or the player did (so the bot does)
 struct DeedInfo
 {
     std::string_view name;
@@ -87,6 +121,7 @@ inline DeedInfo const& InfoFor(Deed deed)
         {"bot-buff", BondEvent::Buffed, true},
         {"bot-gift", BondEvent::Gift, true},
         {"duel-lost", BondEvent::Duel, true},
+        {"bye", BondEvent::Count, false},  // records nothing: it excuses leaving the group
     }};
     return all[size_t(deed)];
 }
@@ -158,6 +193,7 @@ inline DeedLines const& LinesFor(Deed deed)
         {{"Here, %, take this.", "You can have this, %.", "Thought you could use this, %."},
          "Here, %, for you. Don't mention it."},
         {{"Good fight, %.", "Better luck next time, %.", "Close one, %."}, "Good fight, %! Rematch soon?"},
+        {{"See you, %!", "Take care, %.", "Thanks for the company, %."}, "Bye, %! Group up again soon."},
     }};
     return all[size_t(deed)];
 }

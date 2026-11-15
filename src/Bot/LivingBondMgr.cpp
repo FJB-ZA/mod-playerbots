@@ -285,6 +285,33 @@ bool LivingBondMgr::TryComment(uint32 bot, uint32 other)
     return true;
 }
 
+void LivingBondMgr::SayFarewell(uint32 player)
+{
+    uint32 const now = Now();
+    std::lock_guard<std::mutex> lock(_mutex);
+    _farewells[player] = now;
+    _farewellReplies.insert(player);
+}
+
+bool LivingBondMgr::TakeFarewellReply(uint32 player)
+{
+    std::lock_guard<std::mutex> lock(_mutex);
+    return _farewellReplies.erase(player) > 0;
+}
+
+bool LivingBondMgr::SaidFarewell(uint32 player)
+{
+    uint32 const now = Now();
+    std::lock_guard<std::mutex> lock(_mutex);
+    auto const it = _farewells.find(player);
+    if (it == _farewells.end())
+        return false;
+    if (now - it->second < LivingWorld::FarewellWindow)
+        return true;
+    _farewells.erase(it);
+    return false;
+}
+
 void LivingBondMgr::OnGroupJoin(uint32 group, uint32 member)
 {
     std::lock_guard<std::mutex> lock(_mutex);
