@@ -186,6 +186,8 @@ class AutoShotTrigger : public Trigger
 {
 public:
     AutoShotTrigger(PlayerbotAI* botAI) : Trigger(botAI, "auto shot") {}
+
+    bool IsActive() override;
 };
 
 class MisdirectionOnMainTankTrigger : public BuffOnMainTankTrigger

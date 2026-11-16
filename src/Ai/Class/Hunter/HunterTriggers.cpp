@@ -13,7 +13,21 @@
 #include "PlayerbotAIConfig.h"
 #include "Playerbots.h"
 #include "SharedDefines.h"
+#include "Spell.h"
 #include "TargetValue.h"
+
+// Auto Shot runs beside the global cooldown, so it is started as soon as it isn't already shooting at the current
+// target. As the rotations' last default action it only started when every shot above it failed for a moment: a
+// pet's actions gave a plain hunter those gaps, but a hunter without a pet whose Steady Shot is always ready (a
+// Marksmanship Ranger at 60) never got one and never fired it.
+bool AutoShotTrigger::IsActive()
+{
+    Unit* target = AI_VALUE(Unit*, "current target");
+    if (!target)
+        return false;
+    Spell const* repeat = bot->GetCurrentSpell(CURRENT_AUTOREPEAT_SPELL);
+    return !repeat || repeat->m_targets.GetUnitTargetGUID() != target->GetGUID();
+}
 
 bool KillCommandTrigger::IsActive()
 {

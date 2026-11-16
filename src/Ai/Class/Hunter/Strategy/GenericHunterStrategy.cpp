@@ -58,6 +58,7 @@ void GenericHunterStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     CombatStrategy::InitTriggers(triggers);
 
     // Mark/Ammo/Mana Triggers
+    triggers.push_back(new TriggerNode("auto shot", { NextAction("auto shot", 25.0f) }));
     triggers.push_back(new TriggerNode("no ammo", { NextAction("equip upgrades packet action", 30.0f) }));
     triggers.push_back(new TriggerNode("hunter's mark", { NextAction("hunter's mark", 29.5f) }));
     triggers.push_back(new TriggerNode("rapid fire", { NextAction("rapid fire", 29.0f) }));
