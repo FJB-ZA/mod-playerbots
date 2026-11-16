@@ -6,6 +6,7 @@
 
 #include "HasTotemValue.h"
 #include "Playerbots.h"
+#include "SubclassBotMgr.h"
 
 char* strstri(char const* str1, char const* str2);
 
@@ -24,6 +25,12 @@ bool HasTotemValue::Calculate()
             {
                 if (strstri(OldTotem->GetName().c_str(), qualifier.c_str()))
                     return true;
+                // A path's totem in another body (a Witch Doctor's Serpent Ward) is still the totem it replaces
+                uint32 const original = SubclassBotMgr::instance().OriginalCreature(OldTotem->GetEntry());
+                if (original != OldTotem->GetEntry())
+                    if (CreatureTemplate const* totem = sObjectMgr->GetCreatureTemplate(original))
+                        if (strstri(totem->Name.c_str(), qualifier.c_str()))
+                            return true;
             }
         }
     }

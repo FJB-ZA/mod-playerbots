@@ -124,12 +124,20 @@ SubclassBotMgr::Alias const* SubclassBotMgr::FindAlias(Player* bot, std::wstring
 
 bool SubclassBotMgr::HasSpellOrMirror(Player* bot, uint32 spellId) const
 {
+    return KnownSpellOrMirror(bot, spellId) != 0;
+}
+
+uint32 SubclassBotMgr::KnownSpellOrMirror(Player* bot, uint32 spellId) const
+{
     if (bot->HasSpell(spellId))
-        return true;
+        return spellId;
 
     auto const mirrors = _mirrors.find(spellId);
-    return mirrors != _mirrors.end() && std::any_of(mirrors->second.begin(), mirrors->second.end(),
-                                                    [bot](uint32 mirror) { return bot->HasSpell(mirror); });
+    if (mirrors == _mirrors.end())
+        return 0;
+    auto const known = std::find_if(mirrors->second.begin(), mirrors->second.end(),
+                                    [bot](uint32 mirror) { return bot->HasSpell(mirror); });
+    return known != mirrors->second.end() ? *known : 0;
 }
 
 uint32 SubclassBotMgr::OriginalSpell(uint32 spellId) const
