@@ -273,6 +273,19 @@ std::vector<Item*> Consumables(Player* bot)
     return found;
 }
 
+// A talent that teaches spells (Dual Wield, Spirit Weapons) is known by what it teaches: the core keeps the taught
+// spells, not the talent's own (Player::_addTalentAurasAndSpells)
+bool KnowsTaughtSpells(Player* bot, SpellInfo const* talent)
+{
+    if (!talent->HasEffect(SPELL_EFFECT_LEARN_SPELL))
+        return false;
+    for (SpellEffectInfo const& effect : talent->GetEffects())
+        if (effect.Effect == SPELL_EFFECT_LEARN_SPELL && !sSpellMgr->IsAdditionalTalentSpell(effect.TriggerSpell) &&
+            !bot->HasSpell(effect.TriggerSpell))
+            return false;
+    return true;
+}
+
 // What keeps a bot from being the setup the run asked for, or empty: anything here would measure another character
 // than the one the row names
 std::string Unready(Player* bot, uint16 wantedPath)
@@ -302,7 +315,7 @@ std::string Unready(Player* bot, uint16 wantedPath)
             info && talent->State != PLAYERSPELL_REMOVED && talent->IsInSpec(spec) && !bot->HasSpell(spellId) &&
             !(info->IsPassive() && (bot->HasAura(spellId) || !info->HasAnyAura() ||
                                     info->CheckShapeshift(bot->GetShapeshiftForm()) != SPELL_CAST_OK)) &&
-            !SubclassPaths::ActiveReplacement(bot, spellId))
+            !SubclassPaths::ActiveReplacement(bot, spellId) && !KnowsTaughtSpells(bot, info))
         {
             auto const known = bot->GetSpellMap().find(spellId);
             wrong.push_back(known == bot->GetSpellMap().end()
