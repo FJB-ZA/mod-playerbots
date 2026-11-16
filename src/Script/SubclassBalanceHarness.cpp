@@ -92,7 +92,7 @@ struct Bot
     bool over = false;  // the pack: its fight ended, the five or the bot dead
     SubclassBalance::Fight fight;
     std::vector<SubclassBalance::Fight> fights;
-    std::string trace;  // this fight, every renewal: mana and health in tenths, "-" while out of combat
+    std::string trace;  // this fight, every renewal: mana and health in tenths and what the bot was doing (Trace)
     uint64 white = 0;   // this fight: the bot's own melee and ranged swings that landed, and what they dealt
     uint32 hits = 0;
     uint32 outside = 0;  // this fight: heals blocked and auras taken off that came from outside the run
@@ -628,10 +628,16 @@ void Trace(Player* bot)
         b.outside += Isolate(dummy);
     for (ObjectGuid const& guid : b.pack)
         b.outside += Isolate(ObjectAccessor::GetCreature(*bot, guid));
-    trace += Acore::StringFormat("{}{}/{} ", bot->IsInCombat() ? "" : "-",
+    // Each renewal's mark: mana and health in tenths, "-" before them while out of combat, then "a" while an auto-repeat
+    // shot (Auto Shot, a wand) runs, "x" while its target isn't its own dummy, "f" while it doesn't face what it attacks
+    Spell const* repeat = bot->GetCurrentSpell(CURRENT_AUTOREPEAT_SPELL);
+    Unit* victim = bot->GetVictim();
+    trace += Acore::StringFormat("{}{}/{}{}{}{} ", bot->IsInCombat() ? "" : "-",
                                  bot->GetMaxPower(bot->getPowerType()) ?
                                      bot->GetPower(bot->getPowerType()) * 10 / bot->GetMaxPower(bot->getPowerType()) : 0,
-                                 bot->GetHealthPct() >= 100.0f ? 10 : uint32(bot->GetHealthPct() / 10));
+                                 bot->GetHealthPct() >= 100.0f ? 10 : uint32(bot->GetHealthPct() / 10),
+                                 repeat ? "a" : "", bot->GetTarget() != b.dummy && !b.dummy.IsEmpty() ? "x" : "",
+                                 victim && !bot->HasInArc(float(M_PI), victim) ? "f" : "");
 }
 
 // As the bots' own attack action does it: the target their current target, the combat engine on
@@ -950,6 +956,15 @@ void Tick(uint32 diff)
                     if (b.over)
                         continue;
                     Trace(bot);
+                    // A bot's strategies are reset by more than the harness (a master change, a login nearby); one
+                    // that assists its group again leaves its dummy for the other bot's, where the pet makes most of
+                    // the attackers, and a bot without a pet is pulled away for good
+                    if (GET_PLAYERBOT_AI(bot)->HasStrategy("dps assist", BOT_STATE_COMBAT))
+                    {
+                        Say(Acore::StringFormat("{}: its strategies were reset mid-fight; the run's are put back",
+                                                bot->GetName()));
+                        Strategies(bot);
+                    }
                     if (Creature* dummy = ObjectAccessor::GetCreature(*gm, b.dummy))
                         Attack(bot, dummy);
                     // (a pack keeps a bot in combat: it is only pointed at one of the five when it has no target)
