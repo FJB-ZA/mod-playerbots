@@ -287,6 +287,13 @@ std::string Unready(Player* bot, uint16 wantedPath)
     if (uint32 const free = bot->GetFreeTalentPoints())
         wrong.push_back(Acore::StringFormat("{} talent points unspent", free));
     uint8 const spec = bot->GetActiveSpec();
+    // A trained rank above the bot's level (kept from a time it was higher) is damage the level doesn't have
+    for (auto const& [spellId, spell] : bot->GetSpellMap())
+        if (SpellInfo const* info = sSpellMgr->GetSpellInfo(spellId);
+            info && spell->State != PLAYERSPELL_REMOVED && spell->IsInSpec(spec) && info->GetRank() > 1 &&
+            info->SpellLevel > bot->GetLevel())
+            wrong.push_back(Acore::StringFormat("{} rank {} (level {})", info->SpellName[0], info->GetRank(),
+                                                info->SpellLevel));
     for (auto const& [spellId, talent] : bot->GetTalentMap())
         // A passive talent is an aura on the bot, not a spell it knows: one without an aura (Titan's Grip) leaves
         // nothing to see but its effect, and one for a stance is only there in that stance. A path may take a
@@ -323,9 +330,10 @@ std::string Unready(Player* bot, uint16 wantedPath)
             for (SubclassPaths::SpellSwap const& swap : other->swaps)
                 if (bot->HasSpell(swap.replacement))
                     wrong.push_back(Acore::StringFormat("path spell {}", swap.replacement));
-            for (uint32 spellId : other->grants)
-                if (bot->HasSpell(spellId))
-                    wrong.push_back(Acore::StringFormat("path spell {}", spellId));
+            for (uint32 first : other->grants)
+                for (uint32 spellId = first; spellId; spellId = sSpellMgr->GetNextSpellInChain(spellId))
+                    if (bot->HasSpell(spellId))
+                        wrong.push_back(Acore::StringFormat("path spell {}", spellId));
         }
     std::string why;
     for (std::string const& each : wrong)
@@ -359,7 +367,10 @@ void Prepare(Player* plain, Player* path)
     for (auto [bot, spec] : {std::pair{plain, run.plainSpec}, std::pair{path, run.pathSpec}})
     {
         PlayerbotFactory::InitTalentsBySpecNo(bot, spec, true);
-        PlayerbotFactory(bot, bot->GetLevel()).InitGlyphs(false);
+        PlayerbotFactory factory(bot, bot->GetLevel());
+        // A talent the run's spec adds (Aimed Shot) comes at rank 1; the trainer's ranks for the level follow it
+        factory.InitAvailableSpells();
+        factory.InitGlyphs(false);
     }
     PlayerbotFactory::AutoGear(plain, ITEM_QUALITY_RARE, 0, false);
     PlayerbotFactory::DestroyEquippedGear(path);

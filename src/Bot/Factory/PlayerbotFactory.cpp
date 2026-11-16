@@ -1711,6 +1711,28 @@ void PlayerbotFactory::ClearSpells()
     {
         bot->removeSpell(*i, SPEC_MASK_ALL, false);
     }
+
+    // removeSpell keeps a talent spell's trained ranks in no slot (specMask 0), and learning the talent again brings
+    // every one of them back. A bot once higher in level got ranks above its new level that way (a level-60 hunter
+    // with level 80's Aimed Shot), so a full reset drops them too.
+    PlayerSpellMap& spellMap = bot->GetSpellMap();
+    for (PlayerSpellMap::iterator itr = spellMap.begin(); itr != spellMap.end();)
+    {
+        PlayerSpell* spell = itr->second;
+        if (spell->State == PLAYERSPELL_REMOVED || spell->specMask != 0)
+        {
+            ++itr;
+            continue;
+        }
+        if (spell->State == PLAYERSPELL_NEW || spell->State == PLAYERSPELL_TEMPORARY)
+        {
+            delete spell;
+            itr = spellMap.erase(itr);
+            continue;
+        }
+        spell->State = PLAYERSPELL_REMOVED;
+        ++itr;
+    }
 }
 
 void PlayerbotFactory::ResetQuests()
