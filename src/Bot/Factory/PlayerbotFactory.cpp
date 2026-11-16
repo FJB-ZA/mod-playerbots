@@ -49,6 +49,7 @@
 #include "SharedDefines.h"
 #include "SpellMgr.h"
 #include "StatsWeightCalculator.h"
+#include "SubclassPaths.h"
 #include "Trainer.h"
 #include "World.h"
 
@@ -1365,6 +1366,8 @@ void PlayerbotFactory::InitConsumables()
 
 void PlayerbotFactory::InitPetTalents()
 {
+    if (PetlessPath())
+        return;
     if (bot->GetLevel() <= 70 && sPlayerbotAIConfig.LimitTalentsExpansion)
         return;
 
@@ -1517,6 +1520,10 @@ void PlayerbotFactory::InitPetTalents()
 
 void PlayerbotFactory::InitPet()
 {
+    // A Ranger hunts without one; the core keeps any pet it had in the stable
+    if (PetlessPath())
+        return;
+
     Pet* pet = bot->GetPet();
 
     if (!pet && bot->GetPetStable() && bot->GetPetStable()->CurrentPet)
@@ -1704,6 +1711,28 @@ void PlayerbotFactory::ClearSpells()
     {
         bot->removeSpell(*i, SPEC_MASK_ALL, false);
     }
+
+    // removeSpell keeps a talent spell's trained ranks in no slot (specMask 0), and learning the talent again brings
+    // every one of them back. A bot once higher in level got ranks above its new level that way (a level-60 hunter
+    // with level 80's Aimed Shot), so a full reset drops them too.
+    PlayerSpellMap& spellMap = bot->GetSpellMap();
+    for (PlayerSpellMap::iterator itr = spellMap.begin(); itr != spellMap.end();)
+    {
+        PlayerSpell* spell = itr->second;
+        if (spell->State == PLAYERSPELL_REMOVED || spell->specMask != 0)
+        {
+            ++itr;
+            continue;
+        }
+        if (spell->State == PLAYERSPELL_NEW || spell->State == PLAYERSPELL_TEMPORARY)
+        {
+            delete spell;
+            itr = spellMap.erase(itr);
+            continue;
+        }
+        spell->State = PLAYERSPELL_REMOVED;
+        ++itr;
+    }
 }
 
 void PlayerbotFactory::ResetQuests()
@@ -1736,9 +1765,13 @@ uint32 PlayerbotFactory::InitTalentsTree(bool increment /*false*/, bool use_temp
     for (auto const& [page, points] : tabs)
         total_tabs += points;
     bool const pathTreeOpen = PathTreeOpen();
-    int const keptSpec = PathTalents::KeptSpec(
+    // A Ranger has no pet, so it never keeps or rolls a Beast Mastery build
+    bool const petless = PetlessPath();
+    int keptSpec = PathTalents::KeptSpec(
         pathTreeOpen, PathTalents::PathSpec(sPlayerbotAIConfig.RandomClassSpecUsesPathTree[cls], MAX_SPECNO),
         increment && total_tabs != 0, AiFactory::GetPlayerSpecTab(bot));
+    if (petless && PathTalents::SpecOnPage(keptSpec, HUNTER_TAB_BEAST_MASTERY))
+        keptSpec = -1;
     if (keptSpec >= 0)
     {
         /// @todo: match current talent with template
@@ -1762,7 +1795,11 @@ uint32 PlayerbotFactory::InitTalentsTree(bool increment /*false*/, bool use_temp
     }
     else
     {
-        uint32 const* weights = sPlayerbotAIConfig.RandomClassSpecProb[cls];
+        uint32 weights[MAX_SPECNO];
+        for (int spec = 0; spec < MAX_SPECNO; ++spec)
+            weights[spec] = petless && PathTalents::SpecOnPage(spec, HUNTER_TAB_BEAST_MASTERY)
+                                ? 0
+                                : sPlayerbotAIConfig.RandomClassSpecProb[cls][spec];
         bool const* usesPathTree = sPlayerbotAIConfig.RandomClassSpecUsesPathTree[cls];
         uint32 const pointSum = PathTalents::TotalWeight(weights, usesPathTree, MAX_SPECNO, pathTreeOpen);
         int const rolled = pointSum ? PathTalents::SpecForRoll(weights, usesPathTree, MAX_SPECNO, pathTreeOpen,
@@ -3816,6 +3853,12 @@ bool PlayerbotFactory::PathTreeOpen() const
 {
     TalentEntry const* talent = sPlayerbotAIConfig.PathTreeTalent[bot->getClass()];
     return talent && sScriptMgr->OnPlayerCanLearnTalent(bot, talent, 0);
+}
+
+bool PlayerbotFactory::PetlessPath() const
+{
+    SubclassPaths::Path const* path = SubclassPaths::ActivePath(bot);
+    return path && !path->pets;
 }
 
 void PlayerbotFactory::InitTalentsByTemplate(uint32 specTab)

@@ -17,4 +17,8 @@ and its fourth talent tree.
 4. In `conf/playerbots.conf.dist`, add the premade spec: its name, glyphs, links with the path's tree as the
    fourth `-` group, and `RandomClassSpecProb` 0. A bot takes the spec only while its slot follows the path.
 
+A path without a tree of its own, like the Ranger (a hunter without a pet), skips steps 3 and 4: `AiFactory` gives every
+bot of the class its strategy, which casts only spells a plain bot never learns. The factory checks the core's
+`SubclassPaths::ActivePath` for anything else, as it does to keep a Ranger without a pet or a Beast Mastery build.
+
 Nothing else in the engine changes. The core decides which bots follow the path (`subclass_path.bot_share`).

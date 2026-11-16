@@ -63,6 +63,13 @@ constexpr int KeptSpec(bool treeOpen, int pathSpec, bool keepCurrent, uint32_t c
     return -1;
 }
 
+// A path without pets (the Ranger) never takes a spec built on the pet's page, the hunter's Beast Mastery. Premade
+// specs 0 to 2 are the PvE builds of pages 0 to 2 and specs 3 to 5 their PvP builds; later specs are a path's own.
+constexpr bool SpecOnPage(int spec, uint32_t page)
+{
+    return spec >= 0 && spec < int(2 * PathPage) && uint32_t(spec) % PathPage == page;
+}
+
 // Leftover points go to the other pages of the class's own trees, never to a path's page.
 constexpr uint32_t LeftoverPage(uint32_t specPage, uint32_t step) { return (specPage + step) % PathPage; }
 }  // namespace PathTalents
