@@ -9,6 +9,7 @@
 #include "Player.h"
 #include "Playerbots.h"
 #include "ServerFacade.h"
+#include "SubclassBotMgr.h"
 #include "TargetValue.h"
 
 bool MarkOfTheWildTrigger::IsActive()
@@ -109,17 +110,12 @@ bool HurricaneChannelCheckTrigger::IsActive()
 {
     if (Spell* spell = bot->GetCurrentSpell(CURRENT_CHANNELED_SPELL))
     {
-        if (!HURRICANE_SPELL_IDS.count(spell->m_spellInfo->Id))
+        // Hurricane, or the mirror a path casts in its place (a Starcaller's Falling Stars)
+        if (!HURRICANE_SPELL_IDS.count(SubclassBotMgr::instance().OriginalSpell(spell->m_spellInfo->Id)))
             return false;
 
-        // Find this bot's own Hurricane DynamicObject
-        DynamicObject* dynObj = nullptr;
-        for (uint32 spellId : HURRICANE_SPELL_IDS)
-        {
-            dynObj = bot->GetDynObject(spellId);
-            if (dynObj)
-                break;
-        }
+        // This bot's own Hurricane DynamicObject: the channel's own area
+        DynamicObject* dynObj = bot->GetDynObject(spell->m_spellInfo->Id);
 
         if (!dynObj)
             return false;
