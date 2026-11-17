@@ -11,6 +11,7 @@
 #include "GridNotifiers.h"
 #include "GridNotifiersImpl.h"
 #include "PlayerbotAI.h"
+#include "SubclassBotMgr.h"
 #include "Playerbots.h"
 #include "TotemsShamanStrategy.h"
 #include <list>
@@ -129,9 +130,10 @@ bool SetTotemAction::Execute(Event /*event*/)
     uint32 totemSpell = 0;
     for (size_t i = 0; i < totemSpellIdsCount; ++i)
     {
-        if (bot->HasSpell(totemSpellIds[i]))
+        // The totem itself, or the mirror the bot knows on a path (a Witch Doctor's ward)
+        if (uint32 const known = SubclassBotMgr::instance().KnownSpellOrMirror(bot, totemSpellIds[i]))
         {
-            totemSpell = totemSpellIds[i];
+            totemSpell = known;
             break;
         }
     }

@@ -37,6 +37,8 @@ public:
     Alias const* FindAlias(Player* bot, std::wstring const& lowerName) const;
     // True when the bot knows `spellId` or a mirror of it.
     bool HasSpellOrMirror(Player* bot, uint32 spellId) const;
+    // The spell the bot knows for `spellId`: the id itself, a mirror of it on the bot's path, or 0.
+    uint32 KnownSpellOrMirror(Player* bot, uint32 spellId) const;
     // The class spell or demon a mirror stands in for, or the id itself.
     uint32 OriginalSpell(uint32 spellId) const;
     uint32 OriginalCreature(uint32 entry) const;

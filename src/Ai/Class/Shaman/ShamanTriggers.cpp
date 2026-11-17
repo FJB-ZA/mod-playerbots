@@ -10,6 +10,7 @@
 #include "ItemTemplate.h"
 #include "Player.h"
 #include "PlayerbotAI.h"
+#include "SubclassBotMgr.h"
 #include "Playerbots.h"
 #include "TotemsShamanStrategy.h"
 #include "Unit.h"
@@ -166,10 +167,10 @@ bool CallOfTheElementsTrigger::IsActive()
             continue;
         }
 
-        if ((slot == SUMMON_SLOT_TOTEM_EARTH && bot->HasSpell(SPELL_STONESKIN_TOTEM_RANK_1)) ||
-            (slot == SUMMON_SLOT_TOTEM_FIRE && bot->HasSpell(SPELL_SEARING_TOTEM_RANK_1)) ||
-            (slot == SUMMON_SLOT_TOTEM_WATER && bot->HasSpell(SPELL_HEALING_STREAM_TOTEM_RANK_1)) ||
-            (slot == SUMMON_SLOT_TOTEM_AIR && bot->HasSpell(SPELL_NATURE_RESISTANCE_TOTEM_RANK_1)))
+        if ((slot == SUMMON_SLOT_TOTEM_EARTH && SubclassBotMgr::instance().HasSpellOrMirror(bot, SPELL_STONESKIN_TOTEM_RANK_1)) ||
+            (slot == SUMMON_SLOT_TOTEM_FIRE && SubclassBotMgr::instance().HasSpellOrMirror(bot, SPELL_SEARING_TOTEM_RANK_1)) ||
+            (slot == SUMMON_SLOT_TOTEM_WATER && SubclassBotMgr::instance().HasSpellOrMirror(bot, SPELL_HEALING_STREAM_TOTEM_RANK_1)) ||
+            (slot == SUMMON_SLOT_TOTEM_AIR && SubclassBotMgr::instance().HasSpellOrMirror(bot, SPELL_NATURE_RESISTANCE_TOTEM_RANK_1)))
         {
             emptyCount++;
         }
@@ -228,7 +229,7 @@ bool TotemicRecallTrigger::IsActive()
         uint32 currentSpell = 0;
         if (totem)
         {
-            currentSpell = totem->GetUInt32Value(UNIT_CREATED_BY_SPELL);
+            currentSpell = SubclassBotMgr::instance().OriginalSpell(totem->GetUInt32Value(UNIT_CREATED_BY_SPELL));
         }
 
         for (size_t i = 0; i < MANA_TIDE_TOTEM_COUNT; ++i)
@@ -245,7 +246,7 @@ bool TotemicRecallTrigger::IsActive()
         uint32 currentSpell = 0;
         if (totem)
         {
-            currentSpell = totem->GetUInt32Value(UNIT_CREATED_BY_SPELL);
+            currentSpell = SubclassBotMgr::instance().OriginalSpell(totem->GetUInt32Value(UNIT_CREATED_BY_SPELL));
         }
 
         for (size_t i = 0; i < FIRE_ELEMENTAL_TOTEM_COUNT; ++i)
@@ -273,7 +274,7 @@ static uint32 GetRequiredTotemSpellId(PlayerbotAI* botAI, char const* strategies
             // Find the highest-rank spell the bot knows
             for (size_t j = 0; j < spellCounts[i]; ++j)
             {
-                if (bot->HasSpell(spellList[i][j]))
+                if (SubclassBotMgr::instance().HasSpellOrMirror(bot, spellList[i][j]))
                 {
                     return spellList[i][j];
                 }
@@ -287,7 +288,7 @@ static uint32 GetRequiredTotemSpellId(PlayerbotAI* botAI, char const* strategies
 bool NoEarthTotemTrigger::IsActive()
 {
     // Check if the bot has Stoneskin Totem (required level 4) and prevents the trigger firing if it doesn't
-    if (!bot->HasSpell(SPELL_STONESKIN_TOTEM_RANK_1))
+    if (!SubclassBotMgr::instance().HasSpellOrMirror(bot, SPELL_STONESKIN_TOTEM_RANK_1))
         return false;
 
     ObjectGuid guid = bot->m_SummonSlot[SUMMON_SLOT_TOTEM_EARTH];
@@ -298,7 +299,7 @@ bool NoEarthTotemTrigger::IsActive()
         totem = bot->GetMap()->GetCreature(guid);
         if (totem)
         {
-            currentSpell = totem->GetUInt32Value(UNIT_CREATED_BY_SPELL);
+            currentSpell = SubclassBotMgr::instance().OriginalSpell(totem->GetUInt32Value(UNIT_CREATED_BY_SPELL));
         }
     }
 
@@ -328,7 +329,7 @@ bool NoEarthTotemTrigger::IsActive()
 bool NoFireTotemTrigger::IsActive()
 {
     // Check if the bot has Searing Totem (required level 10) and prevents the trigger firing if it doesn't
-    if (!bot->HasSpell(SPELL_SEARING_TOTEM_RANK_1))
+    if (!SubclassBotMgr::instance().HasSpellOrMirror(bot, SPELL_SEARING_TOTEM_RANK_1))
         return false;
 
     ObjectGuid guid = bot->m_SummonSlot[SUMMON_SLOT_TOTEM_FIRE];
@@ -339,7 +340,7 @@ bool NoFireTotemTrigger::IsActive()
         totem = bot->GetMap()->GetCreature(guid);
         if (totem)
         {
-            currentSpell = totem->GetUInt32Value(UNIT_CREATED_BY_SPELL);
+            currentSpell = SubclassBotMgr::instance().OriginalSpell(totem->GetUInt32Value(UNIT_CREATED_BY_SPELL));
         }
     }
 
@@ -370,7 +371,7 @@ bool NoFireTotemTrigger::IsActive()
 bool NoWaterTotemTrigger::IsActive()
 {
     // Check if the bot has Healing Stream Totem (required level 20) and prevents the trigger firing if it doesn't
-    if (!bot->HasSpell(SPELL_HEALING_STREAM_TOTEM_RANK_1))
+    if (!SubclassBotMgr::instance().HasSpellOrMirror(bot, SPELL_HEALING_STREAM_TOTEM_RANK_1))
         return false;
 
     ObjectGuid guid = bot->m_SummonSlot[SUMMON_SLOT_TOTEM_WATER];
@@ -381,7 +382,7 @@ bool NoWaterTotemTrigger::IsActive()
         totem = bot->GetMap()->GetCreature(guid);
         if (totem)
         {
-            currentSpell = totem->GetUInt32Value(UNIT_CREATED_BY_SPELL);
+            currentSpell = SubclassBotMgr::instance().OriginalSpell(totem->GetUInt32Value(UNIT_CREATED_BY_SPELL));
         }
     }
 
@@ -413,7 +414,7 @@ bool NoWaterTotemTrigger::IsActive()
 bool NoAirTotemTrigger::IsActive()
 {
     // Check if the bot has Nature Resistance Totem (required level 30) and prevents the trigger firing if it doesn't
-    if (!bot->HasSpell(SPELL_NATURE_RESISTANCE_TOTEM_RANK_1))
+    if (!SubclassBotMgr::instance().HasSpellOrMirror(bot, SPELL_NATURE_RESISTANCE_TOTEM_RANK_1))
         return false;
 
     ObjectGuid guid = bot->m_SummonSlot[SUMMON_SLOT_TOTEM_AIR];
@@ -424,7 +425,7 @@ bool NoAirTotemTrigger::IsActive()
         totem = bot->GetMap()->GetCreature(guid);
         if (totem)
         {
-            currentSpell = totem->GetUInt32Value(UNIT_CREATED_BY_SPELL);
+            currentSpell = SubclassBotMgr::instance().OriginalSpell(totem->GetUInt32Value(UNIT_CREATED_BY_SPELL));
         }
     }
 
@@ -451,10 +452,10 @@ bool SetTotemTrigger::IsActive()
    uint32 highestKnownSpell = 0;
    for (size_t i = 0; i < totemSpellIdsCount; ++i)
    {
-       const uint32 spellId = totemSpellIds[i];
-       if (bot->HasSpell(spellId))
+       // The totem itself, or the mirror the bot knows on a path (a Witch Doctor's ward)
+       if (uint32 const known = SubclassBotMgr::instance().KnownSpellOrMirror(bot, totemSpellIds[i]))
        {
-           highestKnownSpell = spellId;
+           highestKnownSpell = known;
            break;
        }
    }
