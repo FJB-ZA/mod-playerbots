@@ -12,9 +12,35 @@
 #include "AiObject.h"
 #include "GenericSpellActions.h"
 
-DEBUFF_CHECKISOWNER_ACTION(CastGraveWormsAction, "grave worms");
-DEBUFF_CHECKISOWNER_ACTION(CastPlagueOfTheRisenAction, "plague of the risen");
-DEBUFF_CHECKISOWNER_ACTION(CastWastingPlagueAction, "wasting plague");
+// A disease the bot keeps up on its target. Like the warlock's own DoTs it skips the target's time-to-live check, which
+// a training dummy (little health, always healing) or a quick fight would otherwise fail.
+class CastNecromancerDiseaseAction : public CastDebuffSpellAction
+{
+public:
+    CastNecromancerDiseaseAction(PlayerbotAI* botAI, std::string const spell)
+        : CastDebuffSpellAction(botAI, spell, true)
+    {
+    }
+    bool isUseful() override { return CastAuraSpellAction::isUseful(); }
+};
+
+class CastGraveWormsAction : public CastNecromancerDiseaseAction
+{
+public:
+    CastGraveWormsAction(PlayerbotAI* botAI) : CastNecromancerDiseaseAction(botAI, "grave worms") {}
+};
+
+class CastPlagueOfTheRisenAction : public CastNecromancerDiseaseAction
+{
+public:
+    CastPlagueOfTheRisenAction(PlayerbotAI* botAI) : CastNecromancerDiseaseAction(botAI, "plague of the risen") {}
+};
+
+class CastWastingPlagueAction : public CastNecromancerDiseaseAction
+{
+public:
+    CastWastingPlagueAction(PlayerbotAI* botAI) : CastNecromancerDiseaseAction(botAI, "wasting plague") {}
+};
 BUFF_ACTION(CastMutationAction, "mutation");
 BUFF_ACTION(CastRaiseGargoyleAction, "raise gargoyle");
 
