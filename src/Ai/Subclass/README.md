@@ -22,3 +22,7 @@ bot of the class its strategy, which casts only spells a plain bot never learns.
 `SubclassPaths::ActivePath` for anything else, as it does to keep a Ranger without a pet or a Beast Mastery build.
 
 Nothing else in the engine changes. The core decides which bots follow the path (`subclass_path.bot_share`).
+
+A path can have both: the Necromancer's bots play the class AI on its trainer mirrors (Plague Strike for Immolate) and,
+on its Blight tree, add `blight` beside Affliction's `affli` for the tree's own spells. `SubclassBotMgr` maps every
+path's trainer mirrors; a replacement learned from a tree (Gladiator Stance) is left to the path's strategy.

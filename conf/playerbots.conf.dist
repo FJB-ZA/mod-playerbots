@@ -2272,6 +2272,13 @@ Playerbots.PremadeSpecName.9.5 = destro pvp
 Playerbots.PremadeSpecGlyph.9.5 = 42471,43392,42454,43390,43389,45783
 Playerbots.PremadeSpecLink.9.5.60 = --05230015220331351005031051
 Playerbots.PremadeSpecLink.9.5.80 = -2032003311302-05230015220331351005031051
+# The Necromancer sub-class path's Blight tree is a fourth page; a bot takes this spec only while its slot follows the path.
+# At 60 it leaves out Deathreach, Lich's Malice and a rank of Parasites to reach Raise Gargoyle; at 80 it adds 15 points in
+# Affliction.
+Playerbots.PremadeSpecName.9.6 = blight
+Playerbots.PremadeSpecGlyph.9.6 = 45785,43390,50077,43394,43393,45779
+Playerbots.PremadeSpecLink.9.6.60 = ---51121313311201131121112011211211111
+Playerbots.PremadeSpecLink.9.6.80 = 2350022001---51121313311221132111212212111211111
 
 #
 #
@@ -2601,6 +2608,9 @@ Playerbots.RandomClassSpecIndex.9.4 = 4
 # destro pvp
 Playerbots.RandomClassSpecProb.9.5 = 0
 Playerbots.RandomClassSpecIndex.9.5 = 5
+# blight: never rolled; a bot on the Necromancer path takes it, the core picks those bots
+Playerbots.RandomClassSpecProb.9.6 = 0
+Playerbots.RandomClassSpecIndex.9.6 = 6
 
 #
 #

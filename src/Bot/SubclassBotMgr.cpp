@@ -8,6 +8,7 @@
 
 #include <algorithm>
 
+#include "DBCStores.h"
 #include "DatabaseEnv.h"
 #include "Log.h"
 #include "Player.h"
@@ -47,7 +48,7 @@ void SubclassBotMgr::LoadSwaps()
     uint32 missing = 0;
     QueryResult result = WorldDatabase.Query(
         "SELECT p.class, s.spell, s.replacement FROM subclass_spell_swap s "
-        "JOIN subclass_path p ON p.id = s.path_id WHERE p.talent_tab = 0");
+        "JOIN subclass_path p ON p.id = s.path_id");
     if (result)
     {
         do
@@ -58,6 +59,10 @@ void SubclassBotMgr::LoadSwaps()
             uint32 const replacement = fields[2].Get<uint32>();
             SpellInfo const* originalInfo = sSpellMgr->GetSpellInfo(original);
             SpellInfo const* replacementInfo = sSpellMgr->GetSpellInfo(replacement);
+            // A replacement learned from the path's own tree (Gladiator Stance for Battle Stance) is cast by its
+            // path's strategy under its own name; only trainer mirrors stand in for class spells.
+            if (GetTalentSpellPos(replacement))
+                continue;
             if (classId >= MAX_CLASSES || !originalInfo || !replacementInfo)
             {
                 ++missing;

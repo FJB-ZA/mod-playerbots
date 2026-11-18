@@ -4854,8 +4854,11 @@ void PlayerbotFactory::InitGlyphs(bool increment)
     // Warlock PvP exceptions
     if (bot->getClass() == CLASS_WARLOCK)
     {
+        // Blight (spec index 6): the Necromancer sub-class path's own tree
+        if (tab == WARLOCK_TAB_BLIGHT)
+            tab = 6;
         // Affliction PvP (spec index 3): If the bot has the Improved Howl of Terror talent
-        if (bot->HasAura(SPELL_IMPROVED_HOWL_OF_TERROR))
+        else if (bot->HasAura(SPELL_IMPROVED_HOWL_OF_TERROR))
             tab = 3;
         // Demonology PvP (spec index 4): If the bot has both the Nemesis talent and the Intensity talent
         else if (bot->HasAura(SPELL_NEMESIS) && bot->HasAura(SPELL_INTENSITY))

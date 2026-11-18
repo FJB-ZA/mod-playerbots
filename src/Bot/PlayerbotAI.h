@@ -343,6 +343,7 @@ enum WARLOCK_TABS
     WARLOCK_TAB_AFFLICTION,
     WARLOCK_TAB_DEMONOLOGY,
     WARLOCK_TAB_DESTRUCTION,
+    WARLOCK_TAB_BLIGHT,  // the Necromancer sub-class path's own tree, open only while a slot follows the path
 };
 
 enum WARRIOR_TABS

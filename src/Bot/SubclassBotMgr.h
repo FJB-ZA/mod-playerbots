@@ -17,10 +17,10 @@
 
 class Player;
 
-// Sub-class paths of the solo-wow core fork (its subclass_* tables; the core puts bots on paths). A path without its
-// own talent tree mirrors class spells, and its bots play the class AI: the class spell names and ids the AI asks for
-// map to the mirrors the bot knows. A path with its own tree has its own strategy (src/Ai/Subclass) instead. Loaded
-// once on the world thread at startup and read-only afterwards.
+// Sub-class paths of the solo-wow core fork (its subclass_* tables; the core puts bots on paths). A path's trainer
+// mirrors stand in for class spells, and its bots play the class AI: the class spell names and ids the AI asks for map
+// to the mirrors the bot knows. A path with its own tree also has its own strategy (src/Ai/Subclass) for the tree's
+// spells. Loaded once on the world thread at startup and read-only afterwards.
 class SubclassBotMgr
 {
 public:

@@ -278,6 +278,8 @@ std::string AiFactory::GetPlayerSpecName(Player* player)
                 specName = "demo";
             else if (tab == WARLOCK_TAB_DESTRUCTION)
                 specName = "destro";
+            else if (tab == WARLOCK_TAB_BLIGHT)
+                specName = "blight";
             break;
         default:
             break;
@@ -403,6 +405,8 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
                 engine->addStrategiesNoInit("affli", "curse of agony", nullptr);
             else if (tab == WARLOCK_TAB_DEMONOLOGY)
                 engine->addStrategiesNoInit("demo", "curse of agony", "meta melee", nullptr);
+            else if (tab == WARLOCK_TAB_BLIGHT)
+                engine->addStrategiesNoInit("affli", "blight", "curse of agony", nullptr);
             else // if (tab == WARLOCK_TAB_DESTRUCTION)
                 engine->addStrategiesNoInit("destro", "curse of elements", nullptr);
             engine->addStrategiesNoInit("cc", "dps assist", "aoe", nullptr);
@@ -589,6 +593,8 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
                 nonCombatEngine->addStrategiesNoInit("felguard", "spellstone", nullptr);
             else if (tab == WARLOCK_TAB_DESTRUCTION)
                 nonCombatEngine->addStrategiesNoInit("imp", "firestone", nullptr);
+            else if (tab == WARLOCK_TAB_BLIGHT)
+                nonCombatEngine->addStrategiesNoInit("felhunter", "spellstone", nullptr);
 
             nonCombatEngine->addStrategiesNoInit("dps assist", "ss self", nullptr);
             break;
