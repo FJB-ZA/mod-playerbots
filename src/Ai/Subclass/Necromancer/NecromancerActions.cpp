@@ -16,21 +16,13 @@ bool HasOwnDisease(PlayerbotAI* botAI, Unit* unit)
 {
     return botAI->HasAura("grave worms", unit, false, true) || botAI->HasAura("plague of the risen", unit, false, true);
 }
-}  // namespace
 
-// Worth it only with another enemy to infect, and while the bot carries no copies yet.
-bool CastContagionAction::isUseful()
+// An attacker other than `current` that Contagion's copies can reach: alive, none of the bot's diseases yet, within
+// 30 yards and in sight. The group's attackers include enemies other members fight far away, out of Contagion's reach.
+Unit* FindSpreadTarget(PlayerbotAI* botAI, Unit* current)
 {
-    Unit* target = GetTarget();
-    if (!target || !HasOwnDisease(botAI, target) || botAI->HasAura("contagion", bot))
-        return false;
-    return AI_VALUE(GuidVector, "attackers").size() > 1 && CastSpellAction::isUseful();
-}
-
-Unit* CastContagionSpreadAction::SpreadTarget()
-{
-    Unit* current = AI_VALUE(Unit*, "current target");
-    for (ObjectGuid const guid : AI_VALUE(GuidVector, "attackers"))
+    Player* bot = botAI->GetBot();
+    for (ObjectGuid const guid : botAI->GetAiObjectContext()->GetValue<GuidVector>("attackers")->Get())
     {
         Unit* unit = botAI->GetUnit(guid);
         if (unit && unit != current && unit->IsAlive() && !HasOwnDisease(botAI, unit) &&
@@ -39,6 +31,18 @@ Unit* CastContagionSpreadAction::SpreadTarget()
     }
     return nullptr;
 }
+}  // namespace
+
+// Worth it only with another enemy in reach to infect, and while the bot carries no copies yet.
+bool CastContagionAction::isUseful()
+{
+    Unit* target = GetTarget();
+    if (!target || !HasOwnDisease(botAI, target) || botAI->HasAura("contagion", bot))
+        return false;
+    return FindSpreadTarget(botAI, target) && CastSpellAction::isUseful();
+}
+
+Unit* CastContagionSpreadAction::SpreadTarget() { return FindSpreadTarget(botAI, AI_VALUE(Unit*, "current target")); }
 
 bool CastContagionSpreadAction::isUseful() { return botAI->HasAura("contagion", bot); }
 
