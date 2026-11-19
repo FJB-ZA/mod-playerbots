@@ -14,6 +14,7 @@
 #include "NecromancerStrategy.h"
 #include "RangerStrategy.h"
 #include "Strategy.h"
+#include "WindrunnerStrategy.h"
 
 class SubclassStrategyContext : public NamedObjectContext<Strategy>
 {
@@ -23,12 +24,14 @@ public:
         creators["gladiator"] = &SubclassStrategyContext::gladiator;  // warrior, path 1
         creators["blight"] = &SubclassStrategyContext::blight;        // warlock, path 2 (Necromancer)
         creators["ranger"] = &SubclassStrategyContext::ranger;        // hunter, path 3
+        creators["windrunner"] = &SubclassStrategyContext::windrunner;  // hunter, path 3 (Ranger)
     }
 
 private:
     static Strategy* gladiator(PlayerbotAI* botAI) { return new GladiatorStrategy(botAI); }
     static Strategy* blight(PlayerbotAI* botAI) { return new NecromancerStrategy(botAI); }
     static Strategy* ranger(PlayerbotAI* botAI) { return new RangerStrategy(botAI); }
+    static Strategy* windrunner(PlayerbotAI* botAI) { return new WindrunnerStrategy(botAI); }
 };
 
 #endif

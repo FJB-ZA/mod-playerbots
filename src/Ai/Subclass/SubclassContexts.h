@@ -14,18 +14,21 @@
 #include "NamedObjectContext.h"
 #include "NecromancerContexts.h"
 #include "RangerActionContext.h"
+#include "WindrunnerContexts.h"
 
 inline void AddSubclassActionContexts(SharedNamedObjectContextList<Action>& actionContexts)
 {
     actionContexts.Add(new SubclassGladiatorActionContext());
     actionContexts.Add(new SubclassNecromancerActionContext());
     actionContexts.Add(new SubclassRangerActionContext());
+    actionContexts.Add(new SubclassWindrunnerActionContext());
 }
 
 inline void AddSubclassTriggerContexts(SharedNamedObjectContextList<Trigger>& triggerContexts)
 {
     triggerContexts.Add(new SubclassGladiatorTriggerContext());
     triggerContexts.Add(new SubclassNecromancerTriggerContext());
+    triggerContexts.Add(new SubclassWindrunnerTriggerContext());
 }
 
 #endif

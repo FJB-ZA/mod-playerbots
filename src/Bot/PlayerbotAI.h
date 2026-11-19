@@ -287,6 +287,7 @@ enum HUNTER_TABS
     HUNTER_TAB_BEAST_MASTERY,
     HUNTER_TAB_MARKSMANSHIP,
     HUNTER_TAB_SURVIVAL,
+    HUNTER_TAB_WINDRUNNER,  // the Ranger sub-class path's own tree, open only while a slot follows the path
 };
 
 enum ROGUE_TABS

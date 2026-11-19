@@ -4868,6 +4868,10 @@ void PlayerbotFactory::InitGlyphs(bool increment)
             tab = 5;
     }
 
+    // Windrunner (spec index 6): the Ranger sub-class path's own tree
+    if (bot->getClass() == CLASS_HUNTER && tab == HUNTER_TAB_WINDRUNNER)
+        tab = 6;
+
     // Druid PvE/PvP exceptions
     if (bot->getClass() == CLASS_DRUID)
     {

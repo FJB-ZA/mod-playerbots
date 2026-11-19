@@ -254,6 +254,8 @@ std::string AiFactory::GetPlayerSpecName(Player* player)
                 specName = "marks";
             else if (tab == HUNTER_TAB_SURVIVAL)
                 specName = "surv";
+            else if (tab == HUNTER_TAB_WINDRUNNER)
+                specName = "windrunner";
             break;
         case CLASS_DEATH_KNIGHT:
             if (tab == DEATH_KNIGHT_TAB_BLOOD)
@@ -384,10 +386,13 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
         case CLASS_HUNTER:
             if (tab == HUNTER_TAB_BEAST_MASTERY)
                 engine->addStrategy("bm", false);
-            else if (tab == HUNTER_TAB_MARKSMANSHIP)
-                engine->addStrategy("mm", false);
+            else if (tab == HUNTER_TAB_MARKSMANSHIP || tab == HUNTER_TAB_WINDRUNNER)
+                engine->addStrategy("mm", false);  // Windrunner builds Advantage with Marksmanship's shots
             else // if (tab == HUNTER_TAB_SURVIVAL)
                 engine->addStrategy("surv", false);
+            // The Windrunner tree's own spells, for its spec and for a dip into it from another tree
+            if (GetPlayerSpecTabs(player)[HUNTER_TAB_WINDRUNNER])
+                engine->addStrategy("windrunner", false);
             engine->addStrategiesNoInit("cc", "dps assist", "aoe", "bdps",
                                         "ranger", nullptr);  // Field Dressing, only a Ranger (path 3) knows it
             break;
