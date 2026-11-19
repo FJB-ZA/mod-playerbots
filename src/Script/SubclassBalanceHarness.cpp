@@ -97,7 +97,7 @@ struct Bot
     uint32 hits = 0;
     uint32 outside = 0;  // this fight: heals blocked and auras taken off that came from outside the run
     std::set<ObjectGuid> intruders;  // this fight: who from outside the run dealt damage into it, each said once
-    std::map<uint32, uint64> spells;  // this fight: what each of the bot's own spells dealt, before the target's armor
+    std::map<uint32, uint64> spells;  // this fight: what each spell of the bot and its pets dealt, before armor
 };
 
 struct Run
@@ -724,13 +724,14 @@ void EndFight()
                 top.emplace_back(dealt, spell);
             std::sort(top.rbegin(), top.rend());
             std::string spells;
-            for (size_t i = 0; i < top.size() && i < 5; ++i)
+            for (size_t i = 0; i < top.size() && i < 8; ++i)
             {
                 SpellInfo const* info = sSpellMgr->GetSpellInfo(top[i].second);
                 spells += Acore::StringFormat("{}{} {} {}", i ? ", " : "", top[i].second,
                                               info ? info->SpellName[LOCALE_enUS] : "?", top[i].first);
             }
-            Say(Acore::StringFormat("{} spells: {}{}", bot->GetName(), spells.empty() ? "none" : spells,
+            Say(Acore::StringFormat("{} spells: {}; pet {}{}", bot->GetName(), spells.empty() ? "none" : spells,
+                                    b.fight.petDamage,
                                     dummy ? Acore::StringFormat("; its dummy level {}, armor {}; {:.1f} yards from its "
                                                                 "centre, in melee range {}, facing it {}, behind it {}",
                                                                 dummy->GetLevel(), dummy->GetArmor(),
@@ -1054,8 +1055,11 @@ void MeterSpell(Unit* attacker, uint32 damage, SpellInfo const* spellInfo)
 {
     if (run.phase != Phase::Fight || !damage || !attacker || !spellInfo)
         return;
+    Player* owner = attacker->GetCharmerOrOwnerPlayerOrPlayerItself();
+    if (!owner)
+        return;
     for (Bot& side : run.sides)
-        if (attacker->GetGUID() == side.guid && !side.over)
+        if (owner->GetGUID() == side.guid && !side.over)
             side.spells[spellInfo->Id] += damage;
 }
 
