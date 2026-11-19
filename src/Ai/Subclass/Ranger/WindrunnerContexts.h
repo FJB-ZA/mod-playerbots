@@ -28,6 +28,7 @@ public:
         creators["ricochet shot"] = &SubclassWindrunnerActionContext::ricochet_shot;
         creators["hushing arrow"] = &SubclassWindrunnerActionContext::hushing_arrow;
         creators["piercing volley"] = &SubclassWindrunnerActionContext::piercing_volley;
+        creators["advantage arcane shot"] = &SubclassWindrunnerActionContext::advantage_arcane_shot;
     }
 
 private:
@@ -39,6 +40,7 @@ private:
     static Action* ricochet_shot(PlayerbotAI* botAI) { return new CastRicochetShotAction(botAI); }
     static Action* hushing_arrow(PlayerbotAI* botAI) { return new CastHushingArrowAction(botAI); }
     static Action* piercing_volley(PlayerbotAI* botAI) { return new CastPiercingVolleyAction(botAI); }
+    static Action* advantage_arcane_shot(PlayerbotAI* botAI) { return new CastAdvantageArcaneShotAction(botAI); }
 };
 
 class SubclassWindrunnerTriggerContext : public NamedObjectContext<Trigger>

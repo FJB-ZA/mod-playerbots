@@ -23,5 +23,5 @@ void WindrunnerStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode("final arrow", { NextAction("final arrow", 19.0f) }));
     triggers.push_back(new TriggerNode("serrated shot", { NextAction("serrated shot", 17.2f) }));
     triggers.push_back(new TriggerNode("ricochet shot", { NextAction("ricochet shot", 16.0f) }));
-    triggers.push_back(new TriggerNode("build advantage", { NextAction("arcane shot", 15.5f) }));
+    triggers.push_back(new TriggerNode("build advantage", { NextAction("advantage arcane shot", 15.5f) }));
 }

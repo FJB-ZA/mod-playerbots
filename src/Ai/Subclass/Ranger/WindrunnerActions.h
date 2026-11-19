@@ -52,6 +52,15 @@ public:
     CastHushingArrowAction(PlayerbotAI* botAI) : CastSpellAction(botAI, "hushing arrow") {}
 };
 
+// Arcane Shot as an Advantage builder. The hunter's own Arcane Shot action is only for a bot with Explosive Shot, so
+// a Marksmanship Windrunner would never use it.
+class CastAdvantageArcaneShotAction : public CastSpellAction
+{
+public:
+    CastAdvantageArcaneShotAction(PlayerbotAI* botAI) : CastSpellAction(botAI, "arcane shot") {}
+    std::string const getName() override { return "advantage arcane shot"; }
+};
+
 class CastPiercingVolleyAction : public CastSpellAction
 {
 public:
