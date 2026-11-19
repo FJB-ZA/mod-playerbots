@@ -25,14 +25,19 @@ bool CastAspectOfTheHawkAction::isUseful()
 bool CastArcaneShotAction::isUseful()
 {
     Unit* target = GetTarget();
-    if (!target || !botAI->HasSpell("explosive shot"))
+    if (!target)
         return false;
 
-    // Armor Penetration rating check - will not cast Arcane Shot above 435 ArP
-    int32 armorPenRating =
-        bot->GetUInt32Value(PLAYER_FIELD_COMBAT_RATING_1) + bot->GetUInt32Value(CR_ARMOR_PENETRATION);
-    if (armorPenRating > 435)
-        return false;
+    // Survival (Explosive Shot): no Arcane Shot above 435 armor penetration rating, where Explosive Shot and Steady
+    // Shot do more. This used to stop every hunter without Explosive Shot instead, so a Marksmanship or Beast Mastery
+    // bot never cast the Arcane Shot its rotation lists (found by solo-wow's balance harness, 2026-11-20).
+    if (botAI->HasSpell("explosive shot"))
+    {
+        int32 armorPenRating =
+            bot->GetUInt32Value(PLAYER_FIELD_COMBAT_RATING_1) + bot->GetUInt32Value(CR_ARMOR_PENETRATION);
+        if (armorPenRating > 435)
+            return false;
+    }
 
     return true;
 }
