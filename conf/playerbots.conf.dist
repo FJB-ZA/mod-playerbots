@@ -2279,6 +2279,11 @@ Playerbots.PremadeSpecName.9.6 = blight
 Playerbots.PremadeSpecGlyph.9.6 = 45785,43390,50077,43394,43393,45779
 Playerbots.PremadeSpecLink.9.6.60 = ---51121313311201131121112011211211111
 Playerbots.PremadeSpecLink.9.6.80 = 2350022001---51121313311221132111212212111211111
+# blight dip: the balance harness's 20-point dip check, 31 points of affli pve and Blight's first 20. Never
+# rolled; a bot that holds it fights as Affliction with the Blight strategy beside it.
+Playerbots.PremadeSpecName.9.7 = blight dip
+Playerbots.PremadeSpecGlyph.9.7 = 45785,43390,50077,43394,43393,45779
+Playerbots.PremadeSpecLink.9.7.60 = 235002200111351005---511213133
 
 #
 #
@@ -2611,6 +2616,9 @@ Playerbots.RandomClassSpecIndex.9.5 = 5
 # blight: never rolled; a bot on the Necromancer path takes it, the core picks those bots
 Playerbots.RandomClassSpecProb.9.6 = 0
 Playerbots.RandomClassSpecIndex.9.6 = 6
+# blight dip: never rolled, for the balance harness
+Playerbots.RandomClassSpecProb.9.7 = 0
+Playerbots.RandomClassSpecIndex.9.7 = 7
 
 #
 #

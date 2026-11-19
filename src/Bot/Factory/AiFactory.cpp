@@ -409,6 +409,9 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
                 engine->addStrategiesNoInit("affli", "blight", "curse of agony", nullptr);
             else // if (tab == WARLOCK_TAB_DESTRUCTION)
                 engine->addStrategiesNoInit("destro", "curse of elements", nullptr);
+            // A dip into Blight from another tree still casts the diseases it took
+            if (tab != WARLOCK_TAB_BLIGHT && GetPlayerSpecTabs(player)[WARLOCK_TAB_BLIGHT])
+                engine->addStrategiesNoInit("blight", nullptr);
             engine->addStrategiesNoInit("cc", "dps assist", "aoe", nullptr);
             break;
 
