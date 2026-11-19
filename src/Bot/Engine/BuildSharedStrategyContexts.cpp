@@ -19,4 +19,5 @@ void AiObjectContext::BuildSharedStrategyContexts(SharedNamedObjectContextList<S
     strategyContexts.Add(new DungeonStrategyContext());
     strategyContexts.Add(new RaidStrategyContext());
     strategyContexts.Add(new SubclassStrategyContext());
+    strategyContexts.Add(new SubclassTreeStrategyContext());
 }
