@@ -12,7 +12,14 @@
 #include "AiObject.h"
 #include "GenericSpellActions.h"
 
-DEBUFF_CHECKISOWNER_ACTION(CastSerratedShotAction, "serrated shot");
+// Serrated Shot, kept up on the target. Like Serpent Sting it skips the target's time-to-live check, which a training
+// dummy (little health, always healing) or a quick fight would otherwise fail.
+class CastSerratedShotAction : public CastDebuffSpellAction
+{
+public:
+    CastSerratedShotAction(PlayerbotAI* botAI) : CastDebuffSpellAction(botAI, "serrated shot", true) {}
+    bool isUseful() override { return CastAuraSpellAction::isUseful(); }
+};
 BUFF_ACTION(CastSkirmishAction, "skirmish");
 
 class CastPrecisionShotAction : public CastSpellAction

@@ -49,6 +49,7 @@ public:
         creators["serrated shot"] = &SubclassWindrunnerTriggerContext::serrated_shot;
         creators["skirmish"] = &SubclassWindrunnerTriggerContext::skirmish;
         creators["full advantage"] = &SubclassWindrunnerTriggerContext::full_advantage;
+        creators["build advantage"] = &SubclassWindrunnerTriggerContext::build_advantage;
         creators["incendiary shot"] = &SubclassWindrunnerTriggerContext::incendiary_shot;
         creators["final arrow"] = &SubclassWindrunnerTriggerContext::final_arrow;
         creators["ricochet shot"] = &SubclassWindrunnerTriggerContext::ricochet_shot;
@@ -60,6 +61,7 @@ private:
     static Trigger* serrated_shot(PlayerbotAI* botAI) { return new SerratedShotTrigger(botAI); }
     static Trigger* skirmish(PlayerbotAI* botAI) { return new SkirmishTrigger(botAI); }
     static Trigger* full_advantage(PlayerbotAI* botAI) { return new FullAdvantageTrigger(botAI); }
+    static Trigger* build_advantage(PlayerbotAI* botAI) { return new BuildAdvantageTrigger(botAI); }
     static Trigger* incendiary_shot(PlayerbotAI* botAI) { return new IncendiaryShotTrigger(botAI); }
     static Trigger* final_arrow(PlayerbotAI* botAI) { return new FinalArrowTrigger(botAI); }
     static Trigger* ricochet_shot(PlayerbotAI* botAI) { return new RicochetShotTrigger(botAI); }

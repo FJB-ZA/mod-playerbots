@@ -13,7 +13,13 @@
 #include "AiObject.h"
 #include "GenericTriggers.h"
 
-DEBUFF_CHECKISOWNER_TRIGGER(SerratedShotTrigger, "serrated shot");
+// The bot's Serrated Shot is missing from its target, whatever the target's expected life
+class SerratedShotTrigger : public DebuffTrigger
+{
+public:
+    SerratedShotTrigger(PlayerbotAI* botAI) : DebuffTrigger(botAI, "serrated shot", 1, true, 0.5f) {}
+    bool IsActive() override { return BuffTrigger::IsActive(); }
+};
 CD_TRIGGER(RicochetShotTrigger, "ricochet shot");
 CD_TRIGGER(PiercingVolleyTrigger, "piercing volley");
 
@@ -22,6 +28,15 @@ class FullAdvantageTrigger : public Trigger
 {
 public:
     FullAdvantageTrigger(PlayerbotAI* botAI) : Trigger(botAI, "full advantage") {}
+    bool IsActive() override;
+};
+
+// Advantage isn't full and Arcane Shot is ready: below level 50 (no Steady Shot) and between Steady Shots it is the
+// builder the Marksmanship rotation leaves out
+class BuildAdvantageTrigger : public Trigger
+{
+public:
+    BuildAdvantageTrigger(PlayerbotAI* botAI) : Trigger(botAI, "build advantage") {}
     bool IsActive() override;
 };
 

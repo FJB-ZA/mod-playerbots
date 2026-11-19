@@ -14,6 +14,7 @@
 namespace
 {
 constexpr uint32 SpellAdvantage = 993010;
+constexpr uint32 SpellPrecisionShot = 993000;
 constexpr uint32 SpellSkirmish = 993002;
 constexpr uint32 SpellTellingBlow = 993021;
 constexpr uint32 FullStacks = 5;
@@ -34,6 +35,11 @@ bool Ready(PlayerbotAI* botAI, Player* bot, std::string const spell)
 }  // namespace
 
 bool FullAdvantageTrigger::IsActive() { return Advantage(bot) >= FullStacks; }
+
+bool BuildAdvantageTrigger::IsActive()
+{
+    return bot->HasSpell(SpellPrecisionShot) && Advantage(bot) < FullStacks && Ready(botAI, bot, "arcane shot");
+}
 
 bool SkirmishTrigger::IsActive()
 {

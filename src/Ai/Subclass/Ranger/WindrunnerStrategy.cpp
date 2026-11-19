@@ -6,7 +6,8 @@
 
 // Hushing Arrow interrupts beside Silencing Shot (40). The finishers come above Marksmanship's Kill Shot (18.0):
 // Skirmish, then Incendiary Shot on a pack, then Precision Shot. Final Arrow and Piercing Volley go out when ready;
-// Serrated Shot is kept up just above Serpent Sting (17.0), and Ricochet Shot builds on cooldown.
+// Serrated Shot is kept up just above Serpent Sting (17.0), Ricochet Shot builds on cooldown, and Arcane Shot builds
+// whenever Advantage isn't full.
 
 #include "WindrunnerStrategy.h"
 
@@ -22,4 +23,5 @@ void WindrunnerStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode("final arrow", { NextAction("final arrow", 19.0f) }));
     triggers.push_back(new TriggerNode("serrated shot", { NextAction("serrated shot", 17.2f) }));
     triggers.push_back(new TriggerNode("ricochet shot", { NextAction("ricochet shot", 16.0f) }));
+    triggers.push_back(new TriggerNode("build advantage", { NextAction("arcane shot", 15.5f) }));
 }
