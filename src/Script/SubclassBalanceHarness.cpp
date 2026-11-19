@@ -409,6 +409,10 @@ void Prepare(Player* plain, Player* path)
         }
         path->EquipItem(dest, copy, true);
     }
+    // Ammo to match the cloned ranged weapon: a dwarf's bullets don't fit the plain night elf's bow, and a hunter
+    // without them neither auto shoots nor builds a Windrunner's Advantage
+    for (Player* bot : {plain, path})
+        PlayerbotFactory(bot, bot->GetLevel()).InitAmmo();
     auto gear = [](Player* bot) {
         uint32 items = 0, enchants = 0;
         for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
