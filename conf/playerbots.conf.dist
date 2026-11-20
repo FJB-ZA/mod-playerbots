@@ -2056,8 +2056,8 @@ Playerbots.PremadeSpecLink.3.5.80 = -005305201-2300302510233330533135001031
 # Marksmanship, through Aimed Shot.
 Playerbots.PremadeSpecName.3.6 = windrunner
 Playerbots.PremadeSpecGlyph.3.6 = 42912,43350,42898,43351,43338,42914
-Playerbots.PremadeSpecLink.3.6.60 = ---11521230120111211211121102222111111111
-Playerbots.PremadeSpecLink.3.6.80 = -015305001--11521232122111211211121112222111111111
+Playerbots.PremadeSpecLink.3.6.60 = ---11521230120111211111121102222211111111
+Playerbots.PremadeSpecLink.3.6.80 = -015305001--11521232122111211111121112222211111111
 # windrunner dip: the balance harness's 20-point dip check, 31 points of mm pve and Windrunner's first 20. Never
 # rolled; a bot that holds it fights as Marksmanship with the Windrunner strategy beside it.
 Playerbots.PremadeSpecName.3.7 = windrunner dip
