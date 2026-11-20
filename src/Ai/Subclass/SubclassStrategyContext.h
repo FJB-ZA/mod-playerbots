@@ -13,6 +13,7 @@
 #define PLAYERBOTS_SUBCLASSSTRATEGYCONTEXT_H
 
 #include "GladiatorStrategy.h"
+#include "HexcraftStrategy.h"
 #include "NamedObjectContext.h"
 #include "NecromancerStrategy.h"
 #include "RangerStrategy.h"
@@ -40,11 +41,13 @@ public:
     {
         creators["blight"] = &SubclassTreeStrategyContext::blight;          // warlock, path 2 (Necromancer)
         creators["windrunner"] = &SubclassTreeStrategyContext::windrunner;  // hunter, path 3 (Ranger)
+        creators["hexcraft"] = &SubclassTreeStrategyContext::hexcraft;      // shaman, path 4 (Witch Doctor)
     }
 
 private:
     static Strategy* blight(PlayerbotAI* botAI) { return new NecromancerStrategy(botAI); }
     static Strategy* windrunner(PlayerbotAI* botAI) { return new WindrunnerStrategy(botAI); }
+    static Strategy* hexcraft(PlayerbotAI* botAI) { return new HexcraftStrategy(botAI); }
 };
 
 #endif

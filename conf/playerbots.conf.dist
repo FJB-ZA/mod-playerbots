@@ -2212,6 +2212,19 @@ Playerbots.PremadeSpecName.7.5 = resto pvp
 Playerbots.PremadeSpecGlyph.7.5 = 45778,43388,45775,43725,43344,41535
 Playerbots.PremadeSpecLink.7.5.60 = --05032331331013501120321251
 Playerbots.PremadeSpecLink.7.5.80 = -023222301004-05032331331013501120331251
+# The Witch Doctor sub-class path's Hexcraft tree is a fourth page; a bot takes this spec only while its slot follows
+# the path. It fights as Elemental with the Hexcraft strategy beside it, glyphed as ele pve. At 60 it leaves out Spirit
+# Bargain and Long Grudge to reach Marionette Dance; at 80 it takes all 55 ranks plus 16 points in Elemental
+# (Convection 2, Concussion 5, Call of Flame 3, Reverberation 5, Elemental Focus 1).
+Playerbots.PremadeSpecName.7.6 = hexcraft
+Playerbots.PremadeSpecGlyph.7.6 = 41536,43385,41532,43386,44923,45776
+Playerbots.PremadeSpecLink.7.6.60 = ---3111223210112122122021211131111111111
+Playerbots.PremadeSpecLink.7.6.80 = 2530051---3111223212112122122221211131111111111
+# hexcraft dip: the balance harness's 20-point dip check, the first 31 points of ele pve and Hexcraft's tiers 1 to 3
+# with Juju Surge. Never rolled; a bot that holds it fights as Elemental with the Hexcraft strategy beside it.
+Playerbots.PremadeSpecName.7.7 = hexcraft dip
+Playerbots.PremadeSpecGlyph.7.7 = 41536,43385,41532,43386,44923,45776
+Playerbots.PremadeSpecLink.7.7.60 = 453000152021331100---311122321211
 
 #
 #
@@ -2574,6 +2587,12 @@ Playerbots.RandomClassSpecIndex.7.4 = 4
 # resto pvp
 Playerbots.RandomClassSpecProb.7.5 = 0
 Playerbots.RandomClassSpecIndex.7.5 = 5
+# hexcraft: never rolled; a bot on the Witch Doctor path takes it, the core picks those bots
+Playerbots.RandomClassSpecProb.7.6 = 0
+Playerbots.RandomClassSpecIndex.7.6 = 6
+# hexcraft dip: never rolled, for the balance harness
+Playerbots.RandomClassSpecProb.7.7 = 0
+Playerbots.RandomClassSpecIndex.7.7 = 7
 
 #
 #

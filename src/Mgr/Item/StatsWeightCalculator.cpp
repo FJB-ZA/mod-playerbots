@@ -479,7 +479,7 @@ void StatsWeightCalculator::GenerateBasicWeights(Player* player)
         stats_weights_[STATS_TYPE_ATTACK_POWER] -= 1.0f;
         stats_weights_[STATS_TYPE_RANGED_DPS] += 1.0f;
     }
-    else if (cls == CLASS_SHAMAN && tab == SHAMAN_TAB_ELEMENTAL)
+    else if (cls == CLASS_SHAMAN && (tab == SHAMAN_TAB_ELEMENTAL || tab == SHAMAN_TAB_HEXCRAFT))
     {
         stats_weights_[STATS_TYPE_INTELLECT] += 0.5f;
         stats_weights_[STATS_TYPE_SPELL_POWER] += 1.2f;
@@ -487,6 +487,9 @@ void StatsWeightCalculator::GenerateBasicWeights(Player* player)
         stats_weights_[STATS_TYPE_CRIT] += 0.8f;
         stats_weights_[STATS_TYPE_HASTE] += 1.0f;
         stats_weights_[STATS_TYPE_MANA_REGENERATION] += 0.5f;
+        // Hexcraft's Spirit Bargain turns a fifth of Spirit into spell power, and Zandalari Schooling adds 15% Spirit
+        if (tab == SHAMAN_TAB_HEXCRAFT)
+            stats_weights_[STATS_TYPE_SPIRIT] += 0.3f;
     }
     else if ((cls == CLASS_PALADIN && tab == PALADIN_TAB_HOLY) ||
              (cls == CLASS_SHAMAN && tab == SHAMAN_TAB_RESTORATION))

@@ -4823,8 +4823,11 @@ void PlayerbotFactory::InitGlyphs(bool increment)
     // Shaman PvP exceptions
     if (bot->getClass() == CLASS_SHAMAN)
     {
+        // Hexcraft (spec index 6): the Witch Doctor sub-class path's own tree, glyphed as Elemental
+        if (tab == SHAMAN_TAB_HEXCRAFT)
+            tab = 6;
         // Elemental PvP (spec index 3): If the bot has the Astral Shift talent
-        if (bot->HasAura(SPELL_ASTRAL_SHIFT))
+        else if (bot->HasAura(SPELL_ASTRAL_SHIFT))
             tab = 3;
         // Enhancement PvP (spec index 4): If the bot has the Earthen Power talent
         else if (bot->HasAura(SPELL_EARTHEN_POWER))
@@ -5294,7 +5297,8 @@ void PlayerbotFactory::ApplyEnchantTemplate()
                 ApplyEnchantTemplate(111);
             break;
         case CLASS_SHAMAN:
-            if (tab == 0)
+            // Hexcraft is a caster tree too: Elemental's enchants, not Enhancement's
+            if (tab == 0 || tab == SHAMAN_TAB_HEXCRAFT)
                 ApplyEnchantTemplate(70);
             else if (tab == 2)
                 ApplyEnchantTemplate(71);

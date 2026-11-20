@@ -29,3 +29,11 @@ path's trainer mirrors; a replacement learned from a tree (Gladiator Stance) is 
 
 The Ranger does the same: on its Windrunner tree its bots run Marksmanship's `mm` with `windrunner` beside it, which
 builds and spends Advantage on the tree's finishers; a dip into Windrunner from another tree adds `windrunner` too.
+
+The Witch Doctor's Hexcraft tree (`WitchDoctor/`) is the shaman's fourth page, `SHAMAN_TAB_HEXCRAFT`. Its bots run
+Elemental's `ele` and totems with `hexcraft` beside it: Shade Puppet, Loa's Spite and Witchfire on cooldown, Echo Ward
+before the Lightning Bolts it echoes, Choking Jinx beside Wind Shear, and Spirit Shroud, Loa's Ride, Mojo Golem and
+Marionette Dance as cooldowns against bosses, elites, players and training dummies. Elemental's own tab checks (the
+boost and AoE strategies, weapon imbue, stat weights, enchants, glyphs) take the Hexcraft tab as Elemental, since any
+shaman tab past Restoration would otherwise fall into Enhancement's branch. A dip into Hexcraft adds `hexcraft` too.
+The Witch Doctor's other spells are the shaman's under new names, which `SubclassBotMgr`'s aliases resolve.

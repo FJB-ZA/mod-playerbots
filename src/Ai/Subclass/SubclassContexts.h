@@ -11,6 +11,7 @@
 
 #include "GladiatorActionContext.h"
 #include "GladiatorTriggerContext.h"
+#include "HexcraftContexts.h"
 #include "NamedObjectContext.h"
 #include "NecromancerContexts.h"
 #include "RangerActionContext.h"
@@ -22,6 +23,7 @@ inline void AddSubclassActionContexts(SharedNamedObjectContextList<Action>& acti
     actionContexts.Add(new SubclassNecromancerActionContext());
     actionContexts.Add(new SubclassRangerActionContext());
     actionContexts.Add(new SubclassWindrunnerActionContext());
+    actionContexts.Add(new SubclassHexcraftActionContext());
 }
 
 inline void AddSubclassTriggerContexts(SharedNamedObjectContextList<Trigger>& triggerContexts)
@@ -29,6 +31,7 @@ inline void AddSubclassTriggerContexts(SharedNamedObjectContextList<Trigger>& tr
     triggerContexts.Add(new SubclassGladiatorTriggerContext());
     triggerContexts.Add(new SubclassNecromancerTriggerContext());
     triggerContexts.Add(new SubclassWindrunnerTriggerContext());
+    triggerContexts.Add(new SubclassHexcraftTriggerContext());
 }
 
 #endif

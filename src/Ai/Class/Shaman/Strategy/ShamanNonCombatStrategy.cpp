@@ -111,7 +111,8 @@ void ShamanNonCombatStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     Player* bot = botAI->GetBot();
     int tab = AiFactory::GetPlayerSpecTab(bot);
 
-    if (tab == SHAMAN_TAB_ELEMENTAL)
+    // Hexcraft is a caster tree on Elemental's rotation, so it imbues and shields as Elemental does
+    if (tab == SHAMAN_TAB_ELEMENTAL || tab == SHAMAN_TAB_HEXCRAFT)
     {
         triggers.push_back(new TriggerNode("main hand weapon no imbue", { NextAction("flametongue weapon main hand", 22.0f), }));
         triggers.push_back(new TriggerNode("water shield", { NextAction("water shield", 21.0f), }));

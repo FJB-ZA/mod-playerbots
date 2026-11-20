@@ -210,6 +210,8 @@ std::string AiFactory::GetPlayerSpecName(Player* player)
                 specName = "resto";
             else if (tab == SHAMAN_TAB_ENHANCEMENT)
                 specName = "enhance";
+            else if (tab == SHAMAN_TAB_HEXCRAFT)
+                specName = "hexcraft";
             else
                 specName = "elem";
             break;
@@ -349,12 +351,16 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
             break;
 
         case CLASS_SHAMAN:
-            if (tab == SHAMAN_TAB_ELEMENTAL)
+            // Hexcraft weaves its spells into Elemental's rotation and keeps Elemental's totems
+            if (tab == SHAMAN_TAB_ELEMENTAL || tab == SHAMAN_TAB_HEXCRAFT)
                 engine->addStrategiesNoInit("ele", "stoneskin", "wrath", "mana spring", "wrath of air", nullptr);
             else if (tab == SHAMAN_TAB_RESTORATION)
                 engine->addStrategiesNoInit("resto", "stoneskin", "flametongue", "mana spring", "wrath of air", nullptr);
             else // if (tab == SHAMAN_TAB_ENHANCEMENT)
                 engine->addStrategiesNoInit("enh", "strength of earth", "magma", "healing stream", "windfury", nullptr);
+            // The Hexcraft tree's own spells, for its spec and for a dip into it from another tree
+            if (GetPlayerSpecTabs(player)[SHAMAN_TAB_HEXCRAFT])
+                engine->addStrategy("hexcraft", false);
             engine->addStrategiesNoInit("dps assist", "cure", "aoe", nullptr);
             break;
 

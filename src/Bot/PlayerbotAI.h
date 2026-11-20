@@ -330,6 +330,7 @@ enum SHAMAN_TABS
     SHAMAN_TAB_ELEMENTAL,
     SHAMAN_TAB_ENHANCEMENT,
     SHAMAN_TAB_RESTORATION,
+    SHAMAN_TAB_HEXCRAFT,  // the Witch Doctor sub-class path's own tree, open only while a slot follows the path
 };
 
 enum PALADIN_TABS

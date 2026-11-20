@@ -139,7 +139,8 @@ void ShamanBoostStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     Player* bot = botAI->GetBot();
     int tab = AiFactory::GetPlayerSpecTab(bot);
 
-    if (tab == SHAMAN_TAB_ELEMENTAL)
+    // Hexcraft fights as Elemental does
+    if (tab == SHAMAN_TAB_ELEMENTAL || tab == SHAMAN_TAB_HEXCRAFT)
     {
         triggers.push_back(new TriggerNode("fire elemental totem", { NextAction("fire elemental totem", 23.0f), }));
     }
@@ -155,7 +156,8 @@ void ShamanAoeStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     Player* bot = botAI->GetBot();
     int tab = AiFactory::GetPlayerSpecTab(bot);
 
-    if (tab == SHAMAN_TAB_ELEMENTAL)
+    // Hexcraft fights as Elemental does
+    if (tab == SHAMAN_TAB_ELEMENTAL || tab == SHAMAN_TAB_HEXCRAFT)
     {
         triggers.push_back(new TriggerNode("medium aoe",{ NextAction("fire nova", 23.0f), }));
         triggers.push_back(new TriggerNode("chain lightning no cd", { NextAction("chain lightning", 5.6f), }));
